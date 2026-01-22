@@ -1,9 +1,10 @@
 use crate::crypto::{BlockContent, Signature, SigningPublicKey};
 use crate::graph::BlockId;
 use crate::identity::SecretIdentity;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     id: BlockId,
     author: SigningPublicKey,
@@ -59,6 +60,22 @@ impl Block {
 
     pub fn block_type(&self) -> &str {
         &self.block_type
+    }
+
+    pub fn verify_integrity(&self) -> Result<(), String> {
+        // 1. Check if ID matches content
+        let calculated_id = self.calculate_id();
+        if self.id != calculated_id {
+            return Err(format!(
+                "Block ID mismatch: stored {:?}, calculated {:?}",
+                self.id, calculated_id
+            ));
+        }
+
+        // 2. Check signature
+        self.author
+            .verify(self.id.as_ref(), &self.signature)
+            .map_err(|e| format!("Signature verification failed: {}", e))
     }
 
     fn calculate_id(&self) -> BlockId {
