@@ -5,7 +5,14 @@ use sovereign_core::identity::SecretIdentity;
 fn block_exposes_rank_for_ordering() {
     let identity = SecretIdentity::generate();
     let rank = "0.5";
-    let block = Block::new(vec![], rank.to_string(), "p".to_string(), vec![], &identity);
+    let block = Block::new(
+        vec![],
+        [0u8; 12],
+        rank.to_string(),
+        "p".to_string(),
+        vec![],
+        &identity,
+    );
     assert_eq!(block.rank(), rank);
 }
 
@@ -15,6 +22,7 @@ fn block_has_type_metadata() {
     let b_type = "h1";
     let block = Block::new(
         vec![],
+        [0u8; 12],
         "0.5".to_string(),
         b_type.to_string(),
         vec![],
