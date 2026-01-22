@@ -1,8 +1,10 @@
 use crate::crypto::{BlockContent, Signature, SigningPublicKey};
 use crate::graph::BlockId;
 use crate::identity::SecretIdentity;
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tracing::{Level, info, span};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
@@ -23,11 +25,17 @@ impl Block {
         parents: Vec<BlockId>,
         identity: &SecretIdentity,
     ) -> Self {
+        let span = span!(Level::INFO, "block_new", rank = %rank, block_type = %block_type);
+        let _enter = span.enter();
+
         // Pure construction: Calculate ID first
         let id = Self::compute_id(&content, &rank, &block_type, &parents);
 
         // Then sign
         let signature = identity.sign(id.as_ref());
+
+        info!(block_id = ?id, "Block created");
+        counter!("sovereign.block.created").increment(1);
 
         // Then construct immutable struct
         Block {

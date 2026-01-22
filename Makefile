@@ -11,5 +11,8 @@ lint:
 test:
 	cargo test
 
+coverage:
+	cargo tarpaulin --out Xml --out Html
+
 # The "Golden Command" for local dev
 verify: fmt lint test

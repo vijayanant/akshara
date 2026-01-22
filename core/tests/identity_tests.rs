@@ -58,3 +58,14 @@ fn identity_verify_fails_on_wrong_signature() {
     // Ed25519 verification should fail (or return error which map to false)
     assert!(!id.public().verify(msg, &bad_sig));
 }
+
+#[test]
+fn identity_fails_on_invalid_mnemonic() {
+    // Too short
+    let bad_mnemonic = "abandon abandon abandon";
+    assert!(SecretIdentity::from_mnemonic(bad_mnemonic).is_err());
+
+    // Invalid word
+    let bad_mnemonic2 = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon xyzzy";
+    assert!(SecretIdentity::from_mnemonic(bad_mnemonic2).is_err());
+}

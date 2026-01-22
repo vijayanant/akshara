@@ -191,6 +191,32 @@ fn block_integrity_fails_on_tampered_data() {
     assert!(tampered_block.verify_integrity().is_err());
 }
 
+#[test]
+fn block_integrity_fails_on_tampered_signature() {
+    let (block, _) = create_standard_block(&[]);
+
+    let json = serde_json::to_string(&block).unwrap();
+    // Signature is a Vec<u8>, in JSON it's an array of numbers.
+    // "signature":[...]
+    // We'll replace the first 0 with 1 or similar if we can find it.
+    // Better: use Value to be precise.
+    let mut val: serde_json::Value = serde_json::from_str(&json).unwrap();
+    if let Some(arr) = val
+        .get_mut("signature")
+        .and_then(|s| s.as_array_mut())
+        .filter(|a| !a.is_empty())
+    {
+        let first = arr[0].as_u64().unwrap();
+        arr[0] = serde_json::json!(first ^ 0xFF);
+    }
+
+    let tampered_block: Block = serde_json::from_value(val).unwrap();
+    assert!(
+        tampered_block.verify_integrity().is_err(),
+        "Integrity must fail on bad signature"
+    );
+}
+
 // --- Corner Case Tests (New) ---
 
 #[test]

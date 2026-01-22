@@ -1,8 +1,10 @@
 use crate::crypto::{Signature, SigningPublicKey};
 use crate::graph::{BlockId, ManifestId};
 use crate::identity::SecretIdentity;
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tracing::{Level, info, span};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +26,9 @@ impl Manifest {
         parents: Vec<ManifestId>,
         identity: &SecretIdentity,
     ) -> Self {
+        let span = span!(Level::INFO, "manifest_new", document_id = %document_id);
+        let _enter = span.enter();
+
         let merkle_root = Self::compute_merkle_root(&active_blocks);
         let created_at = 0; // Fixed for now, pass as arg later
         let author = identity.public().signing_key().clone();
@@ -31,6 +36,9 @@ impl Manifest {
         let id = Self::compute_id(&merkle_root, &document_id, &parents, &author, created_at);
 
         let signature = identity.sign(id.as_ref());
+
+        info!(manifest_id = ?id, "Manifest created");
+        counter!("sovereign.manifest.created").increment(1);
 
         Manifest {
             id,

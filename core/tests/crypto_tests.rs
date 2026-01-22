@@ -84,8 +84,29 @@ fn lockbox_fails_on_tampered_ciphertext() {
     let tampered_lockbox: Lockbox = serde_json::from_value(val).unwrap();
 
     let result = tampered_lockbox.open(bob.encryption_key());
+
     assert!(
         result.is_err(),
         "Tampered ciphertext must fail AES-GCM auth tag check"
     );
+}
+
+#[test]
+
+fn signing_verify_fails_on_malformed_signature() {
+    let mut rng = OsRng;
+
+    let identity = SecretIdentity::generate(&mut rng);
+
+    let public = identity.public();
+
+    let msg = b"test";
+
+    // Wrong length (not 64)
+
+    let bad_sig = sovereign_core::crypto::Signature::new(vec![0u8; 32]);
+
+    let result = public.signing_key().verify(msg, &bad_sig);
+
+    assert!(result.is_err());
 }
