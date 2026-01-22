@@ -8,19 +8,34 @@ use sha2::{Digest, Sha256};
 use tracing::{Level, info, span};
 use uuid::Uuid;
 
+/// A `Manifest` is a snapshot of the document's state at a specific point in history.
+///
+/// It acts like a "commit" in a version control system, grouping a set of `active_blocks`
+/// into a coherent version. The integrity of the blocks is guaranteed by a Merkle Root.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
+    /// The unique identifier of this snapshot. Hashes the Merkle root, parents,
+    /// and metadata to bind the state to its specific historical context.
     id: ManifestId,
+    /// The unique ID of the document (the entire DAG) this manifest belongs to.
     document_id: Uuid,
+    /// References to the manifest(s) that immediately preceded this one.
     parents: Vec<ManifestId>,
+    /// The complete, ordered set of blocks that make up this version of the document.
     active_blocks: Vec<BlockId>,
+    /// The root of a Merkle Tree built from `active_blocks`, providing a compact
+    /// proof of the document's entire content.
     merkle_root: ManifestId,
+    /// The public key of the user who published this state snapshot.
     author: SigningPublicKey,
+    /// A signature over the `id`, proving the author intended to publish this state.
     signature: Signature,
+    /// Unix timestamp of creation (local to the author).
     created_at: i64,
 }
 
 impl Manifest {
+    /// Creates and signs a new manifest snapshot.
     pub fn new(
         document_id: Uuid,
         active_blocks: Vec<BlockId>,
@@ -31,11 +46,10 @@ impl Manifest {
         let _enter = span.enter();
 
         let merkle_root = Self::compute_merkle_root(&active_blocks);
-        let created_at = 0; // Fixed for now, pass as arg later
+        let created_at = 0; // TODO: Integrate real system time
         let author = identity.public().signing_key().clone();
 
         let id = Self::compute_id(&merkle_root, &document_id, &parents, &author, created_at);
-
         let signature = identity.sign(id.as_ref());
 
         info!(manifest_id = ?id, "Manifest created");
@@ -81,17 +95,21 @@ impl Manifest {
         self.merkle_root
     }
 
+    /// Verifies the cryptographic integrity of the manifest.
+    ///
+    /// Ensures that:
+    /// 1. The Merkle root correctly represents the `active_blocks`.
+    /// 2. The `id` correctly represents the manifest's metadata and history.
+    /// 3. The `signature` is valid for the `id`.
     pub fn verify_integrity(&self) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "manifest_verify_integrity", manifest_id = ?self.id);
         let _enter = span.enter();
 
-        // 1. Re-calculate Merkle Root
         let calculated_root = Self::compute_merkle_root(&self.active_blocks);
         if self.merkle_root != calculated_root {
             return Err(SovereignError::ManifestMerkleMismatch(self.id));
         }
 
-        // 2. Re-calculate ID
         let calculated_id = Self::compute_id(
             &self.merkle_root,
             &self.document_id,
@@ -105,7 +123,6 @@ impl Manifest {
             ));
         }
 
-        // 3. Verify signature
         self.author
             .verify(self.id.as_ref(), &self.signature)
             .map_err(|e| SovereignError::SignatureFailure(e.to_string()))?;
@@ -113,6 +130,7 @@ impl Manifest {
         Ok(())
     }
 
+    /// Computes a Merkle Root from a list of block IDs using pairwise recursive hashing.
     fn compute_merkle_root(active_blocks: &[BlockId]) -> ManifestId {
         if active_blocks.is_empty() {
             return ManifestId([0; 32]);
@@ -139,6 +157,7 @@ impl Manifest {
         ManifestId(nodes[0])
     }
 
+    /// Canonical hash function for the manifest's identity.
     fn compute_id(
         merkle_root: &ManifestId,
         document_id: &Uuid,

@@ -7,18 +7,37 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{Level, info, span};
 
+/// A `Block` is the atomic unit of content in Sovereign.
+///
+/// It is immutable, content-addressed, and cryptographically signed.
+/// Blocks form a Directed Acyclic Graph (DAG) where each block can
+/// reference previous versions via the `parents` field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
+    /// The unique identifier of the block, calculated as the SHA-256 hash
+    /// of its content and metadata. This ensures content-addressing.
     id: BlockId,
+    /// The public key of the user who authored this block.
     author: SigningPublicKey,
+    /// An Ed25519 signature over the `id`, proving authenticity and intent.
     signature: Signature,
+    /// The encrypted payload (text, image data, etc.) and its nonce.
     content: BlockContent,
+    /// A fractional index used for conflict-free lexicographical ordering
+    /// of blocks within a document.
     rank: String,
+    /// A hint for the application layer on how to render this block (e.g., "p", "h1").
     block_type: String,
+    /// References to the block IDs that this block replaces or merges.
     parents: Vec<BlockId>,
 }
 
 impl Block {
+    /// Creates and signs a new block.
+    ///
+    /// This constructor performs "pure construction" by calculating the
+    /// content-address (ID) and signature before initializing the struct,
+    /// ensuring that a `Block` instance is always valid from birth.
     pub fn new(
         content: BlockContent,
         rank: String,
@@ -29,16 +48,12 @@ impl Block {
         let span = span!(Level::INFO, "block_new", rank = %rank, block_type = %block_type);
         let _enter = span.enter();
 
-        // Pure construction: Calculate ID first
         let id = Self::compute_id(&content, &rank, &block_type, &parents);
-
-        // Then sign
         let signature = identity.sign(id.as_ref());
 
         info!(block_id = ?id, "Block created");
         counter!("sovereign.block.created").increment(1);
 
-        // Then construct immutable struct
         Block {
             id,
             author: identity.public().signing_key().clone(),
@@ -74,11 +89,15 @@ impl Block {
         &self.block_type
     }
 
+    /// Validates the internal consistency of the block.
+    ///
+    /// This performs two critical security checks:
+    /// 1. Content Integrity: Re-hashes the data to ensure it matches the `id`.
+    /// 2. Authenticity: Verifies the `signature` against the `author`'s public key.
     pub fn verify_integrity(&self) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "block_verify_integrity", block_id = ?self.id);
         let _enter = span.enter();
 
-        // 1. Check if ID matches content
         let calculated_id =
             Self::compute_id(&self.content, &self.rank, &self.block_type, &self.parents);
         if self.id != calculated_id {
@@ -86,7 +105,6 @@ impl Block {
             return Err(SovereignError::BlockIdMismatch(self.id));
         }
 
-        // 2. Check signature
         self.author
             .verify(self.id.as_ref(), &self.signature)
             .map_err(|e| {
@@ -97,7 +115,8 @@ impl Block {
         Ok(())
     }
 
-    // Pure function for ID calculation (Static method)
+    /// Computes the canonical SHA-256 hash of the block's data.
+    /// Domain separation is used to prevent hash collisions with other object types.
     fn compute_id(
         content: &BlockContent,
         rank: &str,
