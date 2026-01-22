@@ -1,5 +1,5 @@
-use bip39::{Mnemonic, Language};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
+use bip39::{Language, Mnemonic};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 
@@ -39,10 +39,10 @@ impl SecretIdentity {
     }
 
     pub fn from_mnemonic(phrase: &str) -> Result<Self, String> {
-        let mnemonic = Mnemonic::parse_in_normalized(Language::English, phrase)
-            .map_err(|e| e.to_string())?;
+        let mnemonic =
+            Mnemonic::parse_in_normalized(Language::English, phrase).map_err(|e| e.to_string())?;
         let seed = mnemonic.to_seed("");
-        
+
         let mut key_bytes = [0u8; 32];
         key_bytes.copy_from_slice(&seed[0..32]);
         let signing_key = SigningKey::from_bytes(&key_bytes);
