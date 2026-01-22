@@ -1,4 +1,5 @@
 use crate::crypto::{Signature, SigningPublicKey};
+use crate::error::SovereignError;
 use crate::graph::{BlockId, ManifestId};
 use crate::identity::SecretIdentity;
 use metrics::counter;
@@ -78,6 +79,38 @@ impl Manifest {
 
     pub fn merkle_root(&self) -> ManifestId {
         self.merkle_root
+    }
+
+    pub fn verify_integrity(&self) -> Result<(), SovereignError> {
+        let span = span!(Level::DEBUG, "manifest_verify_integrity", manifest_id = ?self.id);
+        let _enter = span.enter();
+
+        // 1. Re-calculate Merkle Root
+        let calculated_root = Self::compute_merkle_root(&self.active_blocks);
+        if self.merkle_root != calculated_root {
+            return Err(SovereignError::ManifestMerkleMismatch(self.id));
+        }
+
+        // 2. Re-calculate ID
+        let calculated_id = Self::compute_id(
+            &self.merkle_root,
+            &self.document_id,
+            &self.parents,
+            &self.author,
+            self.created_at,
+        );
+        if self.id != calculated_id {
+            return Err(SovereignError::Unauthorized(
+                "Manifest ID mismatch".to_string(),
+            ));
+        }
+
+        // 3. Verify signature
+        self.author
+            .verify(self.id.as_ref(), &self.signature)
+            .map_err(|e| SovereignError::SignatureFailure(e.to_string()))?;
+
+        Ok(())
     }
 
     fn compute_merkle_root(active_blocks: &[BlockId]) -> ManifestId {

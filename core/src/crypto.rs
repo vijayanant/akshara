@@ -6,6 +6,7 @@ use aes_gcm::{
 use ed25519_dalek::{Signature as EdSignature, Verifier, VerifyingKey};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
+use tracing::{Level, debug, error, span, trace};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -24,6 +25,9 @@ impl SigningPublicKey {
     }
 
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<(), SovereignError> {
+        let span = span!(Level::TRACE, "signing_verify");
+        let _enter = span.enter();
+
         let verifying_key = VerifyingKey::from_bytes(&self.0)
             .map_err(|e| SovereignError::Unauthorized(format!("Invalid public key: {}", e)))?;
 
@@ -32,6 +36,7 @@ impl SigningPublicKey {
         })?;
 
         verifying_key.verify(msg, &ed_sig).map_err(|e| {
+            debug!(error = %e, "Signature verification failed");
             SovereignError::Unauthorized(format!("Signature verification failed: {}", e))
         })?;
 
@@ -132,12 +137,16 @@ impl BlockContent {
         key: &DocKey,
         nonce_bytes: [u8; 12],
     ) -> Result<Self, SovereignError> {
+        let span = span!(Level::TRACE, "content_encrypt");
+        let _enter = span.enter();
+
         let cipher = Aes256Gcm::new(key.as_bytes().into());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let ciphertext = cipher
-            .encrypt(nonce, plaintext)
-            .map_err(|e| SovereignError::SerializationError(format!("Encryption failed: {}", e)))?;
+        let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
+            error!(error = %e, "AES-GCM encryption failed");
+            SovereignError::EncryptionError(format!("AES-GCM failed: {}", e))
+        })?;
 
         Ok(Self {
             ciphertext,
@@ -146,12 +155,18 @@ impl BlockContent {
     }
 
     pub fn decrypt(&self, key: &DocKey) -> Result<Vec<u8>, SovereignError> {
+        let span = span!(Level::TRACE, "content_decrypt");
+        let _enter = span.enter();
+
         let cipher = Aes256Gcm::new(key.as_bytes().into());
         let nonce = Nonce::from_slice(&self.nonce);
 
         let plaintext = cipher
             .decrypt(nonce, self.ciphertext.as_slice())
-            .map_err(|e| SovereignError::Unauthorized(format!("Decryption failed: {}", e)))?;
+            .map_err(|e| {
+                debug!(error = %e, "AES-GCM decryption failed");
+                SovereignError::DecryptionError(format!("AES-GCM failed: {}", e))
+            })?;
 
         Ok(plaintext)
     }
@@ -178,6 +193,9 @@ impl Lockbox {
         secret_to_lock: &DocKey,
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<Self, SovereignError> {
+        let span = span!(Level::DEBUG, "lockbox_create");
+        let _enter = span.enter();
+
         // Generate an ephemeral keypair for this specific lockbox
         let ephemeral_secret = StaticSecret::random_from_rng(&mut *rng);
         let ephemeral_public = XPublicKey::from(&ephemeral_secret);
@@ -195,6 +213,8 @@ impl Lockbox {
 
         let content = BlockContent::encrypt(secret_to_lock.as_bytes(), &shared_key, nonce)?;
 
+        trace!("Lockbox created with ephemeral key");
+
         Ok(Self {
             ephemeral_public_key: EncryptionPublicKey::new(*ephemeral_public.as_bytes()),
             content,
@@ -202,6 +222,9 @@ impl Lockbox {
     }
 
     pub fn open(&self, recipient_secret: &EncryptionSecretKey) -> Result<DocKey, SovereignError> {
+        let span = span!(Level::DEBUG, "lockbox_open");
+        let _enter = span.enter();
+
         let recipient_secret_scalar = StaticSecret::from(*recipient_secret.as_bytes());
         let ephemeral_public_point = XPublicKey::from(*self.ephemeral_public_key.as_bytes());
 
@@ -210,11 +233,17 @@ impl Lockbox {
         let shared_key = DocKey::new(*shared_secret.as_bytes());
 
         // Decrypt the key
-        let decrypted_bytes = self.content.decrypt(&shared_key)?;
+        let decrypted_bytes = self.content.decrypt(&shared_key).map_err(|e| {
+            debug!(error = %e, "Failed to decrypt lockbox content");
+            e
+        })?;
 
         let key_bytes: [u8; 32] = decrypted_bytes.try_into().map_err(|_| {
+            error!("Decrypted key length mismatch");
             SovereignError::SerializationError("Decrypted key is not 32 bytes".to_string())
         })?;
+
+        trace!("Lockbox opened successfully");
 
         Ok(DocKey::new(key_bytes))
     }

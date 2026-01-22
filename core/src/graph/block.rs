@@ -1,4 +1,5 @@
 use crate::crypto::{BlockContent, Signature, SigningPublicKey};
+use crate::error::SovereignError;
 use crate::graph::BlockId;
 use crate::identity::SecretIdentity;
 use metrics::counter;
@@ -73,21 +74,27 @@ impl Block {
         &self.block_type
     }
 
-    pub fn verify_integrity(&self) -> Result<(), String> {
+    pub fn verify_integrity(&self) -> Result<(), SovereignError> {
+        let span = span!(Level::DEBUG, "block_verify_integrity", block_id = ?self.id);
+        let _enter = span.enter();
+
         // 1. Check if ID matches content
         let calculated_id =
             Self::compute_id(&self.content, &self.rank, &self.block_type, &self.parents);
         if self.id != calculated_id {
-            return Err(format!(
-                "Block ID mismatch: stored {:?}, calculated {:?}",
-                self.id, calculated_id
-            ));
+            tracing::error!(stored = ?self.id, calculated = ?calculated_id, "Block ID mismatch");
+            return Err(SovereignError::BlockIdMismatch(self.id));
         }
 
         // 2. Check signature
         self.author
             .verify(self.id.as_ref(), &self.signature)
-            .map_err(|e| format!("Signature verification failed: {}", e))
+            .map_err(|e| {
+                tracing::error!(error = %e, "Block signature verification failed");
+                SovereignError::SignatureFailure(e.to_string())
+            })?;
+
+        Ok(())
     }
 
     // Pure function for ID calculation (Static method)

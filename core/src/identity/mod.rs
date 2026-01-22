@@ -1,6 +1,7 @@
 use crate::crypto::{
     EncryptionPublicKey, EncryptionSecretKey, Signature, SigningPublicKey, SigningSecretKey,
 };
+use crate::error::SovereignError;
 use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signer, SigningKey};
 use rand::{CryptoRng, RngCore};
@@ -46,9 +47,9 @@ impl SecretIdentity {
         Self::from_signing_key(signing_key)
     }
 
-    pub fn from_mnemonic(phrase: &str) -> Result<Self, String> {
-        let mnemonic =
-            Mnemonic::parse_in_normalized(Language::English, phrase).map_err(|e| e.to_string())?;
+    pub fn from_mnemonic(phrase: &str) -> Result<Self, SovereignError> {
+        let mnemonic = Mnemonic::parse_in_normalized(Language::English, phrase)
+            .map_err(|e| SovereignError::MnemonicError(e.to_string()))?;
         let seed = mnemonic.to_seed("");
 
         let mut key_bytes = [0u8; 32];
@@ -81,6 +82,7 @@ impl SecretIdentity {
     }
 
     pub fn sign(&self, message: &[u8]) -> Signature {
+        // Regenerate key from secure bytes
         let key = SigningKey::from_bytes(self.signing_key.as_bytes());
         let sig = key.sign(message);
         Signature::new(sig.to_vec())
