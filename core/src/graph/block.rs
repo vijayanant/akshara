@@ -23,19 +23,22 @@ impl Block {
         parents: Vec<BlockId>,
         identity: &SecretIdentity,
     ) -> Self {
-        // Placeholder ID until calculated
-        let mut block = Block {
-            id: BlockId([0; 32]),
+        // Pure construction: Calculate ID first
+        let id = Self::compute_id(&content, &rank, &block_type, &parents);
+
+        // Then sign
+        let signature = identity.sign(id.as_ref());
+
+        // Then construct immutable struct
+        Block {
+            id,
             author: identity.public().signing_key().clone(),
-            signature: Signature::new(vec![]),
+            signature,
             content,
             rank,
             block_type,
             parents,
-        };
-        block.id = block.calculate_id();
-        block.signature = identity.sign(block.id.as_ref());
-        block
+        }
     }
 
     pub fn id(&self) -> BlockId {
@@ -64,7 +67,8 @@ impl Block {
 
     pub fn verify_integrity(&self) -> Result<(), String> {
         // 1. Check if ID matches content
-        let calculated_id = self.calculate_id();
+        let calculated_id =
+            Self::compute_id(&self.content, &self.rank, &self.block_type, &self.parents);
         if self.id != calculated_id {
             return Err(format!(
                 "Block ID mismatch: stored {:?}, calculated {:?}",
@@ -78,16 +82,22 @@ impl Block {
             .map_err(|e| format!("Signature verification failed: {}", e))
     }
 
-    fn calculate_id(&self) -> BlockId {
+    // Pure function for ID calculation (Static method)
+    fn compute_id(
+        content: &BlockContent,
+        rank: &str,
+        block_type: &str,
+        parents: &[BlockId],
+    ) -> BlockId {
         let mut hasher = Sha256::new();
         hasher.update(b"BLOCK_V1");
 
-        hasher.update(self.content.as_bytes());
-        hasher.update(self.content.nonce());
-        hasher.update(self.rank.as_bytes());
-        hasher.update(self.block_type.as_bytes());
+        hasher.update(content.as_bytes());
+        hasher.update(content.nonce());
+        hasher.update(rank.as_bytes());
+        hasher.update(block_type.as_bytes());
 
-        for parent in &self.parents {
+        for parent in parents {
             hasher.update(parent.as_ref());
         }
 

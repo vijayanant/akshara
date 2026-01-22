@@ -4,8 +4,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
 };
 use ed25519_dalek::{Signature as EdSignature, Verifier, VerifyingKey};
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -91,9 +90,9 @@ impl DocKey {
         Self(bytes)
     }
 
-    pub fn generate() -> Self {
+    pub fn generate(rng: &mut (impl CryptoRng + RngCore)) -> Self {
         let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
+        rng.fill_bytes(&mut bytes);
         Self(bytes)
     }
 
@@ -177,9 +176,10 @@ impl Lockbox {
     pub fn create(
         recipient_public: &EncryptionPublicKey,
         secret_to_lock: &DocKey,
+        rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<Self, SovereignError> {
         // Generate an ephemeral keypair for this specific lockbox
-        let ephemeral_secret = StaticSecret::random_from_rng(OsRng);
+        let ephemeral_secret = StaticSecret::random_from_rng(&mut *rng);
         let ephemeral_public = XPublicKey::from(&ephemeral_secret);
 
         let recipient_xpub = XPublicKey::from(*recipient_public.as_bytes());
@@ -187,15 +187,12 @@ impl Lockbox {
         // Calculate shared secret
         let shared_secret = ephemeral_secret.diffie_hellman(&recipient_xpub);
 
-        // Wrap shared secret as a DocKey (temporary) to use BlockContent::encrypt
-        // Note: Shared secret is 32 bytes, same as DocKey.
         let shared_key = DocKey::new(*shared_secret.as_bytes());
 
         // Use shared secret to encrypt the master secret (doc_key)
         let mut nonce = [0u8; 12];
-        OsRng.fill_bytes(&mut nonce);
+        rng.fill_bytes(&mut nonce);
 
-        // We are encrypting the DocKey's bytes
         let content = BlockContent::encrypt(secret_to_lock.as_bytes(), &shared_key, nonce)?;
 
         Ok(Self {

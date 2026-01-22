@@ -3,7 +3,7 @@ use crate::crypto::{
 };
 use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signer, SigningKey};
-use rand::rngs::OsRng;
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 
@@ -41,9 +41,8 @@ pub struct SecretIdentity {
 }
 
 impl SecretIdentity {
-    pub fn generate() -> Self {
-        let mut rng = OsRng;
-        let signing_key = SigningKey::generate(&mut rng);
+    pub fn generate(rng: &mut (impl CryptoRng + RngCore)) -> Self {
+        let signing_key = SigningKey::generate(rng);
         Self::from_signing_key(signing_key)
     }
 
@@ -62,7 +61,6 @@ impl SecretIdentity {
     fn from_signing_key(signing_key: SigningKey) -> Self {
         let signing_public = signing_key.verifying_key();
 
-        // Deterministically derive X25519 key from Ed25519 secret for simplicity (as per LLD-002)
         let encryption_secret = StaticSecret::from(signing_key.to_bytes());
         let encryption_public = XPublicKey::from(&encryption_secret);
 
@@ -83,7 +81,6 @@ impl SecretIdentity {
     }
 
     pub fn sign(&self, message: &[u8]) -> Signature {
-        // Regenerate key from secure bytes
         let key = SigningKey::from_bytes(self.signing_key.as_bytes());
         let sig = key.sign(message);
         Signature::new(sig.to_vec())

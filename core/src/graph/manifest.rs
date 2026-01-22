@@ -11,6 +11,7 @@ pub struct Manifest {
     document_id: Uuid,
     parents: Vec<ManifestId>,
     active_blocks: Vec<BlockId>,
+    merkle_root: ManifestId,
     author: SigningPublicKey,
     signature: Signature,
     created_at: i64,
@@ -23,18 +24,24 @@ impl Manifest {
         parents: Vec<ManifestId>,
         identity: &SecretIdentity,
     ) -> Self {
-        let mut manifest = Manifest {
-            id: ManifestId([0; 32]),
+        let merkle_root = Self::compute_merkle_root(&active_blocks);
+        let created_at = 0; // Fixed for now, pass as arg later
+        let author = identity.public().signing_key().clone();
+
+        let id = Self::compute_id(&merkle_root, &document_id, &parents, &author, created_at);
+
+        let signature = identity.sign(id.as_ref());
+
+        Manifest {
+            id,
             document_id,
             parents,
             active_blocks,
-            author: identity.public().signing_key().clone(),
-            signature: Signature::new(vec![]),
-            created_at: 0,
-        };
-        manifest.id = manifest.calculate_merkle_root();
-        manifest.signature = identity.sign(manifest.id.as_ref());
-        manifest
+            merkle_root,
+            author,
+            signature,
+            created_at,
+        }
     }
 
     pub fn id(&self) -> ManifestId {
@@ -61,24 +68,27 @@ impl Manifest {
         &self.signature
     }
 
-    fn calculate_merkle_root(&self) -> ManifestId {
-        if self.active_blocks.is_empty() {
+    pub fn merkle_root(&self) -> ManifestId {
+        self.merkle_root
+    }
+
+    fn compute_merkle_root(active_blocks: &[BlockId]) -> ManifestId {
+        if active_blocks.is_empty() {
             return ManifestId([0; 32]);
         }
 
-        let mut nodes: Vec<[u8; 32]> = self.active_blocks.iter().map(|b| b.0).collect();
+        let mut nodes: Vec<[u8; 32]> = active_blocks.iter().map(|b| b.0).collect();
 
         while nodes.len() > 1 {
             let mut next_level = Vec::new();
             for chunk in nodes.chunks(2) {
                 let mut hasher = Sha256::new();
-                // LLD-002: Domain Separation
                 hasher.update(b"SOV_V2_NODE");
                 hasher.update(chunk[0]);
                 if chunk.len() == 2 {
                     hasher.update(chunk[1]);
                 } else {
-                    hasher.update(chunk[0]); // Duplicate last if odd
+                    hasher.update(chunk[0]);
                 }
                 next_level.push(hasher.finalize().into());
             }
@@ -86,5 +96,25 @@ impl Manifest {
         }
 
         ManifestId(nodes[0])
+    }
+
+    fn compute_id(
+        merkle_root: &ManifestId,
+        document_id: &Uuid,
+        parents: &[ManifestId],
+        author: &SigningPublicKey,
+        created_at: i64,
+    ) -> ManifestId {
+        let mut hasher = Sha256::new();
+        hasher.update(b"SOV_V2_MANIFEST");
+        hasher.update(merkle_root.as_ref());
+        hasher.update(document_id.as_bytes());
+        for p in parents {
+            hasher.update(p.as_ref());
+        }
+        hasher.update(author.as_bytes());
+        hasher.update(created_at.to_le_bytes());
+
+        ManifestId(hasher.finalize().into())
     }
 }
