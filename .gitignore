@@ -1,3 +1,5 @@
 /target
 Cargo.lock
 /docs
+cobertura.xml
+tarpaulin-report.html
