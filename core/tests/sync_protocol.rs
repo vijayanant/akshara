@@ -1,0 +1,28 @@
+use sovereign_core::graph::{BlockId, ManifestId};
+use sovereign_core::sync::{SyncRequest, SyncResponse};
+
+#[test]
+fn sync_request_contains_graph_heads() {
+    let head1 = ManifestId([1u8; 32]);
+    let head2 = ManifestId([2u8; 32]);
+
+    let request = SyncRequest::new(vec![head1, head2]);
+
+    assert_eq!(request.heads().len(), 2);
+    assert!(request.heads().contains(&head1));
+    assert!(request.heads().contains(&head2));
+}
+
+#[test]
+fn sync_response_contains_missing_ids() {
+    let m1 = ManifestId([0xA1; 32]);
+    let b1 = BlockId([0xB1; 32]);
+
+    // This will fail to compile (RED)
+    let response = SyncResponse::new(vec![m1], vec![b1]);
+
+    assert_eq!(response.missing_manifests().len(), 1);
+    assert_eq!(response.missing_blocks().len(), 1);
+    assert_eq!(response.missing_manifests()[0], m1);
+    assert_eq!(response.missing_blocks()[0], b1);
+}
