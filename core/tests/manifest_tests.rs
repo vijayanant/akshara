@@ -1,4 +1,5 @@
 use rand::rngs::OsRng;
+use serde_json::Value;
 use sovereign_core::graph::{BlockId, Manifest, ManifestId};
 use sovereign_core::identity::SecretIdentity;
 use uuid::Uuid;
@@ -76,4 +77,58 @@ fn manifest_with_multiple_parents() {
     assert_eq!(manifest.parents().len(), 2);
     assert_eq!(manifest.parents()[0], p1);
     assert_eq!(manifest.parents()[1], p2);
+}
+
+#[test]
+fn manifest_integrity_success() {
+    let mut rng = OsRng;
+    let identity = SecretIdentity::generate(&mut rng);
+    let doc_id = Uuid::new_v4();
+    let manifest = Manifest::new(doc_id, vec![], vec![], &identity);
+
+    assert!(manifest.verify_integrity().is_ok());
+}
+
+#[test]
+fn manifest_integrity_fails_on_tampered_metadata() {
+    let mut rng = OsRng;
+    let identity = SecretIdentity::generate(&mut rng);
+    let doc_id = Uuid::new_v4();
+    let manifest = Manifest::new(doc_id, vec![], vec![], &identity);
+
+    let json = serde_json::to_string(&manifest).unwrap();
+    // Tamper with document_id (replace UUID with another random one)
+    let new_uuid = Uuid::new_v4();
+    let tampered_json = json.replace(&doc_id.to_string(), &new_uuid.to_string());
+
+    let tampered: Manifest = serde_json::from_str(&tampered_json).unwrap();
+
+    // ID check should fail because metadata changed but ID field didn't
+    assert!(tampered.verify_integrity().is_err());
+}
+
+#[test]
+fn manifest_integrity_fails_on_tampered_active_blocks() {
+    let mut rng = OsRng;
+    let identity = SecretIdentity::generate(&mut rng);
+    let doc_id = Uuid::new_v4();
+    // Start with 1 block
+    let b1 = BlockId([1u8; 32]);
+    let manifest = Manifest::new(doc_id, vec![b1], vec![], &identity);
+
+    let mut val: Value = serde_json::to_value(&manifest).unwrap();
+
+    // Empty the active_blocks list in JSON
+    if let Some(blocks) = val.get_mut("active_blocks").and_then(|b| b.as_array_mut()) {
+        blocks.clear();
+    }
+
+    let tampered: Manifest = serde_json::from_value(val).unwrap();
+
+    // Merkle Root check should fail
+    // The struct has the OLD merkle_root field, but the active_blocks are empty.
+    // recalculated root (empty) != stored root (hash of b1)
+    let result = tampered.verify_integrity();
+    assert!(result.is_err());
+    // We can even check the error type if we want specific mismatch error
 }
