@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 pub mod block;
-pub mod manifest; // Add this
+pub mod manifest;
+pub mod walker;
+
 pub use block::Block;
-pub use manifest::Manifest; // Add this
+pub use manifest::Manifest;
+pub use walker::GraphWalker;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct BlockId(pub [u8; 32]);
