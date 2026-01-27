@@ -1,11 +1,8 @@
 mod common;
 use common::*;
-use rand::rngs::OsRng;
-use sovereign_core::graph::{BlockId, Manifest, ManifestId};
-use sovereign_core::identity::SecretIdentity;
+use sovereign_core::graph::{BlockId, DocId, Manifest, ManifestId};
 use sovereign_core::store::{GraphStore, InMemoryStore};
 use sovereign_core::sync::{SyncEngine, SyncRequest};
-use uuid::Uuid;
 
 #[test]
 fn sync_engine_identifies_missing_manifests() {
@@ -31,23 +28,23 @@ fn sync_engine_identifies_missing_manifests() {
 
 #[test]
 fn sync_engine_handles_forks() {
-    let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
     let mut store = InMemoryStore::new();
+    let chain = create_chain(1, &mut store); // A
+    let m_a_id = chain[0];
 
-    // 1. Root A
-    let m_a = Manifest::new(doc_id, vec![], vec![], &identity);
-    store.put_manifest(&m_a).unwrap();
+    let identity = create_identity();
+    let doc_id = DocId::new();
+
+    // 1. Root A is already in store via create_chain
 
     // 2. Branch B (Child of A)
     let b_block = BlockId([0xB1; 32]);
-    let m_b = Manifest::new(doc_id, vec![b_block], vec![m_a.id()], &identity);
+    let m_b = Manifest::new(doc_id, vec![b_block], vec![m_a_id], &identity);
     store.put_manifest(&m_b).unwrap();
 
     // 3. Branch C (Child of A) - The Fork
     let c_block = BlockId([0xC1; 32]);
-    let m_c = Manifest::new(doc_id, vec![c_block], vec![m_a.id()], &identity);
+    let m_c = Manifest::new(doc_id, vec![c_block], vec![m_a_id], &identity);
     store.put_manifest(&m_c).unwrap();
 
     // Setup: Server has [B, C]. Client has [C].
@@ -61,7 +58,7 @@ fn sync_engine_handles_forks() {
     assert_eq!(missing.len(), 1);
     assert!(missing.contains(&m_b.id())); // Client needs B
     assert!(!missing.contains(&m_c.id())); // Client has C
-    assert!(!missing.contains(&m_a.id())); // Client has A (via C)
+    assert!(!missing.contains(&m_a_id)); // Client has A (via C)
 }
 
 #[test]

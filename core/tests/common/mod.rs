@@ -1,9 +1,8 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{BlockContent, DocKey};
-use sovereign_core::graph::{Block, Manifest, ManifestId};
+use sovereign_core::crypto::{BlockContent, DocKey, Lockbox};
+use sovereign_core::graph::{Block, DocId, Manifest, ManifestId};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
-use uuid::Uuid;
 
 #[allow(dead_code)]
 pub fn create_identity() -> SecretIdentity {
@@ -29,7 +28,7 @@ pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
 pub fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId> {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
     let mut parents = vec![];
     let mut ids = vec![];
 
@@ -40,4 +39,13 @@ pub fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId>
         ids.push(manifest.id());
     }
     ids
+}
+
+#[allow(dead_code)]
+pub fn create_lockbox(recipient: &SecretIdentity) -> (Lockbox, DocKey) {
+    let mut rng = OsRng;
+    let doc_key = DocKey::generate(&mut rng);
+    let lockbox = Lockbox::create(recipient.public().encryption_key(), &doc_key, &mut rng)
+        .expect("Lockbox creation failed");
+    (lockbox, doc_key)
 }

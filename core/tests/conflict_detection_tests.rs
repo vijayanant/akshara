@@ -1,14 +1,13 @@
 use rand::rngs::OsRng;
-use sovereign_core::graph::{BlockId, GraphWalker, Manifest};
+use sovereign_core::graph::{BlockId, DocId, GraphWalker, Manifest};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
-use uuid::Uuid;
 
 #[test]
 fn can_find_manifest_lca() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
     let mut store = InMemoryStore::new();
 
     // A
@@ -36,9 +35,10 @@ fn can_find_manifest_lca() {
 fn can_diff_forked_manifests() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
 
     let b1 = BlockId([1u8; 32]);
+
     let b2 = BlockId([2u8; 32]);
     let b3 = BlockId([3u8; 32]);
 

@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
 use serde_json::Value;
-use sovereign_core::graph::{BlockId, Manifest, ManifestId};
+use sovereign_core::graph::{BlockId, DocId, Manifest, ManifestId};
 use sovereign_core::identity::SecretIdentity;
 use uuid::Uuid;
 
@@ -8,7 +8,7 @@ use uuid::Uuid;
 fn manifest_id_depends_on_content_and_history() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
     let block_hashes = vec![BlockId([1u8; 32]), BlockId([2u8; 32])];
     let parents = vec![];
 
@@ -22,7 +22,9 @@ fn manifest_id_depends_on_content_and_history() {
     assert_eq!(manifest1.id(), manifest2.id());
 
     // 3. Different History -> Different ID (but Same Merkle Root)
-    let doc_id2 = Uuid::new_v4();
+
+    let doc_id2 = DocId::new();
+
     let manifest3 = Manifest::new(doc_id2, block_hashes.clone(), parents, &identity);
 
     assert_eq!(
@@ -41,7 +43,7 @@ fn manifest_id_depends_on_content_and_history() {
 fn manifest_merkle_root_boundary_conditions() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
 
     // Case 1: Empty blocks
     let m_empty = Manifest::new(doc_id, vec![], vec![], &identity);
@@ -67,11 +69,9 @@ fn manifest_merkle_root_boundary_conditions() {
 fn manifest_with_multiple_parents() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
-
+    let doc_id = DocId::new();
     let p1 = ManifestId([0xA1; 32]);
     let p2 = ManifestId([0xA2; 32]);
-
     let manifest = Manifest::new(doc_id, vec![], vec![p1, p2], &identity);
 
     assert_eq!(manifest.parents().len(), 2);
@@ -83,26 +83,24 @@ fn manifest_with_multiple_parents() {
 fn manifest_integrity_success() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
     let manifest = Manifest::new(doc_id, vec![], vec![], &identity);
 
     assert!(manifest.verify_integrity().is_ok());
 }
-
 #[test]
 fn manifest_integrity_fails_on_tampered_metadata() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
     let manifest = Manifest::new(doc_id, vec![], vec![], &identity);
 
     let json = serde_json::to_string(&manifest).unwrap();
     // Tamper with document_id (replace UUID with another random one)
     let new_uuid = Uuid::new_v4();
-    let tampered_json = json.replace(&doc_id.to_string(), &new_uuid.to_string());
+    let tampered_json = json.replace(&doc_id.0.to_string(), &new_uuid.to_string());
 
     let tampered: Manifest = serde_json::from_str(&tampered_json).unwrap();
-
     // ID check should fail because metadata changed but ID field didn't
     assert!(tampered.verify_integrity().is_err());
 }
@@ -111,7 +109,7 @@ fn manifest_integrity_fails_on_tampered_metadata() {
 fn manifest_integrity_fails_on_tampered_active_blocks() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
     // Start with 1 block
     let b1 = BlockId([1u8; 32]);
     let manifest = Manifest::new(doc_id, vec![b1], vec![], &identity);

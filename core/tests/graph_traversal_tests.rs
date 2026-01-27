@@ -1,10 +1,9 @@
 mod common;
 use common::*;
 use rand::rngs::OsRng;
-use sovereign_core::graph::{BlockId, GraphWalker, Manifest};
+use sovereign_core::graph::{BlockId, DocId, GraphWalker, Manifest};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
-use uuid::Uuid;
 
 #[test]
 fn can_find_ancestors_in_chain() {
@@ -27,7 +26,7 @@ fn can_find_ancestors_in_chain() {
 fn walker_handles_diamond_graph() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
     let mut store = InMemoryStore::new();
 
     // A
@@ -35,7 +34,6 @@ fn walker_handles_diamond_graph() {
     store.put_manifest(&a).unwrap();
 
     // B -> A
-    // Distinguish B from C by adding a dummy block to B
     let b_block = BlockId([0xB1; 32]);
     let b = Manifest::new(doc_id, vec![b_block], vec![a.id()], &identity);
     store.put_manifest(&b).unwrap();
@@ -64,7 +62,7 @@ fn walker_handles_diamond_graph() {
 fn walker_handles_missing_parent() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
+    let doc_id = DocId::new();
     let mut store = InMemoryStore::new();
 
     // A (Not stored)

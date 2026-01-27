@@ -1,12 +1,11 @@
 use crate::crypto::{Signature, SigningPublicKey, SovereignSigner};
 use crate::error::SovereignError;
-use crate::graph::{BlockId, ManifestId};
+use crate::graph::{BlockId, DocId, ManifestId};
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use tracing::{Level, info, span};
-use uuid::Uuid;
 
 /// A `Manifest` is a snapshot of the document's state at a specific point in history.
 ///
@@ -18,7 +17,7 @@ pub struct Manifest {
     /// and metadata to bind the state to its specific historical context.
     id: ManifestId,
     /// The unique ID of the document (the entire DAG) this manifest belongs to.
-    document_id: Uuid,
+    document_id: DocId,
     /// References to the manifest(s) that immediately preceded this one.
     parents: Vec<ManifestId>,
     /// The complete, ordered set of blocks that make up this version of the document.
@@ -46,12 +45,13 @@ impl Manifest {
     ///
     /// Accepts any `SovereignSigner`, allowing for hardware wallets or remote signers.
     pub fn new(
-        document_id: Uuid,
+        document_id: DocId,
         active_blocks: Vec<BlockId>,
         parents: Vec<ManifestId>,
         signer: &impl SovereignSigner,
     ) -> Self {
-        let span = span!(Level::INFO, "manifest_new", document_id = %document_id);
+        // Use debug formatting for DocId (Uuid wrapper)
+        let span = span!(Level::INFO, "manifest_new", document_id = ?document_id);
         let _enter = span.enter();
 
         let merkle_root = Self::compute_merkle_root(&active_blocks);
@@ -81,7 +81,7 @@ impl Manifest {
         self.id
     }
 
-    pub fn document_id(&self) -> Uuid {
+    pub fn document_id(&self) -> DocId {
         self.document_id
     }
 
@@ -192,7 +192,7 @@ impl Manifest {
     /// Canonical hash function for the manifest's identity.
     fn compute_id(
         merkle_root: &ManifestId,
-        document_id: &Uuid,
+        document_id: &DocId,
         parents: &[ManifestId],
         author: &SigningPublicKey,
         created_at: i64,
@@ -200,7 +200,7 @@ impl Manifest {
         let mut hasher = Sha256::new();
         hasher.update(b"SOV_V2_MANIFEST");
         hasher.update(merkle_root.as_ref());
-        hasher.update(document_id.as_bytes());
+        hasher.update(document_id.0.as_bytes());
         for p in parents {
             hasher.update(p.as_ref());
         }
