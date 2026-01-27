@@ -1,25 +1,11 @@
+mod common;
+use common::*;
 use rand::rngs::OsRng;
 use sovereign_core::graph::{BlockId, Manifest, ManifestId};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
 use sovereign_core::sync::{SyncEngine, SyncRequest};
 use uuid::Uuid;
-
-fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId> {
-    let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
-    let mut parents = vec![];
-    let mut ids = vec![];
-
-    for _ in 0..length {
-        let manifest = Manifest::new(doc_id, vec![], parents.clone(), &identity);
-        store.put_manifest(&manifest).unwrap();
-        parents = vec![manifest.id()];
-        ids.push(manifest.id());
-    }
-    ids
-}
 
 #[test]
 fn sync_engine_identifies_missing_manifests() {

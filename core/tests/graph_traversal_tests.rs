@@ -1,24 +1,10 @@
+mod common;
+use common::*;
 use rand::rngs::OsRng;
-use sovereign_core::graph::{BlockId, GraphWalker, Manifest, ManifestId};
+use sovereign_core::graph::{BlockId, GraphWalker, Manifest};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
 use uuid::Uuid;
-
-fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId> {
-    let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = Uuid::new_v4();
-    let mut parents = vec![];
-    let mut ids = vec![];
-
-    for _ in 0..length {
-        let manifest = Manifest::new(doc_id, vec![], parents.clone(), &identity);
-        store.put_manifest(&manifest).unwrap();
-        parents = vec![manifest.id()];
-        ids.push(manifest.id());
-    }
-    ids
-}
 
 #[test]
 fn can_find_ancestors_in_chain() {
@@ -102,13 +88,10 @@ fn walker_respects_graph_boundaries() {
     let mut store = InMemoryStore::new();
 
     // Chain 1: A -> B
-
     let chain1 = create_chain(2, &mut store);
-
     let _head1 = chain1[1];
 
     // Chain 2: X -> Y (Completely separate)
-
     let chain2 = create_chain(2, &mut store);
     let head2 = chain2[1];
 

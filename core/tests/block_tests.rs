@@ -1,26 +1,9 @@
+mod common;
+use common::*;
 use rand::rngs::OsRng;
 use sovereign_core::crypto::{BlockContent, DocKey};
 use sovereign_core::graph::{Block, BlockId};
 use sovereign_core::identity::SecretIdentity;
-
-// --- Helper Functions ---
-
-fn create_identity() -> SecretIdentity {
-    SecretIdentity::generate(&mut OsRng)
-}
-
-fn create_dummy_content(data: &[u8]) -> BlockContent {
-    let key = DocKey::new([0u8; 32]);
-    let nonce = [0u8; 12];
-    BlockContent::encrypt(data, &key, nonce).unwrap()
-}
-
-fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
-    let identity = create_identity();
-    let content = create_dummy_content(content_data);
-    let block = Block::new(content, "a".to_string(), "p".to_string(), vec![], &identity);
-    (block, identity)
-}
 
 // --- Identity & Determinism Tests ---
 
@@ -158,14 +141,6 @@ fn encryption_fails_with_wrong_key() {
     assert!(content.decrypt(&key2).is_err());
 }
 
-#[test]
-fn encryption_fails_on_tampered_ciphertext() {
-    // We cannot easily mutate BlockContent because fields are private (Encapsulation).
-    // This is good. But we can try to decrypt random garbage interpreted as BlockContent?
-    // Or we can rely on `aes_gcm` crate tests for tag validation.
-    // Ideally, we'd have a `from_raw` constructor for BlockContent for testing, but that breaks safety.
-}
-
 // --- Integrity Tests ---
 
 #[test]
@@ -196,10 +171,6 @@ fn block_integrity_fails_on_tampered_signature() {
     let (block, _) = create_standard_block(&[]);
 
     let json = serde_json::to_string(&block).unwrap();
-    // Signature is a Vec<u8>, in JSON it's an array of numbers.
-    // "signature":[...]
-    // We'll replace the first 0 with 1 or similar if we can find it.
-    // Better: use Value to be precise.
     let mut val: serde_json::Value = serde_json::from_str(&json).unwrap();
     if let Some(arr) = val
         .get_mut("signature")
@@ -232,6 +203,7 @@ fn block_supports_empty_content() {
     let decrypted = block.content().decrypt(&key).unwrap();
     assert!(decrypted.is_empty());
 }
+
 #[test]
 fn block_supports_multiple_parents() {
     let identity = create_identity();
