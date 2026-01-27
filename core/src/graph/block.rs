@@ -1,7 +1,6 @@
-use crate::crypto::{BlockContent, Signature, SigningPublicKey};
+use crate::crypto::{BlockContent, Signature, SigningPublicKey, SovereignSigner};
 use crate::error::SovereignError;
 use crate::graph::BlockId;
-use crate::identity::SecretIdentity;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -38,25 +37,27 @@ impl Block {
     /// This constructor performs "pure construction" by calculating the
     /// content-address (ID) and signature before initializing the struct,
     /// ensuring that a `Block` instance is always valid from birth.
+    ///
+    /// Accepts any `SovereignSigner`, allowing for hardware wallets or remote signers.
     pub fn new(
         content: BlockContent,
         rank: String,
         block_type: String,
         parents: Vec<BlockId>,
-        identity: &SecretIdentity,
+        signer: &impl SovereignSigner,
     ) -> Self {
         let span = span!(Level::INFO, "block_new", rank = %rank, block_type = %block_type);
         let _enter = span.enter();
 
         let id = Self::compute_id(&content, &rank, &block_type, &parents);
-        let signature = identity.sign(id.as_ref());
+        let signature = signer.sign(id.as_ref());
 
         info!(block_id = ?id, "Block created");
         counter!("sovereign.block.created").increment(1);
 
         Block {
             id,
-            author: identity.public().signing_key().clone(),
+            author: signer.public_key(),
             signature,
             content,
             rank,

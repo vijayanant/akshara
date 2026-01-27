@@ -138,8 +138,20 @@ impl Signature {
     }
 }
 
-/// An encrypted payload protected by AES-256-GCM.
+/// A trait for entities capable of signing messages.
 ///
+/// This allows decoupling the `Block`/`Manifest` creation from the specific
+/// key storage mechanism (e.g., in-memory `SecretIdentity`, Hardware Wallet, Remote Signer).
+pub trait SovereignSigner {
+    /// Signs the message and returns the signature.
+    fn sign(&self, message: &[u8]) -> Signature;
+
+    /// Returns the public key associated with this signer.
+    fn public_key(&self) -> SigningPublicKey;
+}
+
+/// Encapsulates encrypted content and its unique initialization vector (nonce).
+/// An encrypted payload protected by AES-256-GCM.
 /// Provides both confidentiality (encryption) and integrity (authentication tag).
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct BlockContent {

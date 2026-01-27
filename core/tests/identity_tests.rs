@@ -1,5 +1,5 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::Signature;
+use sovereign_core::crypto::{Signature, SovereignSigner};
 use sovereign_core::identity::SecretIdentity;
 
 #[test]

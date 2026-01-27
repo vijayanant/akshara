@@ -1,5 +1,6 @@
 use crate::crypto::{
     EncryptionPublicKey, EncryptionSecretKey, Signature, SigningPublicKey, SigningSecretKey,
+    SovereignSigner,
 };
 use crate::error::SovereignError;
 use bip39::{Language, Mnemonic};
@@ -60,7 +61,6 @@ impl SecretIdentity {
     }
 
     /// Derives an identity from a BIP-39 mnemonic using the SLIP-0010 standard.
-    /// Default path: m / 44' / 999' / 0' / 0' / 0'
     pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, SovereignError> {
         let mnemonic = Mnemonic::parse_in_normalized(Language::English, phrase)
             .map_err(|e| SovereignError::MnemonicError(e.to_string()))?;
@@ -128,17 +128,24 @@ impl SecretIdentity {
         &self.signing_key
     }
 
-    pub fn sign(&self, message: &[u8]) -> Signature {
-        let key = SigningKey::from_bytes(self.signing_key.as_bytes());
-        let sig = key.sign(message);
-        Signature::new(sig.to_vec())
-    }
-
     pub fn public(&self) -> &Identity {
         &self.public
     }
 
     pub fn encryption_key(&self) -> &EncryptionSecretKey {
         &self.encryption_key
+    }
+}
+
+impl SovereignSigner for SecretIdentity {
+    fn sign(&self, message: &[u8]) -> Signature {
+        // Regenerate key from secure bytes to minimize exposure time
+        let key = SigningKey::from_bytes(self.signing_key.as_bytes());
+        let sig = key.sign(message);
+        Signature::new(sig.to_vec())
+    }
+
+    fn public_key(&self) -> SigningPublicKey {
+        self.public.signing_key().clone()
     }
 }

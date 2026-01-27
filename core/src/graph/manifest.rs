@@ -1,7 +1,6 @@
-use crate::crypto::{Signature, SigningPublicKey};
+use crate::crypto::{Signature, SigningPublicKey, SovereignSigner};
 use crate::error::SovereignError;
 use crate::graph::{BlockId, ManifestId};
-use crate::identity::SecretIdentity;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -44,22 +43,24 @@ pub struct ManifestDiff {
 
 impl Manifest {
     /// Creates and signs a new manifest snapshot.
+    ///
+    /// Accepts any `SovereignSigner`, allowing for hardware wallets or remote signers.
     pub fn new(
         document_id: Uuid,
         active_blocks: Vec<BlockId>,
         parents: Vec<ManifestId>,
-        identity: &SecretIdentity,
+        signer: &impl SovereignSigner,
     ) -> Self {
         let span = span!(Level::INFO, "manifest_new", document_id = %document_id);
         let _enter = span.enter();
 
         let merkle_root = Self::compute_merkle_root(&active_blocks);
         let created_at = 0; // TODO: Integrate real system time
-        let author = identity.public().signing_key().clone();
+        let author = signer.public_key();
 
         let id = Self::compute_id(&merkle_root, &document_id, &parents, &author, created_at);
 
-        let signature = identity.sign(id.as_ref());
+        let signature = signer.sign(id.as_ref());
 
         info!(manifest_id = ?id, "Manifest created");
         counter!("sovereign.manifest.created").increment(1);
