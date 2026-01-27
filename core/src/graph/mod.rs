@@ -6,7 +6,7 @@ pub mod walker;
 
 pub use block::Block;
 pub use manifest::Manifest;
-pub use walker::GraphWalker;
+pub use walker::{BlockWalker, GraphWalker}; // Added BlockWalker
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct BlockId(pub [u8; 32]);

@@ -5,6 +5,7 @@ use crate::identity::SecretIdentity;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use tracing::{Level, info, span};
 use uuid::Uuid;
 
@@ -34,6 +35,13 @@ pub struct Manifest {
     created_at: i64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManifestDiff {
+    pub left_only: Vec<BlockId>,
+    pub right_only: Vec<BlockId>,
+    pub shared: Vec<BlockId>,
+}
+
 impl Manifest {
     /// Creates and signs a new manifest snapshot.
     pub fn new(
@@ -50,6 +58,7 @@ impl Manifest {
         let author = identity.public().signing_key().clone();
 
         let id = Self::compute_id(&merkle_root, &document_id, &parents, &author, created_at);
+
         let signature = identity.sign(id.as_ref());
 
         info!(manifest_id = ?id, "Manifest created");
@@ -105,11 +114,13 @@ impl Manifest {
         let span = span!(Level::DEBUG, "manifest_verify_integrity", manifest_id = ?self.id);
         let _enter = span.enter();
 
+        // 1. Re-calculate Merkle Root
         let calculated_root = Self::compute_merkle_root(&self.active_blocks);
         if self.merkle_root != calculated_root {
             return Err(SovereignError::ManifestMerkleMismatch(self.id));
         }
 
+        // 2. Re-calculate ID
         let calculated_id = Self::compute_id(
             &self.merkle_root,
             &self.document_id,
@@ -123,11 +134,31 @@ impl Manifest {
             ));
         }
 
+        // 3. Verify signature
         self.author
             .verify(self.id.as_ref(), &self.signature)
             .map_err(|e| SovereignError::SignatureFailure(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Calculates the difference between this manifest (Left) and another (Right).
+    ///
+    /// Returns a `ManifestDiff` struct containing blocks exclusive to each side and shared blocks.
+    /// This is the foundation for 3-way merge logic.
+    pub fn diff(&self, right: &Manifest, _base: Option<&Manifest>) -> ManifestDiff {
+        let left_set: HashSet<_> = self.active_blocks.iter().cloned().collect();
+        let right_set: HashSet<_> = right.active_blocks.iter().cloned().collect();
+
+        let left_only: Vec<_> = left_set.difference(&right_set).cloned().collect();
+        let right_only: Vec<_> = right_set.difference(&left_set).cloned().collect();
+        let shared: Vec<_> = left_set.intersection(&right_set).cloned().collect();
+
+        ManifestDiff {
+            left_only,
+            right_only,
+            shared,
+        }
     }
 
     /// Computes a Merkle Root from a list of block IDs using pairwise recursive hashing.

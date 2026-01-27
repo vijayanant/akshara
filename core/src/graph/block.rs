@@ -89,6 +89,10 @@ impl Block {
         &self.block_type
     }
 
+    pub fn parents(&self) -> &[BlockId] {
+        &self.parents
+    }
+
     /// Validates the internal consistency of the block.
     ///
     /// This performs two critical security checks:
