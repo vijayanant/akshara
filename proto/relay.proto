@@ -1,0 +1,107 @@
+syntax = "proto3";
+package sovereign.relay.v1;
+
+// --- Core Data Structures (Mirrors sovereign-core) ---
+
+message BlockId { bytes val = 1; }
+message ManifestId { bytes val = 1; }
+message Signature { bytes val = 1; }
+message PublicKey { bytes val = 2; }
+
+message BlockContent {
+    bytes ciphertext = 1;
+    bytes nonce = 2;
+}
+
+message Block {
+    BlockId id = 1;
+    PublicKey author_key = 2;
+    Signature signature = 3;
+    BlockContent content = 4;
+    string rank = 5;
+    string block_type = 6;
+    repeated BlockId parents = 7;
+}
+
+message Manifest {
+    ManifestId id = 1;
+    string graph_id = 2; // UUID string (formerly document_id)
+    repeated ManifestId parents = 3;
+    repeated BlockId active_blocks = 4;
+    ManifestId merkle_root = 5;
+    PublicKey author_key = 6;
+    Signature signature = 7;
+    int64 created_at = 8;
+}
+
+message Lockbox {
+    PublicKey ephemeral_public_key = 1;
+    BlockContent content = 2; // Encrypted DocKey
+}
+
+// --- Service: Sync & Data ---
+
+service SyncService {
+    // Negotiation: Client sends heads, Server streams missing objects.
+    rpc Sync (SyncRequest) returns (stream SyncResponseItem);
+    
+    // Upload: Client pushes new state.
+    rpc Push (PushRequest) returns (PushResponse);
+}
+
+message SyncRequest {
+    string graph_id = 1;
+    repeated ManifestId heads = 2;
+}
+
+message SyncResponseItem {
+    oneof item {
+        Manifest manifest = 1;
+        Block block = 2;
+    }
+}
+
+message PushRequest {
+    repeated Manifest manifests = 1;
+    repeated Block blocks = 2;
+}
+
+message PushResponse {
+    bool success = 1;
+}
+
+// --- Service: Discovery & Inventory ---
+
+service DiscoveryService {
+    // "Dashboard": Get all graphs accessible by the caller.
+    rpc ListGraphs (ListGraphsRequest) returns (ListGraphsResponse);
+    
+    // "Invite": Publish a lockbox for another user.
+    rpc PushLockbox (PushLockboxRequest) returns (PushLockboxResponse);
+}
+
+message ListGraphsRequest {
+    // Caller identity
+    PublicKey recipient_key = 1;
+}
+
+message ListGraphsResponse {
+    repeated GraphSummary summaries = 1;
+}
+
+message GraphSummary {
+    string graph_id = 1;
+    Lockbox lockbox = 2;
+    ManifestId head_manifest_id = 3;
+    Block metadata_block = 4; // The app-specific hint (title, type, etc)
+}
+
+message PushLockboxRequest {
+    string graph_id = 1;
+    PublicKey recipient_key = 2;
+    Lockbox lockbox = 3;
+}
+
+message PushLockboxResponse {
+    bool success = 1;
+}

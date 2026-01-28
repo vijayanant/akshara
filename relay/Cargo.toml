@@ -1,0 +1,20 @@
+[package]
+name = "sovereign-relay"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sovereign-core = { path = "../core" }
+
+tonic = "0.12.1"
+prost = "0.13.1"
+tokio = { version = "1.38.0", features = ["full"] }
+tokio-stream = { version = "0.1.15", features = ["net"] }
+async-trait = "0.1.80"
+serde = { version = "1.0.203", features = ["derive"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+uuid = { version = "1.8.0", features = ["v4"] }
+
+[build-dependencies]
+tonic-build = "0.12.1"
