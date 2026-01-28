@@ -1,17 +1,20 @@
 use async_trait::async_trait;
+use rand::rngs::OsRng;
 use sovereign_core::error::SovereignError;
-use sovereign_core::graph::ManifestId;
+use sovereign_core::graph::{Block, BlockId, DocId, Manifest, ManifestId};
+use sovereign_core::identity::SecretIdentity;
+use sovereign_core::store::{GraphStore, InMemoryStore};
 use sovereign_core::sync::{SyncRequest, SyncResponse};
 use sovereign_sdk::sync::{NetworkClient, SyncClient, SyncState};
 
-#[test]
-fn client_starts_in_idle_state() {
-    let client = SyncClient::new();
-    assert_eq!(client.state(), SyncState::Idle);
-}
-
+#[derive(Default)]
 struct MockNetwork {
     should_have_missing: bool,
+    should_fail_request: bool,
+    should_fail_fetch: bool,
+    tamper_block: bool,
+    manifest: Option<Manifest>,
+    block: Option<Block>,
 }
 
 #[async_trait]
@@ -20,21 +23,74 @@ impl NetworkClient for MockNetwork {
         &self,
         _request: SyncRequest,
     ) -> Result<SyncResponse, SovereignError> {
+        if self.should_fail_request {
+            return Err(SovereignError::InternalError("Network Error".to_string()));
+        }
+
         if self.should_have_missing {
-            // Return one missing manifest ID
-            Ok(SyncResponse::new(vec![ManifestId([1u8; 32])], vec![]))
+            let m_id = self.manifest.as_ref().unwrap().id();
+            let b_id = self.block.as_ref().unwrap().id();
+            Ok(SyncResponse::new(vec![m_id], vec![b_id]))
         } else {
             Ok(SyncResponse::new(vec![], vec![]))
         }
     }
+
+    async fn fetch_manifest(&self, _id: &ManifestId) -> Result<Manifest, SovereignError> {
+        if self.should_fail_fetch {
+            return Err(SovereignError::InternalError("Fetch Error".to_string()));
+        }
+        Ok(self.manifest.clone().unwrap())
+    }
+
+    async fn fetch_block(&self, _id: &BlockId) -> Result<Block, SovereignError> {
+        if self.should_fail_fetch {
+            return Err(SovereignError::InternalError("Fetch Error".to_string()));
+        }
+
+        let block = self.block.clone().unwrap();
+        if self.tamper_block {
+            // Placeholder for tampering logic
+        }
+        Ok(block)
+    }
+}
+
+// ... helper to create valid data ...
+fn create_valid_data() -> (Manifest, Block) {
+    let mut rng = OsRng;
+    let identity = SecretIdentity::generate(&mut rng);
+    let doc_id = DocId::new();
+
+    let block = Block::new(
+        sovereign_core::crypto::BlockContent::encrypt(
+            &[],
+            &sovereign_core::crypto::DocKey::generate(&mut rng),
+            [0u8; 12],
+        )
+        .unwrap(),
+        "a".to_string(),
+        "p".to_string(),
+        vec![],
+        &identity,
+    );
+
+    let manifest = Manifest::new(doc_id, vec![block.id()], vec![], &identity);
+    (manifest, block)
+}
+
+#[test]
+fn client_starts_in_idle_state() {
+    let store = InMemoryStore::new();
+    let client = SyncClient::new(store);
+    assert_eq!(client.state(), SyncState::Idle);
 }
 
 #[tokio::test]
 async fn client_transitions_to_idle_if_already_synced() {
-    let network = MockNetwork {
-        should_have_missing: false,
-    };
-    let mut client = SyncClient::new();
+    let store = InMemoryStore::new();
+    let network = MockNetwork::default();
+    let mut client = SyncClient::new(store);
 
     client.perform_sync(&network, vec![]).await.unwrap();
 
@@ -42,13 +98,50 @@ async fn client_transitions_to_idle_if_already_synced() {
 }
 
 #[tokio::test]
-async fn client_transitions_to_fetching_if_missing_data() {
+async fn client_fetches_and_saves_missing_data() {
+    let (manifest, block) = create_valid_data();
+    let store = InMemoryStore::new();
     let network = MockNetwork {
         should_have_missing: true,
+        manifest: Some(manifest.clone()),
+        block: Some(block.clone()),
+        ..Default::default()
     };
-    let mut client = SyncClient::new();
+    let mut client = SyncClient::new(store.clone());
 
     client.perform_sync(&network, vec![]).await.unwrap();
 
-    assert_eq!(client.state(), SyncState::Fetching);
+    assert_eq!(client.state(), SyncState::Idle);
+    assert!(store.get_manifest(&manifest.id()).unwrap().is_some());
+    assert!(store.get_block(&block.id()).unwrap().is_some());
+}
+
+#[tokio::test]
+async fn client_handles_network_error_gracefully() {
+    let store = InMemoryStore::new();
+    let network = MockNetwork {
+        should_fail_request: true,
+        ..Default::default()
+    };
+    let mut client = SyncClient::new(store);
+
+    let result = client.perform_sync(&network, vec![]).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn client_handles_partial_fetch_failure() {
+    let (manifest, block) = create_valid_data();
+    let store = InMemoryStore::new();
+    let network = MockNetwork {
+        should_have_missing: true,
+        should_fail_fetch: true,
+        manifest: Some(manifest),
+        block: Some(block),
+        ..Default::default()
+    };
+    let mut client = SyncClient::new(store.clone());
+
+    let result = client.perform_sync(&network, vec![]).await;
+    assert!(result.is_err());
 }

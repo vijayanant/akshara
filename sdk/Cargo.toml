@@ -4,11 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-
 sovereign-core = { path = "../core" }
-
 tokio = { version = "1.38.0", features = ["full"] }
-
 async-trait = "0.1.80"
 
-
+[dev-dependencies]
+rand = "0.8.5"

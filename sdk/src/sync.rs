@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use sovereign_core::error::SovereignError;
-use sovereign_core::graph::ManifestId;
+use sovereign_core::graph::{Block, BlockId, Manifest, ManifestId};
+use sovereign_core::store::GraphStore;
 use sovereign_core::sync::{SyncRequest, SyncResponse};
 
 /// A trait for network operations during synchronization.
@@ -8,6 +9,10 @@ use sovereign_core::sync::{SyncRequest, SyncResponse};
 pub trait NetworkClient: Send + Sync {
     async fn send_sync_request(&self, request: SyncRequest)
     -> Result<SyncResponse, SovereignError>;
+
+    async fn fetch_manifest(&self, id: &ManifestId) -> Result<Manifest, SovereignError>;
+
+    async fn fetch_block(&self, id: &BlockId) -> Result<Block, SovereignError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,20 +23,16 @@ pub enum SyncState {
     Merging,
 }
 
-pub struct SyncClient {
+pub struct SyncClient<S: GraphStore> {
     state: SyncState,
+    store: S,
 }
 
-impl Default for SyncClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SyncClient {
-    pub fn new() -> Self {
+impl<S: GraphStore> SyncClient<S> {
+    pub fn new(store: S) -> Self {
         Self {
             state: SyncState::Idle,
+            store,
         }
     }
 
@@ -56,7 +57,25 @@ impl SyncClient {
             self.state = SyncState::Idle;
         } else {
             self.state = SyncState::Fetching;
-            // TODO: Implement Fetching logic
+
+            // 1. Fetch Manifests
+            for m_id in response.missing_manifests() {
+                let manifest = network.fetch_manifest(m_id).await?;
+                // Security: Verify integrity before saving
+                manifest.verify_integrity()?;
+                self.store.put_manifest(&manifest)?;
+            }
+
+            // 2. Fetch Blocks
+            for b_id in response.missing_blocks() {
+                let block = network.fetch_block(b_id).await?;
+                // Security: Verify integrity before saving
+                block.verify_integrity()?;
+                self.store.put_block(&block)?;
+            }
+
+            // TODO: Transition to Merging if needed
+            self.state = SyncState::Idle;
         }
 
         Ok(())
