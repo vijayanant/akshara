@@ -131,7 +131,7 @@ impl Block {
         parents: &[BlockId],
     ) -> BlockId {
         let mut hasher = Sha256::new();
-        hasher.update(b"BLOCK_V1");
+        hasher.update(b"SOV_V1_BLOCK");
 
         hasher.update(content.as_bytes());
         hasher.update(content.nonce());

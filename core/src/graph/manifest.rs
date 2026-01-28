@@ -176,7 +176,7 @@ impl Manifest {
             let mut next_level = Vec::new();
             for chunk in nodes.chunks(2) {
                 let mut hasher = Sha256::new();
-                hasher.update(b"SOV_V2_NODE");
+                hasher.update(b"SOV_V1_NODE");
                 hasher.update(chunk[0]);
                 if chunk.len() == 2 {
                     hasher.update(chunk[1]);
@@ -200,7 +200,7 @@ impl Manifest {
         created_at: i64,
     ) -> ManifestId {
         let mut hasher = Sha256::new();
-        hasher.update(b"SOV_V2_MANIFEST");
+        hasher.update(b"SOV_V1_MANIFEST");
         hasher.update(merkle_root.as_ref());
         hasher.update(document_id.0.as_bytes());
         for p in parents {
