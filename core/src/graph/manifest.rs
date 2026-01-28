@@ -1,5 +1,5 @@
 use crate::crypto::{Signature, SigningPublicKey, SovereignSigner};
-use crate::error::SovereignError;
+use crate::error::{CryptoError, IntegrityError, SovereignError};
 use crate::graph::{BlockId, DocId, ManifestId};
 use metrics::counter;
 use serde::{Deserialize, Serialize};
@@ -118,7 +118,9 @@ impl Manifest {
         // 1. Re-calculate Merkle Root
         let calculated_root = Self::compute_merkle_root(&self.active_blocks);
         if self.merkle_root != calculated_root {
-            return Err(SovereignError::ManifestMerkleMismatch(self.id));
+            return Err(SovereignError::Integrity(
+                IntegrityError::ManifestMerkleMismatch(self.id),
+            ));
         }
 
         // 2. Re-calculate ID
@@ -130,15 +132,15 @@ impl Manifest {
             self.created_at,
         );
         if self.id != calculated_id {
-            return Err(SovereignError::Unauthorized(
-                "Manifest ID mismatch".to_string(),
+            return Err(SovereignError::Integrity(
+                IntegrityError::ManifestIdMismatch(self.id),
             ));
         }
 
         // 3. Verify signature
         self.author
             .verify(self.id.as_ref(), &self.signature)
-            .map_err(|e| SovereignError::SignatureFailure(e.to_string()))?;
+            .map_err(|e| SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
 
         Ok(())
     }

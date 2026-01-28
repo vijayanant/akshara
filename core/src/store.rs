@@ -1,5 +1,5 @@
 use crate::crypto::{EncryptionPublicKey, Lockbox};
-use crate::error::SovereignError;
+use crate::error::{SovereignError, StoreError};
 use crate::graph::{Block, BlockId, DocId, Manifest, ManifestId};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -46,7 +46,7 @@ impl GraphStore for InMemoryStore {
     fn put_block(&mut self, block: &Block) -> Result<(), SovereignError> {
         self.blocks
             .write()
-            .map_err(|e| SovereignError::InternalError(e.to_string()))?
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?
             .insert(block.id(), block.clone());
         Ok(())
     }
@@ -55,14 +55,14 @@ impl GraphStore for InMemoryStore {
         let blocks = self
             .blocks
             .read()
-            .map_err(|e| SovereignError::InternalError(e.to_string()))?;
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
         Ok(blocks.get(id).cloned())
     }
 
     fn put_manifest(&mut self, manifest: &Manifest) -> Result<(), SovereignError> {
         self.manifests
             .write()
-            .map_err(|e| SovereignError::InternalError(e.to_string()))?
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?
             .insert(manifest.id(), manifest.clone());
         Ok(())
     }
@@ -71,7 +71,7 @@ impl GraphStore for InMemoryStore {
         let manifests = self
             .manifests
             .read()
-            .map_err(|e| SovereignError::InternalError(e.to_string()))?;
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
         Ok(manifests.get(id).cloned())
     }
 
@@ -84,7 +84,7 @@ impl GraphStore for InMemoryStore {
         let mut lockboxes = self
             .lockboxes
             .write()
-            .map_err(|e| SovereignError::InternalError(e.to_string()))?;
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
         let entry = lockboxes.entry(recipient.clone()).or_insert_with(Vec::new);
 
         entry.push((doc_id, lockbox.clone()));
@@ -98,7 +98,7 @@ impl GraphStore for InMemoryStore {
         let lockboxes = self
             .lockboxes
             .read()
-            .map_err(|e| SovereignError::InternalError(e.to_string()))?;
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
         Ok(lockboxes.get(recipient).cloned().unwrap_or_default())
     }
 }

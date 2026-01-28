@@ -3,44 +3,66 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SovereignError {
-    // --- State & Lifecycle ---
-    #[error("Invalid state: expected {expected}, found {found}")]
-    InvalidState { expected: String, found: String },
+    #[error("Cryptographic failure: {0}")]
+    Crypto(#[from] CryptoError),
 
-    #[error("Pact cannot be sealed because it is empty")]
-    EmptyPact,
+    #[error("Data integrity failure: {0}")]
+    Integrity(#[from] IntegrityError),
 
-    // --- Authorization & Integrity ---
-    #[error("Unauthorized: {0}")]
-    Unauthorized(String),
+    #[error("Identity management error: {0}")]
+    Identity(#[from] IdentityError),
 
-    #[error("Integrity failure: Block {0:?} has mismatched content hash")]
+    #[error("Storage operation failed: {0}")]
+    Store(#[from] StoreError),
+
+    #[error("Internal system error: {0}")]
+    InternalError(String),
+}
+
+#[derive(Error, Debug)]
+pub enum CryptoError {
+    #[error("Encryption operation failed: {0}")]
+    EncryptionFailed(String),
+
+    #[error("Decryption operation failed (wrong key or tampered data): {0}")]
+    DecryptionFailed(String),
+
+    #[error("Digital signature verification failed: {0}")]
+    InvalidSignature(String),
+
+    #[error("Invalid key format or length: {0}")]
+    InvalidKeyFormat(String),
+}
+
+#[derive(Error, Debug)]
+pub enum IntegrityError {
+    #[error("Block ID {0:?} does not match its content hash")]
     BlockIdMismatch(BlockId),
 
-    #[error("Integrity failure: Manifest {0:?} has mismatched Merkle root")]
+    #[error("Manifest {0:?} Merkle Root does not match active blocks")]
     ManifestMerkleMismatch(ManifestId),
 
-    #[error("Signature verification failed: {0}")]
-    SignatureFailure(String),
+    #[error("Manifest {0:?} ID does not match its metadata hash")]
+    ManifestIdMismatch(ManifestId),
+}
 
-    // --- Cryptography ---
-    #[error("Encryption failed: {0}")]
-    EncryptionError(String),
+#[derive(Error, Debug)]
+pub enum IdentityError {
+    #[error("Mnemonic phrase is invalid: {0}")]
+    MnemonicInvalid(String),
 
-    #[error("Decryption failed: {0}")]
-    DecryptionError(String),
+    #[error("Key derivation failed: {0}")]
+    DerivationFailed(String),
+}
 
-    #[error("Invalid key length: expected {expected}, found {actual}")]
-    InvalidKeyLength { expected: usize, actual: usize },
+#[derive(Error, Debug)]
+pub enum StoreError {
+    #[error("Storage lock is poisoned (concurrency panic)")]
+    LockPoisoned,
 
-    // --- Identity ---
-    #[error("Mnemonic derivation failed: {0}")]
-    MnemonicError(String),
+    #[error("Object not found: {0}")]
+    NotFound(String),
 
-    // --- System ---
-    #[error("Serialization error: {0}")]
-    SerializationError(String),
-
-    #[error("Internal error: {0}")]
-    InternalError(String),
+    #[error("IO Error: {0}")]
+    IoError(String),
 }

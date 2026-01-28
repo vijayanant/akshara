@@ -1,5 +1,5 @@
 use crate::crypto::{BlockContent, Signature, SigningPublicKey, SovereignSigner};
-use crate::error::SovereignError;
+use crate::error::{CryptoError, IntegrityError, SovereignError};
 use crate::graph::BlockId;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
@@ -107,14 +107,16 @@ impl Block {
             Self::compute_id(&self.content, &self.rank, &self.block_type, &self.parents);
         if self.id != calculated_id {
             tracing::error!(stored = ?self.id, calculated = ?calculated_id, "Block ID mismatch");
-            return Err(SovereignError::BlockIdMismatch(self.id));
+            return Err(SovereignError::Integrity(IntegrityError::BlockIdMismatch(
+                self.id,
+            )));
         }
 
         self.author
             .verify(self.id.as_ref(), &self.signature)
             .map_err(|e| {
                 tracing::error!(error = %e, "Block signature verification failed");
-                SovereignError::SignatureFailure(e.to_string())
+                SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string()))
             })?;
 
         Ok(())

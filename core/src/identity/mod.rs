@@ -2,7 +2,7 @@ use crate::crypto::{
     EncryptionPublicKey, EncryptionSecretKey, Signature, SigningPublicKey, SigningSecretKey,
     SovereignSigner,
 };
-use crate::error::SovereignError;
+use crate::error::{IdentityError, SovereignError};
 use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signer, SigningKey};
 use hmac::{Hmac, Mac};
@@ -56,14 +56,15 @@ impl SecretIdentity {
     pub fn generate_mnemonic() -> String {
         let mut entropy = [0u8; 16]; // 16 bytes = 128 bits = 12 words
         OsRng.fill_bytes(&mut entropy);
-        let mnemonic = Mnemonic::from_entropy(&entropy).expect("Failed to generate mnemonic");
+        let mnemonic =
+            Mnemonic::from_entropy(&entropy).expect("RNG failure during mnemonic generation");
         mnemonic.to_string()
     }
 
     /// Derives an identity from a BIP-39 mnemonic using the SLIP-0010 standard.
     pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, SovereignError> {
         let mnemonic = Mnemonic::parse_in_normalized(Language::English, phrase)
-            .map_err(|e| SovereignError::MnemonicError(e.to_string()))?;
+            .map_err(|e| SovereignError::Identity(IdentityError::MnemonicInvalid(e.to_string())))?;
 
         let seed = mnemonic.to_seed(passphrase);
 

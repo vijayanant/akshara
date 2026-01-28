@@ -1,4 +1,4 @@
-use crate::error::SovereignError;
+use crate::error::{CryptoError, SovereignError};
 use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
@@ -30,16 +30,23 @@ impl SigningPublicKey {
         let span = span!(Level::TRACE, "signing_verify");
         let _enter = span.enter();
 
-        let verifying_key = VerifyingKey::from_bytes(&self.0)
-            .map_err(|e| SovereignError::Unauthorized(format!("Invalid public key: {}", e)))?;
+        let verifying_key = VerifyingKey::from_bytes(&self.0).map_err(|e| {
+            SovereignError::Crypto(CryptoError::InvalidKeyFormat(format!(
+                "Invalid public key: {}",
+                e
+            )))
+        })?;
 
         let ed_sig = EdSignature::from_slice(sig.as_bytes()).map_err(|e| {
-            SovereignError::Unauthorized(format!("Invalid signature format: {}", e))
+            SovereignError::Crypto(CryptoError::InvalidKeyFormat(format!(
+                "Invalid signature format: {}",
+                e
+            )))
         })?;
 
         verifying_key.verify(msg, &ed_sig).map_err(|e| {
             debug!(error = %e, "Signature verification failed");
-            SovereignError::Unauthorized(format!("Signature verification failed: {}", e))
+            SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string()))
         })?;
 
         Ok(())
@@ -175,7 +182,10 @@ impl BlockContent {
 
         let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
             error!(error = %e, "AES-GCM encryption failed");
-            SovereignError::EncryptionError(format!("AES-GCM failed: {}", e))
+            SovereignError::Crypto(CryptoError::EncryptionFailed(format!(
+                "AES-GCM failed: {}",
+                e
+            )))
         })?;
 
         Ok(Self {
@@ -197,7 +207,10 @@ impl BlockContent {
             .decrypt(nonce, self.ciphertext.as_slice())
             .map_err(|e| {
                 debug!(error = %e, "AES-GCM decryption failed");
-                SovereignError::Unauthorized(format!("Decryption failed: {}", e))
+                SovereignError::Crypto(CryptoError::DecryptionFailed(format!(
+                    "AES-GCM failed: {}",
+                    e
+                )))
             })?;
 
         Ok(plaintext)
@@ -234,6 +247,7 @@ impl Lockbox {
         let span = span!(Level::DEBUG, "lockbox_create");
         let _enter = span.enter();
 
+        // Generate an ephemeral keypair for this specific lockbox
         let ephemeral_secret = StaticSecret::random_from_rng(&mut *rng);
         let ephemeral_public = XPublicKey::from(&ephemeral_secret);
 
@@ -269,14 +283,17 @@ impl Lockbox {
         let shared_secret = recipient_secret_scalar.diffie_hellman(&ephemeral_public_point);
         let shared_key = DocKey::new(*shared_secret.as_bytes());
 
+        // Decrypt the encapsulated Document Key
         let decrypted_bytes = self.content.decrypt(&shared_key).map_err(|e| {
-            debug!(error = %e, "Failed to decrypt lockbox content");
+            debug!(error = ?e, "Failed to decrypt lockbox content");
             e
         })?;
 
         let key_bytes: [u8; 32] = decrypted_bytes.try_into().map_err(|_| {
             error!("Decrypted key length mismatch");
-            SovereignError::SerializationError("Decrypted key is not 32 bytes".to_string())
+            SovereignError::Crypto(CryptoError::InvalidKeyFormat(
+                "Decrypted key is not 32 bytes".to_string(),
+            ))
         })?;
 
         trace!("Lockbox opened successfully");
