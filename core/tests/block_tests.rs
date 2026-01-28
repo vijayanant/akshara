@@ -233,3 +233,22 @@ fn block_supports_multiple_parents() {
 
     assert!(block.verify_integrity().is_ok());
 }
+
+#[test]
+fn block_restores_from_raw_parts() {
+    let (original, _) = create_standard_block(&[10, 20, 30]);
+
+    // Simulate extraction from wire/storage
+    let restored = Block::from_raw_parts(
+        original.id(),
+        original.author().clone(),
+        original.signature().clone(),
+        original.content().clone(),
+        original.rank().to_string(),
+        original.block_type().to_string(),
+        original.parents().to_vec(),
+    );
+
+    assert_eq!(restored.id(), original.id());
+    assert!(restored.verify_integrity().is_ok());
+}

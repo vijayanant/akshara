@@ -130,3 +130,24 @@ fn manifest_integrity_fails_on_tampered_active_blocks() {
     assert!(result.is_err());
     // We can even check the error type if we want specific mismatch error
 }
+
+#[test]
+fn manifest_restores_from_raw_parts() {
+    let mut rng = OsRng;
+    let identity = SecretIdentity::generate(&mut rng);
+    let original = Manifest::new(DocId::new(), vec![], vec![], &identity);
+
+    let restored = Manifest::from_raw_parts(
+        original.id(),
+        original.document_id(),
+        original.parents().to_vec(),
+        original.active_blocks().to_vec(),
+        original.merkle_root(),
+        original.author().clone(),
+        original.signature().clone(),
+        original.created_at(),
+    );
+
+    assert_eq!(restored.id(), original.id());
+    assert!(restored.verify_integrity().is_ok());
+}

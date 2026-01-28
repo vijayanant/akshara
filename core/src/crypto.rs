@@ -223,6 +223,12 @@ impl BlockContent {
     pub fn nonce(&self) -> &[u8; 12] {
         &self.nonce
     }
+
+    /// Restores a BlockContent from its raw components.
+    /// Used for mapping from wire/storage formats.
+    pub fn from_raw_parts(ciphertext: Vec<u8>, nonce: [u8; 12]) -> Self {
+        Self { ciphertext, nonce }
+    }
 }
 
 /// A Key Encapsulation Mechanism (KEM) used to securely share a `DocKey` with a recipient.
@@ -299,5 +305,16 @@ impl Lockbox {
         trace!("Lockbox opened successfully");
 
         Ok(DocKey::new(key_bytes))
+    }
+
+    /// Restores a Lockbox from its raw components.
+    pub fn from_raw_parts(
+        ephemeral_public_key: EncryptionPublicKey,
+        content: BlockContent,
+    ) -> Self {
+        Self {
+            ephemeral_public_key,
+            content,
+        }
     }
 }

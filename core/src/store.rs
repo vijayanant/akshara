@@ -1,7 +1,7 @@
 use crate::crypto::{EncryptionPublicKey, Lockbox};
 use crate::error::{SovereignError, StoreError};
 use crate::graph::{Block, BlockId, DocId, Manifest, ManifestId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 /// A generic interface for storing and retrieving graph objects.
@@ -11,6 +11,9 @@ pub trait GraphStore {
 
     fn put_manifest(&mut self, manifest: &Manifest) -> Result<(), SovereignError>;
     fn get_manifest(&self, id: &ManifestId) -> Result<Option<Manifest>, SovereignError>;
+
+    /// Returns the current heads (unreferenced leaf manifests) for a given document.
+    fn get_heads(&self, doc_id: &DocId) -> Result<Vec<ManifestId>, SovereignError>;
 
     // Lockbox Storage
     fn put_lockbox(
@@ -32,8 +35,9 @@ type RecipientLockboxes = Vec<(DocId, Lockbox)>;
 pub struct InMemoryStore {
     blocks: Arc<RwLock<HashMap<BlockId, Block>>>,
     manifests: Arc<RwLock<HashMap<ManifestId, Manifest>>>,
-    // Map<RecipientKey, List<(DocId, Lockbox)>>
     lockboxes: Arc<RwLock<HashMap<EncryptionPublicKey, RecipientLockboxes>>>,
+    // Track current heads per document
+    heads: Arc<RwLock<HashMap<DocId, HashSet<ManifestId>>>>,
 }
 
 impl InMemoryStore {
@@ -60,10 +64,34 @@ impl GraphStore for InMemoryStore {
     }
 
     fn put_manifest(&mut self, manifest: &Manifest) -> Result<(), SovereignError> {
-        self.manifests
+        let mut manifests = self
+            .manifests
             .write()
-            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?
-            .insert(manifest.id(), manifest.clone());
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
+
+        let mut heads_map = self
+            .heads
+            .write()
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
+
+        let doc_id = manifest.document_id();
+        let m_id = manifest.id();
+
+        // 1. Save manifest
+        manifests.insert(m_id, manifest.clone());
+
+        // 2. Update heads: New manifest is a potential head
+        let doc_heads = heads_map.entry(doc_id).or_insert_with(HashSet::new);
+        doc_heads.insert(m_id);
+
+        // 3. Update heads: Its parents are no longer heads
+        // FIXME: This logic assumes topological ordering (parents arrive before children).
+        // If a child arrives before a parent, the parent will incorrectly remain a "head".
+        // This is safe but inefficient for sync. Long-term fix: parent-of reverse index.
+        for parent_id in manifest.parents() {
+            doc_heads.remove(parent_id);
+        }
+
         Ok(())
     }
 
@@ -73,6 +101,20 @@ impl GraphStore for InMemoryStore {
             .read()
             .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
         Ok(manifests.get(id).cloned())
+    }
+
+    fn get_heads(&self, doc_id: &DocId) -> Result<Vec<ManifestId>, SovereignError> {
+        let heads_map = self
+            .heads
+            .read()
+            .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
+
+        let result = heads_map
+            .get(doc_id)
+            .map(|h| h.iter().cloned().collect())
+            .unwrap_or_default();
+
+        Ok(result)
     }
 
     fn put_lockbox(

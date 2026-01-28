@@ -105,6 +105,35 @@ impl Manifest {
         self.merkle_root
     }
 
+    pub fn created_at(&self) -> i64 {
+        self.created_at
+    }
+
+    /// Restores a Manifest from its raw components.
+    /// Used for mapping from wire/storage formats.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_raw_parts(
+        id: ManifestId,
+        document_id: DocId,
+        parents: Vec<ManifestId>,
+        active_blocks: Vec<BlockId>,
+        merkle_root: ManifestId,
+        author: SigningPublicKey,
+        signature: Signature,
+        created_at: i64,
+    ) -> Self {
+        Self {
+            id,
+            document_id,
+            parents,
+            active_blocks,
+            merkle_root,
+            author,
+            signature,
+            created_at,
+        }
+    }
+
     /// Verifies the cryptographic integrity of the manifest.
     ///
     /// Ensures that:

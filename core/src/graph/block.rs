@@ -94,6 +94,28 @@ impl Block {
         &self.parents
     }
 
+    /// Restores a Block from its raw components.
+    /// Used for mapping from wire/storage formats.
+    pub fn from_raw_parts(
+        id: BlockId,
+        author: SigningPublicKey,
+        signature: Signature,
+        content: BlockContent,
+        rank: String,
+        block_type: String,
+        parents: Vec<BlockId>,
+    ) -> Self {
+        Self {
+            id,
+            author,
+            signature,
+            content,
+            rank,
+            block_type,
+            parents,
+        }
+    }
+
     /// Validates the internal consistency of the block.
     ///
     /// This performs two critical security checks:
