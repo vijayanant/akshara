@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use rand::rngs::OsRng;
-use sovereign_core::error::SovereignError;
 use sovereign_core::graph::{Block, BlockId, DocId, Manifest, ManifestId};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
 use sovereign_core::sync::{SyncRequest, SyncResponse};
+use sovereign_sdk::error::{NetworkError, SdkError};
 use sovereign_sdk::sync::{NetworkClient, SyncClient, SyncState};
 
 #[derive(Default)]
@@ -19,12 +19,11 @@ struct MockNetwork {
 
 #[async_trait]
 impl NetworkClient for MockNetwork {
-    async fn send_sync_request(
-        &self,
-        _request: SyncRequest,
-    ) -> Result<SyncResponse, SovereignError> {
+    async fn send_sync_request(&self, _request: SyncRequest) -> Result<SyncResponse, SdkError> {
         if self.should_fail_request {
-            return Err(SovereignError::InternalError("Network Error".to_string()));
+            return Err(SdkError::Network(NetworkError::ConnectionFailed(
+                "Mock Failure".to_string(),
+            )));
         }
 
         if self.should_have_missing {
@@ -36,16 +35,16 @@ impl NetworkClient for MockNetwork {
         }
     }
 
-    async fn fetch_manifest(&self, _id: &ManifestId) -> Result<Manifest, SovereignError> {
+    async fn fetch_manifest(&self, _id: &ManifestId) -> Result<Manifest, SdkError> {
         if self.should_fail_fetch {
-            return Err(SovereignError::InternalError("Fetch Error".to_string()));
+            return Err(SdkError::Network(NetworkError::Timeout));
         }
         Ok(self.manifest.clone().unwrap())
     }
 
-    async fn fetch_block(&self, _id: &BlockId) -> Result<Block, SovereignError> {
+    async fn fetch_block(&self, _id: &BlockId) -> Result<Block, SdkError> {
         if self.should_fail_fetch {
-            return Err(SovereignError::InternalError("Fetch Error".to_string()));
+            return Err(SdkError::Network(NetworkError::Timeout));
         }
 
         let block = self.block.clone().unwrap();
@@ -124,9 +123,13 @@ async fn client_handles_network_error_gracefully() {
         ..Default::default()
     };
     let mut client = SyncClient::new(store);
-
     let result = client.perform_sync(&network, vec![]).await;
-    assert!(result.is_err());
+
+    // Assert it is a Network Error
+    match result {
+        Err(SdkError::Network(_)) => {}
+        _ => panic!("Expected NetworkError"),
+    }
 }
 
 #[tokio::test]
@@ -140,8 +143,13 @@ async fn client_handles_partial_fetch_failure() {
         block: Some(block),
         ..Default::default()
     };
-    let mut client = SyncClient::new(store.clone());
 
+    let mut client = SyncClient::new(store.clone());
     let result = client.perform_sync(&network, vec![]).await;
-    assert!(result.is_err());
+
+    // Assert it is a Network Error
+    match result {
+        Err(SdkError::Network(_)) => {}
+        _ => panic!("Expected NetworkError"),
+    }
 }
