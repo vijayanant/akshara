@@ -1,12 +1,12 @@
 use crate::error::RelayError;
-use crate::mapping::StatusWrapper;
-use crate::sovereign_relay::v1::sync_service_server::SyncService;
-use crate::sovereign_relay::v1::*;
 use async_stream::try_stream;
 use sovereign_core::graph::{Block, GraphId, Manifest};
 use sovereign_core::store::GraphStore;
 use sovereign_core::store::InMemoryStore;
 use sovereign_core::sync::{SyncEngine, SyncRequest as CoreSyncRequest};
+use sovereign_wire::mapping::StatusWrapper;
+use sovereign_wire::v1::sync_service_server::SyncService;
+use sovereign_wire::v1::*;
 use std::convert::TryInto;
 use std::pin::Pin;
 use std::sync::Arc;

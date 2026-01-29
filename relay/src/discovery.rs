@@ -1,10 +1,10 @@
 use crate::error::RelayError;
-use crate::mapping::StatusWrapper;
-use crate::sovereign_relay::v1::discovery_service_server::DiscoveryService;
-use crate::sovereign_relay::v1::*;
 use sovereign_core::graph::GraphId;
 use sovereign_core::store::GraphStore;
 use sovereign_core::store::InMemoryStore;
+use sovereign_wire::mapping::StatusWrapper;
+use sovereign_wire::v1::discovery_service_server::DiscoveryService;
+use sovereign_wire::v1::*;
 use std::convert::TryInto;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
@@ -45,6 +45,7 @@ impl DiscoveryService for RelayDiscoveryService {
                 .map_err(RelayError::from)
                 .map_err(Status::from)?;
 
+            // Flatten logic
             let head_id = match heads.first() {
                 Some(id) => id,
                 None => continue,

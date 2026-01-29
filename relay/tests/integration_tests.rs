@@ -4,14 +4,13 @@ use sovereign_core::graph::{Block, GraphId, Manifest};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::InMemoryStore;
 use sovereign_relay::discovery::RelayDiscoveryService;
-use sovereign_relay::sovereign_relay::v1::discovery_service_client::DiscoveryServiceClient;
-use sovereign_relay::sovereign_relay::v1::discovery_service_server::DiscoveryServiceServer;
-use sovereign_relay::sovereign_relay::v1::sync_service_client::SyncServiceClient;
-use sovereign_relay::sovereign_relay::v1::sync_service_server::SyncServiceServer;
-use sovereign_relay::sovereign_relay::v1::{
-    ListGraphsRequest, PushLockboxRequest, PushRequest, SyncRequest,
-};
 use sovereign_relay::sync::RelaySyncService;
+use sovereign_wire::mapping::StatusWrapper;
+use sovereign_wire::v1::discovery_service_client::DiscoveryServiceClient;
+use sovereign_wire::v1::discovery_service_server::DiscoveryServiceServer;
+use sovereign_wire::v1::sync_service_client::SyncServiceClient;
+use sovereign_wire::v1::sync_service_server::SyncServiceServer;
+use sovereign_wire::v1::{ListGraphsRequest, PushLockboxRequest, PushRequest, SyncRequest};
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,7 +115,7 @@ async fn integration_full_collaboration_lifecycle() {
     let mut received_manifest = None;
     let mut received_block = None;
 
-    use sovereign_relay::sovereign_relay::v1::sync_response_item::Item;
+    use sovereign_wire::v1::sync_response_item::Item;
     while let Some(item_result) = stream.message().await.unwrap() {
         match item_result.item {
             Some(Item::Manifest(m)) => received_manifest = Some(m),
@@ -129,7 +128,6 @@ async fn integration_full_collaboration_lifecycle() {
     let m_proto = received_manifest.expect("Missing manifest in sync");
     let b_proto = received_block.expect("Missing block in sync");
 
-    use sovereign_relay::mapping::StatusWrapper;
     let m: Manifest = m_proto.try_into().map_err(|e: StatusWrapper| e.0).unwrap();
     let b: Block = b_proto.try_into().map_err(|e: StatusWrapper| e.0).unwrap();
 

@@ -1,4 +1,4 @@
-use crate::sovereign_relay::v1 as proto;
+use crate::v1 as proto;
 use sovereign_core::crypto::{
     BlockContent, EncryptionPublicKey, Lockbox, Signature as CoreSignature, SigningPublicKey,
 };

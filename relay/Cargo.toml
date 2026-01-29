@@ -13,6 +13,7 @@ path = "src/bin/server.rs"
 
 [dependencies]
 sovereign-core = { path = "../core" }
+sovereign-wire = { path = "../sovereign-wire" }
 
 tonic = "0.12.1"
 prost = "0.13.1"
@@ -25,9 +26,6 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 uuid = { version = "1.8.0", features = ["v4"] }
 async-stream = "0.3.5"
 thiserror = "1.0.61"
-
-[build-dependencies]
-tonic-build = "0.12.1"
 
 [dev-dependencies]
 rand = "0.8.5"
