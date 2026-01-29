@@ -2,7 +2,7 @@ use crate::error::RelayError;
 use crate::mapping::StatusWrapper;
 use crate::sovereign_relay::v1::discovery_service_server::DiscoveryService;
 use crate::sovereign_relay::v1::*;
-use sovereign_core::graph::DocId;
+use sovereign_core::graph::GraphId;
 use sovereign_core::store::GraphStore;
 use sovereign_core::store::InMemoryStore;
 use std::convert::TryInto;
@@ -90,7 +90,7 @@ impl DiscoveryService for RelayDiscoveryService {
 
         let doc_id = req
             .graph_id
-            .parse::<DocId>()
+            .parse::<GraphId>()
             .map_err(|_| Status::invalid_argument("Invalid graph_id format"))?;
 
         let recipient_key = req

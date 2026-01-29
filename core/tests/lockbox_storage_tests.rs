@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{DocKey, Lockbox};
-use sovereign_core::graph::DocId;
+use sovereign_core::crypto::{GraphKey, Lockbox};
+use sovereign_core::graph::GraphId;
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
 
@@ -9,16 +9,16 @@ fn store_can_save_and_load_lockboxes() {
     let mut rng = OsRng;
     let _sender = SecretIdentity::generate(&mut rng);
     let recipient = SecretIdentity::generate(&mut rng);
-    let doc_id = DocId::new();
-    let doc_key = DocKey::generate(&mut rng);
+    let graph_id = GraphId::new();
+    let graph_key = GraphKey::generate(&mut rng);
 
-    let lockbox = Lockbox::create(recipient.public().encryption_key(), &doc_key, &mut rng)
+    let lockbox = Lockbox::create(recipient.public().encryption_key(), &graph_key, &mut rng)
         .expect("Create failed");
 
     let mut store = InMemoryStore::new();
 
     store
-        .put_lockbox(doc_id, recipient.public().encryption_key(), &lockbox)
+        .put_lockbox(graph_id, recipient.public().encryption_key(), &lockbox)
         .unwrap();
 
     let results = store
@@ -26,7 +26,7 @@ fn store_can_save_and_load_lockboxes() {
         .unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].0, doc_id);
+    assert_eq!(results[0].0, graph_id);
     assert_eq!(
         results[0].1.ephemeral_public_key,
         lockbox.ephemeral_public_key
@@ -49,14 +49,14 @@ fn store_returns_empty_for_unknown_recipient() {
 fn store_handles_multiple_lockboxes_for_same_recipient() {
     let mut rng = OsRng;
     let recipient = SecretIdentity::generate(&mut rng);
-    let doc_a = DocId::new();
-    let doc_b = DocId::new();
-    let doc_key = DocKey::generate(&mut rng);
+    let doc_a = GraphId::new();
+    let doc_b = GraphId::new();
+    let graph_key = GraphKey::generate(&mut rng);
 
     let lockbox_a =
-        Lockbox::create(recipient.public().encryption_key(), &doc_key, &mut rng).unwrap();
+        Lockbox::create(recipient.public().encryption_key(), &graph_key, &mut rng).unwrap();
     let lockbox_b =
-        Lockbox::create(recipient.public().encryption_key(), &doc_key, &mut rng).unwrap();
+        Lockbox::create(recipient.public().encryption_key(), &graph_key, &mut rng).unwrap();
 
     let mut store = InMemoryStore::new();
 
@@ -92,15 +92,19 @@ fn store_isolates_recipients() {
     let mut rng = OsRng;
     let alice = SecretIdentity::generate(&mut rng);
     let bob = SecretIdentity::generate(&mut rng);
-    let doc_id = DocId::new();
-    let doc_key = DocKey::generate(&mut rng);
+    let graph_id = GraphId::new();
+    let graph_key = GraphKey::generate(&mut rng);
 
     let lockbox_for_alice =
-        Lockbox::create(alice.public().encryption_key(), &doc_key, &mut rng).unwrap();
+        Lockbox::create(alice.public().encryption_key(), &graph_key, &mut rng).unwrap();
 
     let mut store = InMemoryStore::new();
     store
-        .put_lockbox(doc_id, alice.public().encryption_key(), &lockbox_for_alice)
+        .put_lockbox(
+            graph_id,
+            alice.public().encryption_key(),
+            &lockbox_for_alice,
+        )
         .unwrap();
 
     // Bob checks his inbox

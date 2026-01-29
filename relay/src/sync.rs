@@ -3,7 +3,7 @@ use crate::mapping::StatusWrapper;
 use crate::sovereign_relay::v1::sync_service_server::SyncService;
 use crate::sovereign_relay::v1::*;
 use async_stream::try_stream;
-use sovereign_core::graph::{Block, DocId, Manifest};
+use sovereign_core::graph::{Block, GraphId, Manifest};
 use sovereign_core::store::GraphStore;
 use sovereign_core::store::InMemoryStore;
 use sovereign_core::sync::{SyncEngine, SyncRequest as CoreSyncRequest};
@@ -12,7 +12,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
-use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct RelaySyncService {
@@ -29,9 +28,10 @@ impl SyncService for RelaySyncService {
     ) -> Result<Response<Self::SyncStream>, Status> {
         let req = request.into_inner();
 
-        let doc_uuid = Uuid::parse_str(&req.graph_id)
+        let graph_id: GraphId = req
+            .graph_id
+            .parse()
             .map_err(|_| Status::invalid_argument("Invalid graph_id format"))?;
-        let doc_id = DocId(doc_uuid);
 
         let heads = req
             .heads
@@ -42,7 +42,7 @@ impl SyncService for RelaySyncService {
         let engine = SyncEngine::new(self.store.as_ref());
         let local_heads = self
             .store
-            .get_heads(&doc_id)
+            .get_heads(&graph_id)
             .map_err(RelayError::from)
             .map_err(Status::from)?;
 

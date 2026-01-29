@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rand::rngs::OsRng;
-use sovereign_core::graph::{Block, BlockId, DocId, Manifest, ManifestId};
+use sovereign_core::graph::{Block, BlockId, GraphId, Manifest, ManifestId};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
 use sovereign_core::sync::{SyncRequest, SyncResponse};
@@ -59,12 +59,12 @@ impl NetworkClient for MockNetwork {
 fn create_valid_data() -> (Manifest, Block) {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = DocId::new();
+    let graph_id = GraphId::new();
 
     let block = Block::new(
         sovereign_core::crypto::BlockContent::encrypt(
             &[],
-            &sovereign_core::crypto::DocKey::generate(&mut rng),
+            &sovereign_core::crypto::GraphKey::generate(&mut rng),
             [0u8; 12],
         )
         .unwrap(),
@@ -74,7 +74,7 @@ fn create_valid_data() -> (Manifest, Block) {
         &identity,
     );
 
-    let manifest = Manifest::new(doc_id, vec![block.id()], vec![], &identity);
+    let manifest = Manifest::new(graph_id, vec![block.id()], vec![], &identity);
     (manifest, block)
 }
 

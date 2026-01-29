@@ -1,6 +1,6 @@
 mod common;
 use common::*;
-use sovereign_core::graph::{BlockId, DocId, Manifest, ManifestId};
+use sovereign_core::graph::{BlockId, GraphId, Manifest, ManifestId};
 use sovereign_core::store::{GraphStore, InMemoryStore};
 use sovereign_core::sync::{SyncEngine, SyncRequest};
 
@@ -33,7 +33,7 @@ fn sync_engine_handles_forks() {
     let m_a_id = chain[0];
 
     let identity = create_identity();
-    let doc_id = DocId::new();
+    let doc_id = GraphId::new();
 
     // 1. Root A is already in store via create_chain
 

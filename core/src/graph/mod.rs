@@ -41,37 +41,37 @@ impl From<[u8; 32]> for ManifestId {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-pub struct DocId(pub Uuid);
+pub struct GraphId(pub Uuid);
 
-impl DocId {
+impl GraphId {
     pub fn new() -> Self {
-        DocId(Uuid::new_v4())
+        GraphId(Uuid::new_v4())
     }
 }
 
-impl Default for DocId {
+impl Default for GraphId {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl From<Uuid> for DocId {
+impl From<Uuid> for GraphId {
     fn from(uuid: Uuid) -> Self {
-        DocId(uuid)
+        GraphId(uuid)
     }
 }
 
-impl AsRef<Uuid> for DocId {
+impl AsRef<Uuid> for GraphId {
     fn as_ref(&self) -> &Uuid {
         &self.0
     }
 }
 
-impl FromStr for DocId {
+impl FromStr for GraphId {
     type Err = uuid::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::parse_str(s)?;
-        Ok(DocId(uuid))
+        Ok(GraphId(uuid))
     }
 }

@@ -1,13 +1,13 @@
 use crate::crypto::{Signature, SigningPublicKey, SovereignSigner};
 use crate::error::{CryptoError, IntegrityError, SovereignError};
-use crate::graph::{BlockId, DocId, ManifestId};
+use crate::graph::{BlockId, GraphId, ManifestId};
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use tracing::{Level, info, span};
 
-/// A `Manifest` is a snapshot of the document's state at a specific point in history.
+/// A `Manifest` is a snapshot of the graph's state at a specific point in history.
 ///
 /// It acts like a "commit" in a version control system, grouping a set of `active_blocks`
 /// into a coherent version. The integrity of the blocks is guaranteed by a Merkle Root.
@@ -16,14 +16,14 @@ pub struct Manifest {
     /// The unique identifier of this snapshot. Hashes the Merkle root, parents,
     /// and metadata to bind the state to its specific historical context.
     id: ManifestId,
-    /// The unique ID of the document (the entire DAG) this manifest belongs to.
-    document_id: DocId,
+    /// The unique ID of the graph (document) this manifest belongs to.
+    graph_id: GraphId,
     /// References to the manifest(s) that immediately preceded this one.
     parents: Vec<ManifestId>,
-    /// The complete, ordered set of blocks that make up this version of the document.
+    /// The complete, ordered set of blocks that make up this version of the graph.
     active_blocks: Vec<BlockId>,
     /// The root of a Merkle Tree built from `active_blocks`, providing a compact
-    /// proof of the document's entire content.
+    /// proof of the graph's entire content.
     merkle_root: ManifestId,
     /// The public key of the user who published this state snapshot.
     author: SigningPublicKey,
@@ -45,20 +45,20 @@ impl Manifest {
     ///
     /// Accepts any `SovereignSigner`, allowing for hardware wallets or remote signers.
     pub fn new(
-        document_id: DocId,
+        graph_id: GraphId,
         active_blocks: Vec<BlockId>,
         parents: Vec<ManifestId>,
         signer: &impl SovereignSigner,
     ) -> Self {
-        // Use debug formatting for DocId (Uuid wrapper)
-        let span = span!(Level::INFO, "manifest_new", document_id = ?document_id);
+        // Use debug formatting for GraphId (Uuid wrapper)
+        let span = span!(Level::INFO, "manifest_new", graph_id = ?graph_id);
         let _enter = span.enter();
 
         let merkle_root = Self::compute_merkle_root(&active_blocks);
         let created_at = 0; // TODO: Integrate real system time
         let author = signer.public_key();
 
-        let id = Self::compute_id(&merkle_root, &document_id, &parents, &author, created_at);
+        let id = Self::compute_id(&merkle_root, &graph_id, &parents, &author, created_at);
 
         let signature = signer.sign(id.as_ref());
 
@@ -67,7 +67,7 @@ impl Manifest {
 
         Manifest {
             id,
-            document_id,
+            graph_id,
             parents,
             active_blocks,
             merkle_root,
@@ -81,8 +81,8 @@ impl Manifest {
         self.id
     }
 
-    pub fn document_id(&self) -> DocId {
-        self.document_id
+    pub fn graph_id(&self) -> GraphId {
+        self.graph_id
     }
 
     pub fn active_blocks(&self) -> &Vec<BlockId> {
@@ -114,7 +114,7 @@ impl Manifest {
     #[allow(clippy::too_many_arguments)]
     pub fn from_raw_parts(
         id: ManifestId,
-        document_id: DocId,
+        graph_id: GraphId,
         parents: Vec<ManifestId>,
         active_blocks: Vec<BlockId>,
         merkle_root: ManifestId,
@@ -124,7 +124,7 @@ impl Manifest {
     ) -> Self {
         Self {
             id,
-            document_id,
+            graph_id,
             parents,
             active_blocks,
             merkle_root,
@@ -155,7 +155,7 @@ impl Manifest {
         // 2. Re-calculate ID
         let calculated_id = Self::compute_id(
             &self.merkle_root,
-            &self.document_id,
+            &self.graph_id,
             &self.parents,
             &self.author,
             self.created_at,
@@ -223,7 +223,7 @@ impl Manifest {
     /// Canonical hash function for the manifest's identity.
     fn compute_id(
         merkle_root: &ManifestId,
-        document_id: &DocId,
+        graph_id: &GraphId,
         parents: &[ManifestId],
         author: &SigningPublicKey,
         created_at: i64,
@@ -231,7 +231,7 @@ impl Manifest {
         let mut hasher = Sha256::new();
         hasher.update(b"SOV_V1_MANIFEST");
         hasher.update(merkle_root.as_ref());
-        hasher.update(document_id.0.as_bytes());
+        hasher.update(graph_id.0.as_bytes());
         for p in parents {
             hasher.update(p.as_ref());
         }

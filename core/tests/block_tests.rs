@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{BlockContent, DocKey};
+use sovereign_core::crypto::{BlockContent, GraphKey};
 use sovereign_core::graph::{Block, BlockId};
 use sovereign_core::identity::SecretIdentity;
 
@@ -115,17 +115,17 @@ fn block_content_encryption_cycle() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
     let plaintext = b"Sensitive Data".to_vec();
-    let doc_key = DocKey::generate(&mut rng);
+    let graph_key = GraphKey::generate(&mut rng);
     let nonce = [0u8; 12];
 
-    let content = BlockContent::encrypt(&plaintext, &doc_key, nonce).unwrap();
+    let content = BlockContent::encrypt(&plaintext, &graph_key, nonce).unwrap();
     let block = Block::new(content, "a".to_string(), "p".to_string(), vec![], &identity);
 
     // Verify stored data is ciphertext
     assert_ne!(block.content().as_bytes(), plaintext);
 
     // Verify decryption
-    let decrypted = block.content().decrypt(&doc_key).unwrap();
+    let decrypted = block.content().decrypt(&graph_key).unwrap();
     assert_eq!(decrypted, plaintext);
 }
 
@@ -133,8 +133,8 @@ fn block_content_encryption_cycle() {
 fn encryption_fails_with_wrong_key() {
     let mut rng = OsRng;
     let plaintext = b"secret";
-    let key1 = DocKey::generate(&mut rng);
-    let key2 = DocKey::generate(&mut rng);
+    let key1 = GraphKey::generate(&mut rng);
+    let key2 = GraphKey::generate(&mut rng);
     let nonce = [0u8; 12];
 
     let content = BlockContent::encrypt(plaintext, &key1, nonce).unwrap();
@@ -199,7 +199,7 @@ fn block_supports_empty_content() {
     assert_eq!(block.content().as_bytes().len(), 16);
 
     // To decrypt we need the key used in helper. Helper uses 0-key.
-    let key = DocKey::new([0u8; 32]);
+    let key = GraphKey::new([0u8; 32]);
     let decrypted = block.content().decrypt(&key).unwrap();
     assert!(decrypted.is_empty());
 }

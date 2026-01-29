@@ -2,7 +2,7 @@ use crate::sovereign_relay::v1 as proto;
 use sovereign_core::crypto::{
     BlockContent, EncryptionPublicKey, Lockbox, Signature as CoreSignature, SigningPublicKey,
 };
-use sovereign_core::graph::{Block, BlockId, DocId, Manifest, ManifestId};
+use sovereign_core::graph::{Block, BlockId, GraphId, Manifest, ManifestId};
 use std::convert::TryFrom;
 use tonic::Status;
 use uuid::Uuid;
@@ -186,7 +186,7 @@ impl From<Manifest> for proto::Manifest {
     fn from(m: Manifest) -> Self {
         proto::Manifest {
             id: Some(m.id().into()),
-            graph_id: m.document_id().0.to_string(),
+            graph_id: m.graph_id().0.to_string(),
             parents: m.parents().iter().map(|p| (*p).into()).collect(),
             active_blocks: m.active_blocks().iter().map(|b| (*b).into()).collect(),
             merkle_root: Some(m.merkle_root().into()),
@@ -206,7 +206,7 @@ impl TryFrom<proto::Manifest> for Manifest {
         Ok(Manifest::from_raw_parts(
             p.id.ok_or_else(|| Status::invalid_argument("Missing Manifest ID"))?
                 .try_into()?,
-            DocId(doc_uuid),
+            GraphId(doc_uuid),
             p.parents
                 .into_iter()
                 .map(|id| id.try_into())

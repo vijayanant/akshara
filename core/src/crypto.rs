@@ -103,13 +103,13 @@ impl EncryptionSecretKey {
 
 // --- Symmetric Keys (AES-256) ---
 
-/// The master symmetric key used to encrypt the actual content of a document.
+/// The master symmetric key used to encrypt the actual content of a graph.
 ///
 /// This key is never shared directly; it is always encapsulated within a `Lockbox`.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
-pub struct DocKey([u8; 32]);
+pub struct GraphKey([u8; 32]);
 
-impl DocKey {
+impl GraphKey {
     pub fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
@@ -125,7 +125,7 @@ impl DocKey {
     }
 }
 
-impl From<[u8; 32]> for DocKey {
+impl From<[u8; 32]> for GraphKey {
     fn from(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
@@ -171,7 +171,7 @@ impl BlockContent {
     /// A unique nonce is required for every encryption operation with the same key.
     pub fn encrypt(
         plaintext: &[u8],
-        key: &DocKey,
+        key: &GraphKey,
         nonce_bytes: [u8; 12],
     ) -> Result<Self, SovereignError> {
         let span = span!(Level::TRACE, "content_encrypt");
@@ -196,7 +196,7 @@ impl BlockContent {
 
     /// Decrypts data using the provided symmetric key.
     /// Fails if the key is incorrect or the ciphertext has been tampered with.
-    pub fn decrypt(&self, key: &DocKey) -> Result<Vec<u8>, SovereignError> {
+    pub fn decrypt(&self, key: &GraphKey) -> Result<Vec<u8>, SovereignError> {
         let span = span!(Level::TRACE, "content_decrypt");
         let _enter = span.enter();
 
@@ -231,7 +231,7 @@ impl BlockContent {
     }
 }
 
-/// A Key Encapsulation Mechanism (KEM) used to securely share a `DocKey` with a recipient.
+/// A Key Encapsulation Mechanism (KEM) used to securely share a `GraphKey` with a recipient.
 ///
 /// It uses a fresh ephemeral X25519 keypair for every creation to ensure that the
 /// exchange is unlinkable and provides forward secrecy for the document key transport.
@@ -239,15 +239,15 @@ impl BlockContent {
 pub struct Lockbox {
     /// The sender's one-time public key for this specific key exchange.
     pub ephemeral_public_key: EncryptionPublicKey,
-    /// The `DocKey` encrypted with the shared secret derived from the exchange.
+    /// The `GraphKey` encrypted with the shared secret derived from the exchange.
     pub content: BlockContent,
 }
 
 impl Lockbox {
-    /// Wraps a `DocKey` for a specific recipient public key.
+    /// Wraps a `GraphKey` for a specific recipient public key.
     pub fn create(
         recipient_public: &EncryptionPublicKey,
-        secret_to_lock: &DocKey,
+        secret_to_lock: &GraphKey,
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<Self, SovereignError> {
         let span = span!(Level::DEBUG, "lockbox_create");
@@ -261,7 +261,7 @@ impl Lockbox {
 
         // Derive shared secret via Diffie-Hellman
         let shared_secret = ephemeral_secret.diffie_hellman(&recipient_xpub);
-        let shared_key = DocKey::new(*shared_secret.as_bytes());
+        let shared_key = GraphKey::new(*shared_secret.as_bytes());
 
         let mut nonce = [0u8; 12];
         rng.fill_bytes(&mut nonce);
@@ -277,8 +277,8 @@ impl Lockbox {
         })
     }
 
-    /// Recovers the encapsulated `DocKey` using the recipient's secret key.
-    pub fn open(&self, recipient_secret: &EncryptionSecretKey) -> Result<DocKey, SovereignError> {
+    /// Recovers the encapsulated `GraphKey` using the recipient's secret key.
+    pub fn open(&self, recipient_secret: &EncryptionSecretKey) -> Result<GraphKey, SovereignError> {
         let span = span!(Level::DEBUG, "lockbox_open");
         let _enter = span.enter();
 
@@ -287,7 +287,7 @@ impl Lockbox {
 
         // Re-derive the shared secret
         let shared_secret = recipient_secret_scalar.diffie_hellman(&ephemeral_public_point);
-        let shared_key = DocKey::new(*shared_secret.as_bytes());
+        let shared_key = GraphKey::new(*shared_secret.as_bytes());
 
         // Decrypt the encapsulated Document Key
         let decrypted_bytes = self.content.decrypt(&shared_key).map_err(|e| {
@@ -304,7 +304,7 @@ impl Lockbox {
 
         trace!("Lockbox opened successfully");
 
-        Ok(DocKey::new(key_bytes))
+        Ok(GraphKey::new(key_bytes))
     }
 
     /// Restores a Lockbox from its raw components.

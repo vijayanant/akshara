@@ -1,14 +1,14 @@
 mod common;
 use common::*;
-use sovereign_core::graph::{BlockId, DocId, Manifest};
+use sovereign_core::graph::{BlockId, GraphId, Manifest};
 use sovereign_core::store::{GraphStore, InMemoryStore};
 use uuid::Uuid;
 
 #[test]
 fn store_can_save_and_load_manifest() {
     let identity = create_identity();
-    let doc_id = DocId::new();
-    let manifest = Manifest::new(doc_id, vec![], vec![], &identity);
+    let graph_id = GraphId::new();
+    let manifest = Manifest::new(graph_id, vec![], vec![], &identity);
 
     let mut store = InMemoryStore::new();
     store.put_manifest(&manifest).expect("Save failed");
@@ -24,21 +24,21 @@ fn store_can_save_and_load_manifest() {
 #[test]
 fn store_tracks_single_head_linear_history() {
     let mut store = InMemoryStore::new();
-    let (identity, doc_id) = (create_identity(), Uuid::new_v4().into());
+    let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
 
     // 1. Root Manifest (A)
-    let m_a = Manifest::new(doc_id, vec![], vec![], &identity);
+    let m_a = Manifest::new(graph_id, vec![], vec![], &identity);
     store.put_manifest(&m_a).unwrap();
 
-    let heads = store.get_heads(&doc_id).unwrap();
+    let heads = store.get_heads(&graph_id).unwrap();
     assert_eq!(heads.len(), 1);
     assert_eq!(heads[0], m_a.id());
 
     // 2. Child Manifest (B) -> Parent A
-    let m_b = Manifest::new(doc_id, vec![], vec![m_a.id()], &identity);
+    let m_b = Manifest::new(graph_id, vec![], vec![m_a.id()], &identity);
     store.put_manifest(&m_b).unwrap();
 
-    let heads = store.get_heads(&doc_id).unwrap();
+    let heads = store.get_heads(&graph_id).unwrap();
     assert_eq!(heads.len(), 1);
     assert_eq!(heads[0], m_b.id()); // A should be removed, B added
 }
@@ -46,22 +46,22 @@ fn store_tracks_single_head_linear_history() {
 #[test]
 fn store_tracks_multiple_heads_on_fork() {
     let mut store = InMemoryStore::new();
-    let (identity, doc_id) = (create_identity(), Uuid::new_v4().into());
+    let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
 
     // Root A
-    let m_a = Manifest::new(doc_id, vec![], vec![], &identity);
+    let m_a = Manifest::new(graph_id, vec![], vec![], &identity);
     store.put_manifest(&m_a).unwrap();
 
     // Fork B -> A
-    let m_b = Manifest::new(doc_id, vec![], vec![m_a.id()], &identity);
+    let m_b = Manifest::new(graph_id, vec![], vec![m_a.id()], &identity);
     store.put_manifest(&m_b).unwrap();
 
     // Fork C -> A (Must differ from B content-wise)
     let unique_block = BlockId([0xFF; 32]);
-    let m_c = Manifest::new(doc_id, vec![unique_block], vec![m_a.id()], &identity);
+    let m_c = Manifest::new(graph_id, vec![unique_block], vec![m_a.id()], &identity);
     store.put_manifest(&m_c).unwrap();
 
-    let heads = store.get_heads(&doc_id).unwrap();
+    let heads = store.get_heads(&graph_id).unwrap();
     assert_eq!(heads.len(), 2);
     assert!(heads.contains(&m_b.id()));
     assert!(heads.contains(&m_c.id()));
@@ -71,25 +71,25 @@ fn store_tracks_multiple_heads_on_fork() {
 #[test]
 fn store_merges_heads() {
     let mut store = InMemoryStore::new();
-    let (identity, doc_id) = (create_identity(), Uuid::new_v4().into());
+    let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
 
     // Setup Fork: B, C
-    let m_a = Manifest::new(doc_id, vec![], vec![], &identity);
-    let m_b = Manifest::new(doc_id, vec![], vec![m_a.id()], &identity);
+    let m_a = Manifest::new(graph_id, vec![], vec![], &identity);
+    let m_b = Manifest::new(graph_id, vec![], vec![m_a.id()], &identity);
 
     // Fork C needs unique content
     let unique_block = BlockId([0xFF; 32]);
-    let m_c = Manifest::new(doc_id, vec![unique_block], vec![m_a.id()], &identity);
+    let m_c = Manifest::new(graph_id, vec![unique_block], vec![m_a.id()], &identity);
 
     store.put_manifest(&m_a).unwrap();
     store.put_manifest(&m_b).unwrap();
     store.put_manifest(&m_c).unwrap();
 
     // Merge D -> B, C
-    let m_d = Manifest::new(doc_id, vec![], vec![m_b.id(), m_c.id()], &identity);
+    let m_d = Manifest::new(graph_id, vec![], vec![m_b.id(), m_c.id()], &identity);
     store.put_manifest(&m_d).unwrap();
 
-    let heads = store.get_heads(&doc_id).unwrap();
+    let heads = store.get_heads(&graph_id).unwrap();
     assert_eq!(heads.len(), 1);
     assert_eq!(heads[0], m_d.id());
 }
@@ -99,10 +99,10 @@ fn store_handles_out_of_order_insertion() {
     // This documents the LIMITATION (FIXME) we noted.
     // If Child arrives before Parent, both might remain as heads.
     let mut store = InMemoryStore::new();
-    let (identity, doc_id) = (create_identity(), Uuid::new_v4().into());
+    let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
 
-    let m_a = Manifest::new(doc_id, vec![], vec![], &identity);
-    let m_b = Manifest::new(doc_id, vec![], vec![m_a.id()], &identity);
+    let m_a = Manifest::new(graph_id, vec![], vec![], &identity);
+    let m_b = Manifest::new(graph_id, vec![], vec![m_a.id()], &identity);
 
     // 1. Insert Child B first
     store.put_manifest(&m_b).unwrap();
@@ -110,7 +110,7 @@ fn store_handles_out_of_order_insertion() {
     // 2. Insert Parent A second
     store.put_manifest(&m_a).unwrap();
 
-    let heads = store.get_heads(&doc_id).unwrap();
+    let heads = store.get_heads(&graph_id).unwrap();
 
     // Ideally, only B is head.
     // But our current simplistic logic only removes *referenced parents*.

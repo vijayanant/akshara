@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{BlockContent, DocKey, Lockbox};
-use sovereign_core::graph::{Block, DocId, Manifest};
+use sovereign_core::crypto::{BlockContent, GraphKey, Lockbox};
+use sovereign_core::graph::{Block, GraphId, Manifest};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::InMemoryStore;
 use sovereign_relay::discovery::RelayDiscoveryService;
@@ -56,12 +56,12 @@ async fn integration_full_collaboration_lifecycle() {
     let mut rng = OsRng;
     let alice = SecretIdentity::generate(&mut rng);
     let bob = SecretIdentity::generate(&mut rng);
-    let doc_id = DocId::new();
-    let doc_key = DocKey::generate(&mut rng);
+    let graph_id = GraphId::new();
+    let graph_key = GraphKey::generate(&mut rng);
 
     // 2. Alice Creates Content
     let plaintext = b"Grand System Data";
-    let content = BlockContent::encrypt(plaintext, &doc_key, [0u8; 12]).unwrap();
+    let content = BlockContent::encrypt(plaintext, &graph_key, [0u8; 12]).unwrap();
     let block = Block::new(
         content,
         "a".to_string(),
@@ -69,7 +69,7 @@ async fn integration_full_collaboration_lifecycle() {
         vec![],
         &alice,
     );
-    let manifest = Manifest::new(doc_id, vec![block.id()], vec![], &alice);
+    let manifest = Manifest::new(graph_id, vec![block.id()], vec![], &alice);
 
     // 3. Alice Pushes Data (gRPC)
     let push_req = PushRequest {
@@ -79,9 +79,9 @@ async fn integration_full_collaboration_lifecycle() {
     sync_client.push(push_req).await.expect("Alice Push failed");
 
     // 4. Alice Shares with Bob (gRPC)
-    let lockbox = Lockbox::create(bob.public().encryption_key(), &doc_key, &mut rng).unwrap();
+    let lockbox = Lockbox::create(bob.public().encryption_key(), &graph_key, &mut rng).unwrap();
     let share_req = PushLockboxRequest {
-        graph_id: doc_id.0.to_string(),
+        graph_id: graph_id.0.to_string(),
         recipient_key: Some(bob.public().encryption_key().clone().into()),
         lockbox: Some(lockbox.into()),
     };
@@ -104,7 +104,7 @@ async fn integration_full_collaboration_lifecycle() {
 
     // 6. Bob Syncs Content (gRPC)
     let sync_req = SyncRequest {
-        graph_id: doc_id.0.to_string(),
+        graph_id: graph_id.0.to_string(),
         heads: vec![], // Bob knows nothing
     };
     let mut stream = sync_client

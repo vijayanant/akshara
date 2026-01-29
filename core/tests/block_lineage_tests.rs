@@ -1,5 +1,5 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{BlockContent, DocKey};
+use sovereign_core::crypto::{BlockContent, GraphKey};
 use sovereign_core::graph::{Block, BlockId};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
@@ -8,7 +8,7 @@ use sovereign_core::store::{GraphStore, InMemoryStore};
 fn create_block(parents: Vec<BlockId>, store: &mut InMemoryStore) -> BlockId {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let key = DocKey::new([0u8; 32]);
+    let key = GraphKey::new([0u8; 32]);
     let content = BlockContent::encrypt(&[], &key, [0u8; 12]).unwrap();
 
     let block = Block::new(

@@ -1,25 +1,20 @@
 use rand::rngs::OsRng;
 use serde_json::Value;
-use sovereign_core::crypto::{BlockContent, DocKey, Lockbox};
+use sovereign_core::crypto::{BlockContent, GraphKey, Lockbox};
 use sovereign_core::identity::SecretIdentity;
 
 #[test]
 fn dockey_generation_is_random() {
     let mut rng = OsRng;
-    let key1 = DocKey::generate(&mut rng);
-    let key2 = DocKey::generate(&mut rng);
-
-    assert_ne!(
-        key1.as_bytes(),
-        key2.as_bytes(),
-        "Generated keys must be unique"
-    );
+    let k1 = GraphKey::generate(&mut rng);
+    let k2 = GraphKey::generate(&mut rng);
+    assert_ne!(k1, k2);
 }
 
 #[test]
 fn block_content_encryption_roundtrip() {
     let mut rng = OsRng;
-    let key = DocKey::generate(&mut rng);
+    let key = GraphKey::generate(&mut rng);
     let plaintext = b"Hello Sovereign Crypto";
     let nonce = [0u8; 12];
 
@@ -38,10 +33,10 @@ fn lockbox_lifecycle() {
     let mut rng = OsRng;
     let alice = SecretIdentity::generate(&mut rng); // Sender
     let bob = SecretIdentity::generate(&mut rng); // Recipient
-    let doc_key = DocKey::generate(&mut rng);
+    let graph_key = GraphKey::generate(&mut rng);
 
     // Create lockbox for Bob
-    let lockbox = Lockbox::create(bob.public().encryption_key(), &doc_key, &mut rng)
+    let lockbox = Lockbox::create(bob.public().encryption_key(), &graph_key, &mut rng)
         .expect("Lockbox creation failed");
 
     // Bob opens it
@@ -49,7 +44,7 @@ fn lockbox_lifecycle() {
         .open(bob.encryption_key())
         .expect("Bob should open lockbox");
 
-    assert_eq!(unlocked_key.as_bytes(), doc_key.as_bytes());
+    assert_eq!(unlocked_key.as_bytes(), graph_key.as_bytes());
 
     // Eve (Alice) tries to open Bob's lockbox with her own key
     let result = lockbox.open(alice.encryption_key());
@@ -60,9 +55,9 @@ fn lockbox_lifecycle() {
 fn lockbox_fails_on_tampered_ciphertext() {
     let mut rng = OsRng;
     let bob = SecretIdentity::generate(&mut rng);
-    let doc_key = DocKey::generate(&mut rng);
+    let graph_key = GraphKey::generate(&mut rng);
 
-    let lockbox = Lockbox::create(bob.public().encryption_key(), &doc_key, &mut rng).unwrap();
+    let lockbox = Lockbox::create(bob.public().encryption_key(), &graph_key, &mut rng).unwrap();
 
     // Tamper via JSON Value manipulation
     let mut val: Value = serde_json::to_value(&lockbox).unwrap();
@@ -92,20 +87,14 @@ fn lockbox_fails_on_tampered_ciphertext() {
 }
 
 #[test]
-
 fn signing_verify_fails_on_malformed_signature() {
     let mut rng = OsRng;
-
     let identity = SecretIdentity::generate(&mut rng);
-
     let public = identity.public();
-
     let msg = b"test";
 
     // Wrong length (not 64)
-
     let bad_sig = sovereign_core::crypto::Signature::new(vec![0u8; 32]);
-
     let result = public.signing_key().verify(msg, &bad_sig);
 
     assert!(result.is_err());

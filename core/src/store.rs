@@ -1,6 +1,6 @@
 use crate::crypto::{EncryptionPublicKey, Lockbox};
 use crate::error::{SovereignError, StoreError};
-use crate::graph::{Block, BlockId, DocId, Manifest, ManifestId};
+use crate::graph::{Block, BlockId, GraphId, Manifest, ManifestId};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -12,23 +12,23 @@ pub trait GraphStore {
     fn put_manifest(&mut self, manifest: &Manifest) -> Result<(), SovereignError>;
     fn get_manifest(&self, id: &ManifestId) -> Result<Option<Manifest>, SovereignError>;
 
-    /// Returns the current heads (unreferenced leaf manifests) for a given document.
-    fn get_heads(&self, doc_id: &DocId) -> Result<Vec<ManifestId>, SovereignError>;
+    /// Returns the current heads (unreferenced leaf manifests) for a given graph.
+    fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, SovereignError>;
 
     // Lockbox Storage
     fn put_lockbox(
         &mut self,
-        doc_id: DocId,
+        graph_id: GraphId,
         recipient: &EncryptionPublicKey,
         lockbox: &Lockbox,
     ) -> Result<(), SovereignError>;
     fn get_lockboxes_for_recipient(
         &self,
         recipient: &EncryptionPublicKey,
-    ) -> Result<Vec<(DocId, Lockbox)>, SovereignError>;
+    ) -> Result<Vec<(GraphId, Lockbox)>, SovereignError>;
 }
 
-type RecipientLockboxes = Vec<(DocId, Lockbox)>;
+type RecipientLockboxes = Vec<(GraphId, Lockbox)>;
 
 /// A simple in-memory implementation of GraphStore for testing and temporary storage.
 #[derive(Debug, Clone, Default)]
@@ -36,8 +36,8 @@ pub struct InMemoryStore {
     blocks: Arc<RwLock<HashMap<BlockId, Block>>>,
     manifests: Arc<RwLock<HashMap<ManifestId, Manifest>>>,
     lockboxes: Arc<RwLock<HashMap<EncryptionPublicKey, RecipientLockboxes>>>,
-    // Track current heads per document
-    heads: Arc<RwLock<HashMap<DocId, HashSet<ManifestId>>>>,
+    // Track current heads per graph
+    heads: Arc<RwLock<HashMap<GraphId, HashSet<ManifestId>>>>,
 }
 
 impl InMemoryStore {
@@ -74,14 +74,14 @@ impl GraphStore for InMemoryStore {
             .write()
             .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
 
-        let doc_id = manifest.document_id();
+        let graph_id = manifest.graph_id();
         let m_id = manifest.id();
 
         // 1. Save manifest
         manifests.insert(m_id, manifest.clone());
 
         // 2. Update heads: New manifest is a potential head
-        let doc_heads = heads_map.entry(doc_id).or_insert_with(HashSet::new);
+        let doc_heads = heads_map.entry(graph_id).or_insert_with(HashSet::new);
         doc_heads.insert(m_id);
 
         // 3. Update heads: Its parents are no longer heads
@@ -103,14 +103,14 @@ impl GraphStore for InMemoryStore {
         Ok(manifests.get(id).cloned())
     }
 
-    fn get_heads(&self, doc_id: &DocId) -> Result<Vec<ManifestId>, SovereignError> {
+    fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, SovereignError> {
         let heads_map = self
             .heads
             .read()
             .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
 
         let result = heads_map
-            .get(doc_id)
+            .get(graph_id)
             .map(|h| h.iter().cloned().collect())
             .unwrap_or_default();
 
@@ -119,7 +119,7 @@ impl GraphStore for InMemoryStore {
 
     fn put_lockbox(
         &mut self,
-        doc_id: DocId,
+        graph_id: GraphId,
         recipient: &EncryptionPublicKey,
         lockbox: &Lockbox,
     ) -> Result<(), SovereignError> {
@@ -129,14 +129,14 @@ impl GraphStore for InMemoryStore {
             .map_err(|_| SovereignError::Store(StoreError::LockPoisoned))?;
         let entry = lockboxes.entry(recipient.clone()).or_insert_with(Vec::new);
 
-        entry.push((doc_id, lockbox.clone()));
+        entry.push((graph_id, lockbox.clone()));
         Ok(())
     }
 
     fn get_lockboxes_for_recipient(
         &self,
         recipient: &EncryptionPublicKey,
-    ) -> Result<Vec<(DocId, Lockbox)>, SovereignError> {
+    ) -> Result<Vec<(GraphId, Lockbox)>, SovereignError> {
         let lockboxes = self
             .lockboxes
             .read()
