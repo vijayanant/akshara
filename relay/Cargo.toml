@@ -3,6 +3,14 @@ name = "sovereign-relay"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "sovereign_relay"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sovereign-relay"
+path = "src/bin/server.rs"
+
 [dependencies]
 sovereign-core = { path = "../core" }
 
@@ -15,6 +23,10 @@ serde = { version = "1.0.203", features = ["derive"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 uuid = { version = "1.8.0", features = ["v4"] }
+async-stream = "0.3.5"
 
 [build-dependencies]
 tonic-build = "0.12.1"
+
+[dev-dependencies]
+rand = "0.8.5"

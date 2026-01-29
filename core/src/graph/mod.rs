@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use uuid::Uuid;
 
 pub mod block;
@@ -63,5 +64,14 @@ impl From<Uuid> for DocId {
 impl AsRef<Uuid> for DocId {
     fn as_ref(&self) -> &Uuid {
         &self.0
+    }
+}
+
+impl FromStr for DocId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let uuid = Uuid::parse_str(s)?;
+        Ok(DocId(uuid))
     }
 }
