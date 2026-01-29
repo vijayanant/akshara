@@ -3,11 +3,15 @@ use sovereign_core::crypto::{BlockContent, DocKey, Lockbox};
 use sovereign_core::graph::{Block, DocId, Manifest};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::InMemoryStore;
-use sovereign_relay::service::RelayService;
+use sovereign_relay::discovery::RelayDiscoveryService;
 use sovereign_relay::sovereign_relay::v1::discovery_service_client::DiscoveryServiceClient;
 use sovereign_relay::sovereign_relay::v1::discovery_service_server::DiscoveryServiceServer;
+use sovereign_relay::sovereign_relay::v1::sync_service_client::SyncServiceClient;
 use sovereign_relay::sovereign_relay::v1::sync_service_server::SyncServiceServer;
-use sovereign_relay::sovereign_relay::v1::{ListGraphsRequest, PushLockboxRequest};
+use sovereign_relay::sovereign_relay::v1::{
+    ListGraphsRequest, PushLockboxRequest, PushRequest, SyncRequest,
+};
+use sovereign_relay::sync::RelaySyncService;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,18 +19,22 @@ use tonic::transport::Server;
 
 async fn start_server() -> (Arc<InMemoryStore>, String) {
     let store = Arc::new(InMemoryStore::new());
-    let service = RelayService::new(store.clone());
 
-    // Bind to port 0 to get a random available port
+    let sync_service = RelaySyncService {
+        store: store.clone(),
+    };
+    let discovery_service = RelayDiscoveryService {
+        store: store.clone(),
+    };
+
     let listener = tokio::net::TcpListener::bind("[::1]:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
-    // Spawn server in background
     let store_clone = store.clone();
     tokio::spawn(async move {
         Server::builder()
-            .add_service(SyncServiceServer::new(service.clone()))
-            .add_service(DiscoveryServiceServer::new(service))
+            .add_service(SyncServiceServer::new(sync_service))
+            .add_service(DiscoveryServiceServer::new(discovery_service))
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
             .unwrap();
@@ -36,26 +44,24 @@ async fn start_server() -> (Arc<InMemoryStore>, String) {
 }
 
 #[tokio::test]
-async fn integration_push_lockbox_and_list_graphs() {
-    let (store, addr) = start_server().await;
-
-    // Wait for server to start
+async fn integration_full_collaboration_lifecycle() {
+    let (_store, addr) = start_server().await;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Connect Client
-    let mut client = DiscoveryServiceClient::connect(addr.clone()).await.unwrap();
+    // Connect Clients
+    let mut discovery_client = DiscoveryServiceClient::connect(addr.clone()).await.unwrap();
+    let mut sync_client = SyncServiceClient::connect(addr.clone()).await.unwrap();
 
-    // 1. Setup Identities
+    // 1. Identities
     let mut rng = OsRng;
     let alice = SecretIdentity::generate(&mut rng);
     let bob = SecretIdentity::generate(&mut rng);
     let doc_id = DocId::new();
-
-    // 2. Setup Data (Alice Creates)
-    let plaintext = b"Hello Bob";
     let doc_key = DocKey::generate(&mut rng);
-    let content = BlockContent::encrypt(plaintext, &doc_key, [0u8; 12]).unwrap();
 
+    // 2. Alice Creates Content
+    let plaintext = b"Grand System Data";
+    let content = BlockContent::encrypt(plaintext, &doc_key, [0u8; 12]).unwrap();
     let block = Block::new(
         content,
         "a".to_string(),
@@ -65,65 +71,87 @@ async fn integration_push_lockbox_and_list_graphs() {
     );
     let manifest = Manifest::new(doc_id, vec![block.id()], vec![], &alice);
 
-    // Alice manually populates the Store with the Graph Data
-    use sovereign_core::store::GraphStore;
-    let mut store_handle = store.as_ref().clone();
-    store_handle.put_block(&block).unwrap();
-    store_handle.put_manifest(&manifest).unwrap();
+    // 3. Alice Pushes Data (gRPC)
+    let push_req = PushRequest {
+        manifests: vec![manifest.clone().into()],
+        blocks: vec![block.clone().into()],
+    };
+    sync_client.push(push_req).await.expect("Alice Push failed");
 
-    // 3. Alice Invites Bob (Push Lockbox)
-    // IMPORTANT: Alice uses the SAME doc_key she used to encrypt the block!
+    // 4. Alice Shares with Bob (gRPC)
     let lockbox = Lockbox::create(bob.public().encryption_key(), &doc_key, &mut rng).unwrap();
-
-    let request = PushLockboxRequest {
+    let share_req = PushLockboxRequest {
         graph_id: doc_id.0.to_string(),
         recipient_key: Some(bob.public().encryption_key().clone().into()),
-        lockbox: Some(lockbox.clone().into()),
+        lockbox: Some(lockbox.into()),
     };
+    discovery_client
+        .push_lockbox(share_req)
+        .await
+        .expect("Alice Share failed");
 
-    let response = client.push_lockbox(request).await.expect("Push failed");
-    assert!(response.into_inner().success);
-
-    // 4. Bob Checks Dashboard (List Graphs)
+    // 5. Bob Discovers (gRPC)
     let list_req = ListGraphsRequest {
         recipient_key: Some(bob.public().encryption_key().clone().into()),
     };
-
-    let list_resp = client.list_graphs(list_req).await.expect("List failed");
+    let list_resp = discovery_client
+        .list_graphs(list_req)
+        .await
+        .expect("Bob List failed");
     let summaries = list_resp.into_inner().summaries;
-
-    // 5. Assertions
     assert_eq!(summaries.len(), 1);
     let summary = &summaries[0];
 
-    // A. Verify Metadata Block Integrity
-    let returned_block_proto = summary.metadata_block.as_ref().unwrap();
+    // 6. Bob Syncs Content (gRPC)
+    let sync_req = SyncRequest {
+        graph_id: doc_id.0.to_string(),
+        heads: vec![], // Bob knows nothing
+    };
+    let mut stream = sync_client
+        .sync(sync_req)
+        .await
+        .expect("Bob Sync failed")
+        .into_inner();
+
+    let mut received_manifest = None;
+    let mut received_block = None;
+
+    use sovereign_relay::sovereign_relay::v1::sync_response_item::Item;
+    while let Some(item_result) = stream.message().await.unwrap() {
+        match item_result.item {
+            Some(Item::Manifest(m)) => received_manifest = Some(m),
+            Some(Item::Block(b)) => received_block = Some(b),
+            None => {}
+        }
+    }
+
+    // 7. Final Verification
+    let m_proto = received_manifest.expect("Missing manifest in sync");
+    let b_proto = received_block.expect("Missing block in sync");
+
     use sovereign_relay::mapping::StatusWrapper;
-    let returned_block: Block = returned_block_proto
+    let m: Manifest = m_proto.try_into().map_err(|e: StatusWrapper| e.0).unwrap();
+    let b: Block = b_proto.try_into().map_err(|e: StatusWrapper| e.0).unwrap();
+
+    assert_eq!(m.id(), manifest.id());
+    assert_eq!(b.id(), block.id());
+
+    // Bob decrypts everything
+    let bob_lockbox: Lockbox = summary
+        .lockbox
+        .as_ref()
+        .unwrap()
         .clone()
         .try_into()
         .map_err(|e: StatusWrapper| e.0)
         .unwrap();
-    assert_eq!(returned_block.id(), block.id());
-
-    // B. Verify Lockbox Access (Bob Decrypts)
-    let returned_lockbox_proto = summary.lockbox.as_ref().unwrap();
-    let returned_lockbox: Lockbox = returned_lockbox_proto
-        .clone()
-        .try_into()
-        .map_err(|e: StatusWrapper| e.0)
-        .unwrap();
-
-    // Bob opens the lockbox using HIS private key
-    let retrieved_doc_key = returned_lockbox
+    let retrieved_key = bob_lockbox
         .open(bob.encryption_key())
-        .expect("Bob should open lockbox");
-
-    // C. Verify Content Decryption (Bob reads Title)
-    let retrieved_plaintext = returned_block
+        .expect("Bob fails lockbox");
+    let retrieved_plaintext = b
         .content()
-        .decrypt(&retrieved_doc_key)
-        .expect("Bob should decrypt block");
+        .decrypt(&retrieved_key)
+        .expect("Bob fails decrypt");
 
     assert_eq!(retrieved_plaintext, plaintext);
 }

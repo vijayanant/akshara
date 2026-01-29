@@ -1,5 +1,7 @@
+pub mod discovery;
+pub mod error;
 pub mod mapping;
-pub mod service;
+pub mod sync;
 
 pub mod sovereign_relay {
     pub mod v1 {

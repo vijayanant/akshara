@@ -4,6 +4,7 @@ use sovereign_core::crypto::{
 };
 use sovereign_core::graph::{Block, BlockId, DocId, Manifest, ManifestId};
 use std::convert::TryFrom;
+use tonic::Status;
 use uuid::Uuid;
 
 // --- ID Conversions ---
@@ -131,10 +132,10 @@ impl TryFrom<proto::Lockbox> for Lockbox {
     fn try_from(p: proto::Lockbox) -> Result<Self, Self::Error> {
         Ok(Lockbox::from_raw_parts(
             p.ephemeral_public_key
-                .ok_or_else(|| StatusWrapper::invalid("Missing Ephemeral Public Key"))?
+                .ok_or_else(|| Status::invalid_argument("Missing Ephemeral Public Key"))?
                 .try_into()?,
             p.content
-                .ok_or_else(|| StatusWrapper::invalid("Missing Content"))?
+                .ok_or_else(|| Status::invalid_argument("Missing Content"))?
                 .try_into()?,
         ))
     }
@@ -160,16 +161,16 @@ impl TryFrom<proto::Block> for Block {
     type Error = StatusWrapper;
     fn try_from(p: proto::Block) -> Result<Self, Self::Error> {
         Ok(Block::from_raw_parts(
-            p.id.ok_or_else(|| StatusWrapper::invalid("Missing Block ID"))?
+            p.id.ok_or_else(|| Status::invalid_argument("Missing Block ID"))?
                 .try_into()?,
             p.author_key
-                .ok_or_else(|| StatusWrapper::invalid("Missing Author Key"))?
+                .ok_or_else(|| Status::invalid_argument("Missing Author Key"))?
                 .try_into()?,
             p.signature
-                .ok_or_else(|| StatusWrapper::invalid("Missing Signature"))?
+                .ok_or_else(|| Status::invalid_argument("Missing Signature"))?
                 .try_into()?,
             p.content
-                .ok_or_else(|| StatusWrapper::invalid("Missing Content"))?
+                .ok_or_else(|| Status::invalid_argument("Missing Content"))?
                 .try_into()?,
             p.rank,
             p.block_type,
@@ -200,10 +201,10 @@ impl TryFrom<proto::Manifest> for Manifest {
     type Error = StatusWrapper;
     fn try_from(p: proto::Manifest) -> Result<Self, Self::Error> {
         let doc_uuid = Uuid::parse_str(&p.graph_id)
-            .map_err(|_| StatusWrapper::invalid("Invalid GraphId format"))?;
+            .map_err(|_| Status::invalid_argument("Invalid GraphId format"))?;
 
         Ok(Manifest::from_raw_parts(
-            p.id.ok_or_else(|| StatusWrapper::invalid("Missing Manifest ID"))?
+            p.id.ok_or_else(|| Status::invalid_argument("Missing Manifest ID"))?
                 .try_into()?,
             DocId(doc_uuid),
             p.parents
@@ -215,13 +216,13 @@ impl TryFrom<proto::Manifest> for Manifest {
                 .map(|id| id.try_into())
                 .collect::<Result<Vec<_>, _>>()?,
             p.merkle_root
-                .ok_or_else(|| StatusWrapper::invalid("Missing Merkle Root"))?
+                .ok_or_else(|| Status::invalid_argument("Missing Merkle Root"))?
                 .try_into()?,
             p.author_key
-                .ok_or_else(|| StatusWrapper::invalid("Missing Author Key"))?
+                .ok_or_else(|| Status::invalid_argument("Missing Author Key"))?
                 .try_into()?,
             p.signature
-                .ok_or_else(|| StatusWrapper::invalid("Missing Signature"))?
+                .ok_or_else(|| Status::invalid_argument("Missing Signature"))?
                 .try_into()?,
             p.created_at,
         ))
@@ -229,16 +230,22 @@ impl TryFrom<proto::Manifest> for Manifest {
 }
 
 // --- Error Wrapper ---
-pub struct StatusWrapper(pub tonic::Status);
+pub struct StatusWrapper(pub Status);
 
 impl StatusWrapper {
     fn invalid(msg: &str) -> Self {
-        StatusWrapper(tonic::Status::invalid_argument(msg))
+        StatusWrapper(Status::invalid_argument(msg))
     }
 }
 
-impl From<StatusWrapper> for tonic::Status {
+impl From<StatusWrapper> for Status {
     fn from(w: StatusWrapper) -> Self {
         w.0
+    }
+}
+
+impl From<Status> for StatusWrapper {
+    fn from(s: Status) -> Self {
+        StatusWrapper(s)
     }
 }
