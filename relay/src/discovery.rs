@@ -16,7 +16,6 @@ pub struct RelayDiscoveryService {
 
 #[tonic::async_trait]
 impl DiscoveryService for RelayDiscoveryService {
-    #[allow(clippy::collapsible_if)]
     async fn list_graphs(
         &self,
         request: Request<ListGraphsRequest>,
@@ -45,7 +44,6 @@ impl DiscoveryService for RelayDiscoveryService {
                 .map_err(RelayError::from)
                 .map_err(Status::from)?;
 
-            // Flatten logic
             let head_id = match heads.first() {
                 Some(id) => id,
                 None => continue,
@@ -61,23 +59,21 @@ impl DiscoveryService for RelayDiscoveryService {
                 None => continue,
             };
 
-            let meta_block = if let Some(block_id) = manifest.active_blocks().first() {
-                self.store
-                    .get_block(block_id)
-                    .map_err(RelayError::from)
-                    .map_err(Status::from)?
-            } else {
-                None
-            };
+            // In Merkle model, metadata is inside the content_root block.
+            // For Discovery summary, we fetch the root block as a hint.
+            let root_block = self
+                .store
+                .get_block(&manifest.content_root())
+                .map_err(RelayError::from)
+                .map_err(Status::from)?
+                .ok_or_else(|| Status::internal("Missing content root block"))?;
 
-            if let Some(block) = meta_block {
-                summaries.push(GraphSummary {
-                    graph_id: doc_id.0.to_string(),
-                    lockbox: Some(lockbox.into()),
-                    head_manifest_id: Some((*head_id).into()),
-                    metadata_block: Some(block.into()),
-                });
-            }
+            summaries.push(GraphSummary {
+                graph_id: doc_id.0.to_string(),
+                lockbox: Some(lockbox.into()),
+                head_manifest_id: Some((*head_id).into()),
+                metadata_block: Some(root_block.into()),
+            });
         }
 
         Ok(Response::new(ListGraphsResponse { summaries }))
@@ -89,7 +85,7 @@ impl DiscoveryService for RelayDiscoveryService {
     ) -> Result<Response<PushLockboxResponse>, Status> {
         let req = request.into_inner();
 
-        let doc_id = req
+        let graph_id = req
             .graph_id
             .parse::<GraphId>()
             .map_err(|_| Status::invalid_argument("Invalid graph_id format"))?;
@@ -109,7 +105,7 @@ impl DiscoveryService for RelayDiscoveryService {
         let mut store = self.store.as_ref().clone();
 
         store
-            .put_lockbox(doc_id, &recipient_key, &lockbox)
+            .put_lockbox(graph_id, &recipient_key, &lockbox)
             .map_err(RelayError::from)
             .map_err(Status::from)?;
 

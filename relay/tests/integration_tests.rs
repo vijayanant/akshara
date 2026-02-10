@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{BlockContent, GraphKey, Lockbox};
-use sovereign_core::graph::{Block, GraphId, Manifest};
+use sovereign_core::crypto::{GraphKey, Lockbox};
+use sovereign_core::graph::{Block, GraphId, Manifest, ManifestId};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::InMemoryStore;
 use sovereign_relay::discovery::RelayDiscoveryService;
@@ -57,18 +57,20 @@ async fn integration_full_collaboration_lifecycle() {
     let bob = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let graph_key = GraphKey::generate(&mut rng);
+    let anchor = ManifestId::from_sha256(&[0u8; 32]);
 
     // 2. Alice Creates Content
-    let plaintext = b"Grand System Data";
-    let content = BlockContent::encrypt(plaintext, &graph_key, [0u8; 12]).unwrap();
+    let plaintext = b"Grand System Data".to_vec();
     let block = Block::new(
-        content,
-        "a".to_string(),
-        "metadata".to_string(),
+        plaintext.clone(),
+        "p".to_string(),
         vec![],
+        &graph_key,
         &alice,
-    );
-    let manifest = Manifest::new(graph_id, vec![block.id()], vec![], &alice);
+    )
+    .expect("Alice failed to create block");
+
+    let manifest = Manifest::new(graph_id, block.id(), vec![], anchor, &alice);
 
     // 3. Alice Pushes Data (gRPC)
     let push_req = PushRequest {
@@ -80,9 +82,9 @@ async fn integration_full_collaboration_lifecycle() {
     // 4. Alice Shares with Bob (gRPC)
     let lockbox = Lockbox::create(bob.public().encryption_key(), &graph_key, &mut rng).unwrap();
     let share_req = PushLockboxRequest {
-        graph_id: graph_id.0.to_string(),
         recipient_key: Some(bob.public().encryption_key().clone().into()),
         lockbox: Some(lockbox.into()),
+        graph_id: graph_id.0.to_string(),
     };
     discovery_client
         .push_lockbox(share_req)
@@ -99,19 +101,18 @@ async fn integration_full_collaboration_lifecycle() {
         .expect("Bob List failed");
     let summaries = list_resp.into_inner().summaries;
     assert_eq!(summaries.len(), 1);
-    let summary = &summaries[0];
 
     // 6. Bob Syncs Content (gRPC)
     let sync_req = SyncRequest {
         graph_id: graph_id.0.to_string(),
         heads: vec![], // Bob knows nothing
     };
+
     let mut stream = sync_client
         .sync(sync_req)
         .await
         .expect("Bob Sync failed")
         .into_inner();
-
     let mut received_manifest = None;
     let mut received_block = None;
 
@@ -132,10 +133,12 @@ async fn integration_full_collaboration_lifecycle() {
     let b: Block = b_proto.try_into().map_err(|e: StatusWrapper| e.0).unwrap();
 
     assert_eq!(m.id(), manifest.id());
+
     assert_eq!(b.id(), block.id());
 
     // Bob decrypts everything
-    let bob_lockbox: Lockbox = summary
+
+    let bob_lockbox: Lockbox = summaries[0]
         .lockbox
         .as_ref()
         .unwrap()
@@ -143,9 +146,11 @@ async fn integration_full_collaboration_lifecycle() {
         .try_into()
         .map_err(|e: StatusWrapper| e.0)
         .unwrap();
+
     let retrieved_key = bob_lockbox
         .open(bob.encryption_key())
         .expect("Bob fails lockbox");
+
     let retrieved_plaintext = b
         .content()
         .decrypt(&retrieved_key)

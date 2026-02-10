@@ -1,16 +1,34 @@
 syntax = "proto3";
 package sovereign.relay.v1;
 
-// --- Core Data Structures (Mirrors sovereign-core) ---
+// --- Primitives ---
 
-message BlockId { bytes val = 1; }
-message ManifestId { bytes val = 1; }
-message Signature { bytes val = 1; }
-message PublicKey { bytes val = 2; }
+message BlockId {
+    bytes val = 1;
+}
+
+message ManifestId {
+    bytes val = 1;
+}
+
+message PublicKey {
+    bytes val = 1;
+}
+
+message Signature {
+    bytes val = 1;
+}
 
 message BlockContent {
     bytes ciphertext = 1;
     bytes nonce = 2;
+}
+
+// --- Domain Objects ---
+
+message Lockbox {
+    PublicKey ephemeral_public_key = 1;
+    BlockContent content = 2;
 }
 
 message Block {
@@ -18,25 +36,19 @@ message Block {
     PublicKey author_key = 2;
     Signature signature = 3;
     BlockContent content = 4;
-    string rank = 5;
-    string block_type = 6;
-    repeated BlockId parents = 7;
+    string block_type = 5;
+    repeated BlockId parents = 6;
 }
 
 message Manifest {
     ManifestId id = 1;
-    string graph_id = 2; // UUID string (formerly document_id)
-    repeated ManifestId parents = 3;
-    repeated BlockId active_blocks = 4;
-    ManifestId merkle_root = 5;
+    string graph_id = 2;
+    BlockId content_root = 3;
+    repeated ManifestId parents = 4;
+    ManifestId identity_anchor = 5;
     PublicKey author_key = 6;
     Signature signature = 7;
     int64 created_at = 8;
-}
-
-message Lockbox {
-    PublicKey ephemeral_public_key = 1;
-    BlockContent content = 2; // Encrypted DocKey
 }
 
 // --- Service: Sync & Data ---
@@ -81,7 +93,6 @@ service DiscoveryService {
 }
 
 message ListGraphsRequest {
-    // Caller identity
     PublicKey recipient_key = 1;
 }
 
@@ -93,7 +104,7 @@ message GraphSummary {
     string graph_id = 1;
     Lockbox lockbox = 2;
     ManifestId head_manifest_id = 3;
-    Block metadata_block = 4; // The app-specific hint (title, type, etc)
+    Block metadata_block = 4; 
 }
 
 message PushLockboxRequest {

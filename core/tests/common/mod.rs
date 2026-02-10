@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
 use sovereign_core::crypto::{BlockContent, GraphKey};
-use sovereign_core::graph::{Block, GraphId, Manifest, ManifestId, BlockId};
+use sovereign_core::graph::{Block, BlockId, GraphId, Manifest, ManifestId};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
 
@@ -41,7 +41,8 @@ pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
         vec![],
         &key,
         &identity,
-    ).expect("Failed to create block");
+    )
+    .expect("Failed to create block");
     (block, identity)
 }
 
@@ -57,13 +58,7 @@ pub fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId>
     let mut ids = vec![];
 
     for _ in 0..length {
-        let manifest = Manifest::new(
-            graph_id, 
-            root, 
-            parents.clone(), 
-            anchor, 
-            &identity
-        );
+        let manifest = Manifest::new(graph_id, root, parents.clone(), anchor, &identity);
         store.put_manifest(&manifest).unwrap();
         parents = vec![manifest.id()];
         ids.push(manifest.id());

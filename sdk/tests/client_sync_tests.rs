@@ -60,21 +60,12 @@ fn create_valid_data() -> (Manifest, Block) {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
+    let key = sovereign_core::crypto::GraphKey::from([0u8; 32]);
+    let anchor = ManifestId::from_sha256(&[0u8; 32]);
 
-    let block = Block::new(
-        sovereign_core::crypto::BlockContent::encrypt(
-            &[],
-            &sovereign_core::crypto::GraphKey::from([0u8; 32]),
-            [0u8; 12],
-        )
-        .unwrap(),
-        "a".to_string(),
-        "p".to_string(),
-        vec![],
-        &identity,
-    );
+    let block = Block::new(vec![], "p".to_string(), vec![], &key, &identity).unwrap();
 
-    let manifest = Manifest::new(graph_id, vec![block.id()], vec![], &identity);
+    let manifest = Manifest::new(graph_id, block.id(), vec![], anchor, &identity);
     (manifest, block)
 }
 
@@ -90,8 +81,12 @@ async fn client_transitions_to_idle_if_already_synced() {
     let store = InMemoryStore::new();
     let network = MockNetwork::default();
     let mut client = SyncClient::new(store);
+    let graph_id = GraphId::new();
 
-    client.perform_sync(&network, vec![]).await.unwrap();
+    client
+        .perform_sync(graph_id, &network, vec![])
+        .await
+        .unwrap();
 
     assert_eq!(client.state(), SyncState::Idle);
 }
@@ -107,8 +102,12 @@ async fn client_fetches_and_saves_missing_data() {
         ..Default::default()
     };
     let mut client = SyncClient::new(store.clone());
+    let graph_id = GraphId::new();
 
-    client.perform_sync(&network, vec![]).await.unwrap();
+    client
+        .perform_sync(graph_id, &network, vec![])
+        .await
+        .unwrap();
 
     assert_eq!(client.state(), SyncState::Idle);
     assert!(store.get_manifest(&manifest.id()).unwrap().is_some());
@@ -123,7 +122,9 @@ async fn client_handles_network_error_gracefully() {
         ..Default::default()
     };
     let mut client = SyncClient::new(store);
-    let result = client.perform_sync(&network, vec![]).await;
+    let graph_id = GraphId::new();
+
+    let result = client.perform_sync(graph_id, &network, vec![]).await;
 
     // Assert it is a Network Error
     match result {
@@ -145,7 +146,9 @@ async fn client_handles_partial_fetch_failure() {
     };
 
     let mut client = SyncClient::new(store.clone());
-    let result = client.perform_sync(&network, vec![]).await;
+    let graph_id = GraphId::new();
+
+    let result = client.perform_sync(graph_id, &network, vec![]).await;
 
     // Assert it is a Network Error
     match result {

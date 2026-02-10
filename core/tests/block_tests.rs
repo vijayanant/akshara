@@ -103,14 +103,14 @@ fn block_integrity_fails_on_tampered_metadata() {
 fn block_supports_empty_content() {
     let identity = create_identity();
     let key = create_dummy_key();
-    
+
     let block = Block::new(vec![], "p".to_string(), vec![], &key, &identity).unwrap();
     assert!(block.verify_integrity().is_ok());
 
     // Decrypt and check
     let decrypted = block.content().decrypt(&key).unwrap();
     // It should be empty!
-    assert!(decrypted.is_empty()); 
+    assert!(decrypted.is_empty());
 }
 
 #[test]

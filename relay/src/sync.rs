@@ -46,7 +46,7 @@ impl SyncService for RelaySyncService {
             .map_err(RelayError::from)
             .map_err(Status::from)?;
 
-        let core_req = CoreSyncRequest::new(heads);
+        let core_req = CoreSyncRequest::new(graph_id, heads);
 
         let diff = engine
             .calculate_response(&core_req, &local_heads)

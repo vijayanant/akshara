@@ -148,7 +148,6 @@ impl From<Block> for proto::Block {
             author_key: Some(b.author().clone().into()),
             signature: Some(b.signature().clone().into()),
             content: Some(b.content().clone().into()),
-            rank: b.rank().to_string(),
             block_type: b.block_type().to_string(),
             parents: b.parents().iter().map(|p| (*p).into()).collect(),
         }
@@ -170,7 +169,6 @@ impl TryFrom<proto::Block> for Block {
             p.content
                 .ok_or_else(|| StatusWrapper::invalid("Missing Content"))?
                 .try_into()?,
-            p.rank,
             p.block_type,
             p.parents
                 .into_iter()
@@ -185,9 +183,9 @@ impl From<Manifest> for proto::Manifest {
         proto::Manifest {
             id: Some(m.id().into()),
             graph_id: m.graph_id().0.to_string(),
+            content_root: Some(m.content_root().into()),
             parents: m.parents().iter().map(|p| (*p).into()).collect(),
-            active_blocks: m.active_blocks().iter().map(|b| (*b).into()).collect(),
-            merkle_root: Some(m.merkle_root().into()),
+            identity_anchor: Some(m.identity_anchor().into()),
             author_key: Some(m.author().clone().into()),
             signature: Some(m.signature().clone().into()),
             created_at: m.created_at(),
@@ -205,16 +203,15 @@ impl TryFrom<proto::Manifest> for Manifest {
             p.id.ok_or_else(|| StatusWrapper::invalid("Missing Manifest ID"))?
                 .try_into()?,
             GraphId(doc_uuid),
+            p.content_root
+                .ok_or_else(|| StatusWrapper::invalid("Missing Content Root"))?
+                .try_into()?,
             p.parents
                 .into_iter()
                 .map(|id| id.try_into())
                 .collect::<Result<Vec<_>, _>>()?,
-            p.active_blocks
-                .into_iter()
-                .map(|id| id.try_into())
-                .collect::<Result<Vec<_>, _>>()?,
-            p.merkle_root
-                .ok_or_else(|| StatusWrapper::invalid("Missing Merkle Root"))?
+            p.identity_anchor
+                .ok_or_else(|| StatusWrapper::invalid("Missing Identity Anchor"))?
                 .try_into()?,
             p.author_key
                 .ok_or_else(|| StatusWrapper::invalid("Missing Author Key"))?

@@ -1,5 +1,5 @@
+use sovereign_core::error::{IntegrityError, SovereignError};
 use sovereign_core::graph::BlockId;
-use sovereign_core::error::{SovereignError, IntegrityError};
 use std::str::FromStr;
 
 #[test]
@@ -85,8 +85,8 @@ fn test_cid_serde_json_representation() {
 
 #[test]
 fn test_cid_codec_enforcement() {
-    use multihash_codetable::{Code, MultihashDigest};
     use cid::Cid;
+    use multihash_codetable::{Code, MultihashDigest};
 
     // 1. Create a valid CID but with the WRONG codec (e.g. Git = 0x71)
     let hash = Code::Sha2_256.digest(b"not_a_sovereign_block");
@@ -96,9 +96,12 @@ fn test_cid_codec_enforcement() {
     // 2. Attempt to parse this into a BlockId
     // This MUST fail because BlockId only accepts 0x50
     let result = BlockId::from_str(&git_cid_str);
-    
-    assert!(result.is_err(), "BlockId must reject CIDs with non-Sovereign codecs");
-    
+
+    assert!(
+        result.is_err(),
+        "BlockId must reject CIDs with non-Sovereign codecs"
+    );
+
     if let Err(SovereignError::Integrity(IntegrityError::MalformedId)) = result {
         // Success: Correct error returned
     } else {

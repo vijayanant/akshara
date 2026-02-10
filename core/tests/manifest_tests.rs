@@ -46,20 +46,23 @@ fn manifest_integrity_fails_on_tampered_content_root() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
     let manifest = Manifest::new(
-        GraphId::new(), 
-        BlockId::from_sha256(&[1u8; 32]), 
-        vec![], 
-        ManifestId::from_sha256(&[2u8; 32]), 
-        &identity
+        GraphId::new(),
+        BlockId::from_sha256(&[1u8; 32]),
+        vec![],
+        ManifestId::from_sha256(&[2u8; 32]),
+        &identity,
     );
 
     let json = serde_json::to_string(&manifest).unwrap();
     // Tamper with the CID string in JSON using an ILLEGAL character (Base32 excludes 0, 1, 8, 9)
     let tampered_json = json.replace("\"content_root\":\"baf", "\"content_root\":\"baf0");
-    
+
     // Deserialization should fail because 'bafz' is not a valid Base32 CID
     let result: Result<Manifest, _> = serde_json::from_str(&tampered_json);
-    assert!(result.is_err(), "Deserialization must fail on malformed CID");
+    assert!(
+        result.is_err(),
+        "Deserialization must fail on malformed CID"
+    );
 }
 
 #[test]
@@ -68,11 +71,11 @@ fn manifest_integrity_fails_on_tampered_metadata() {
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let manifest = Manifest::new(
-        graph_id, 
-        BlockId::from_sha256(&[1u8; 32]), 
-        vec![], 
-        ManifestId::from_sha256(&[2u8; 32]), 
-        &identity
+        graph_id,
+        BlockId::from_sha256(&[1u8; 32]),
+        vec![],
+        ManifestId::from_sha256(&[2u8; 32]),
+        &identity,
     );
 
     let mut val: serde_json::Value = serde_json::to_value(&manifest).unwrap();
@@ -80,7 +83,10 @@ fn manifest_integrity_fails_on_tampered_metadata() {
     val["graph_id"] = serde_json::json!(uuid::Uuid::new_v4().to_string());
 
     let tampered: Manifest = serde_json::from_value(val).unwrap();
-    assert!(tampered.verify_integrity().is_err(), "Must fail when graph_id is tampered");
+    assert!(
+        tampered.verify_integrity().is_err(),
+        "Must fail when graph_id is tampered"
+    );
 }
 
 #[test]
@@ -88,11 +94,11 @@ fn manifest_integrity_fails_on_tampered_signature() {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
     let manifest = Manifest::new(
-        GraphId::new(), 
-        BlockId::from_sha256(&[1u8; 32]), 
-        vec![], 
-        ManifestId::from_sha256(&[2u8; 32]), 
-        &identity
+        GraphId::new(),
+        BlockId::from_sha256(&[1u8; 32]),
+        vec![],
+        ManifestId::from_sha256(&[2u8; 32]),
+        &identity,
     );
 
     let mut val: serde_json::Value = serde_json::to_value(&manifest).unwrap();
@@ -102,7 +108,10 @@ fn manifest_integrity_fails_on_tampered_signature() {
     }
 
     let tampered: Manifest = serde_json::from_value(val).unwrap();
-    assert!(tampered.verify_integrity().is_err(), "Must fail when signature is tampered");
+    assert!(
+        tampered.verify_integrity().is_err(),
+        "Must fail when signature is tampered"
+    );
 }
 
 #[test]
