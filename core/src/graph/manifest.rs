@@ -196,10 +196,17 @@ impl Manifest {
     /// Computes a Merkle Root from a list of block IDs using pairwise recursive hashing.
     fn compute_merkle_root(active_blocks: &[BlockId]) -> ManifestId {
         if active_blocks.is_empty() {
-            return ManifestId([0; 32]);
+            return ManifestId::from_sha256(&[0; 32]);
         }
 
-        let mut nodes: Vec<[u8; 32]> = active_blocks.iter().map(|b| b.0).collect();
+        let mut nodes: Vec<[u8; 32]> = active_blocks
+            .iter()
+            .map(|b| {
+                let mut bytes = [0u8; 32];
+                bytes.copy_from_slice(b.as_ref());
+                bytes
+            })
+            .collect();
 
         while nodes.len() > 1 {
             let mut next_level = Vec::new();
@@ -217,7 +224,7 @@ impl Manifest {
             nodes = next_level;
         }
 
-        ManifestId(nodes[0])
+        ManifestId::from_sha256(&nodes[0])
     }
 
     /// Canonical hash function for the manifest's identity.
@@ -238,6 +245,6 @@ impl Manifest {
         hasher.update(author.as_bytes());
         hasher.update(created_at.to_le_bytes());
 
-        ManifestId(hasher.finalize().into())
+        ManifestId::from_sha256(&hasher.finalize())
     }
 }

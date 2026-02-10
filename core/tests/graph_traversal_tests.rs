@@ -1,8 +1,6 @@
 mod common;
 use common::*;
-use rand::rngs::OsRng;
-use sovereign_core::graph::{BlockId, GraphId, GraphWalker, Manifest};
-use sovereign_core::identity::SecretIdentity;
+use sovereign_core::graph::{BlockId, GraphId, GraphWalker, Manifest, ManifestId};
 use sovereign_core::store::{GraphStore, InMemoryStore};
 
 #[test]
@@ -10,75 +8,65 @@ fn can_find_ancestors_in_chain() {
     let mut store = InMemoryStore::new();
     let chain = create_chain(3, &mut store); // A -> B -> C
 
-    let head = chain[2]; // C
-    let mid = chain[1]; // B
-    let root = chain[0]; // A
-
     let walker = GraphWalker::new(&store);
-    let ancestors = walker.get_ancestors(&head).expect("Should traverse");
+    let ancestors = walker.get_ancestors(&chain[2]).unwrap();
 
-    assert!(ancestors.contains(&mid));
-    assert!(ancestors.contains(&root));
-    assert!(!ancestors.contains(&head));
+    assert_eq!(ancestors.len(), 2);
+    assert!(ancestors.contains(&chain[0]));
+    assert!(ancestors.contains(&chain[1]));
 }
 
 #[test]
 fn walker_handles_diamond_graph() {
-    let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = GraphId::new();
     let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let graph_id = GraphId::new();
 
-    // A
-    let a = Manifest::new(doc_id, vec![], vec![], &identity);
-    store.put_manifest(&a).unwrap();
+    // 1. Root A
+    let m_a = Manifest::new(graph_id, vec![], vec![], &identity);
+    store.put_manifest(&m_a).unwrap();
 
-    // B -> A
-    let b_block = BlockId([0xB1; 32]);
-    let b = Manifest::new(doc_id, vec![b_block], vec![a.id()], &identity);
-    store.put_manifest(&b).unwrap();
+    // 2. Branch B -> A (Add a unique block)
+    let b_block = BlockId::from_sha256(&[0xB1; 32]);
+    let m_b = Manifest::new(graph_id, vec![b_block], vec![m_a.id()], &identity);
+    store.put_manifest(&m_b).unwrap();
 
-    // C -> A
-    let c = Manifest::new(doc_id, vec![], vec![a.id()], &identity);
-    store.put_manifest(&c).unwrap();
+    // 3. Branch C -> A (Add a different unique block)
+    let c_block = BlockId::from_sha256(&[0xC1; 32]);
+    let m_c = Manifest::new(graph_id, vec![c_block], vec![m_a.id()], &identity);
+    store.put_manifest(&m_c).unwrap();
 
-    // D -> B, C
-    let d = Manifest::new(doc_id, vec![], vec![b.id(), c.id()], &identity);
-    store.put_manifest(&d).unwrap();
+    // 4. Merge D -> B, C
+    let m_d = Manifest::new(graph_id, vec![], vec![m_b.id(), m_c.id()], &identity);
+    store.put_manifest(&m_d).unwrap();
 
     let walker = GraphWalker::new(&store);
-    let ancestors = walker.get_ancestors(&d.id()).unwrap();
+    let ancestors = walker.get_ancestors(&m_d.id()).unwrap();
 
-    // Should contain A, B, C.
-    assert!(ancestors.contains(&a.id()));
-    assert!(ancestors.contains(&b.id()));
-    assert!(ancestors.contains(&c.id()));
-
-    // A should only be visited once (set ensures uniqueness, but we check correctness)
+    // Should find A, B, and C
     assert_eq!(ancestors.len(), 3);
+    assert!(ancestors.contains(&m_a.id()));
+    assert!(ancestors.contains(&m_b.id()));
+    assert!(ancestors.contains(&m_c.id()));
 }
 
 #[test]
 fn walker_handles_missing_parent() {
-    let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
-    let doc_id = GraphId::new();
     let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let graph_id = GraphId::new();
 
-    // A (Not stored)
-    let a = Manifest::new(doc_id, vec![], vec![], &identity);
-
-    // B -> A
-    let b = Manifest::new(doc_id, vec![], vec![a.id()], &identity);
-    store.put_manifest(&b).unwrap();
+    // Manifest B pointing to A, but A is not in store
+    let a_id = ManifestId::from_sha256(&[0xEE; 32]);
+    let m_b = Manifest::new(graph_id, vec![], vec![a_id], &identity);
+    store.put_manifest(&m_b).unwrap();
 
     let walker = GraphWalker::new(&store);
-
-    let ancestors = walker.get_ancestors(&b.id()).unwrap();
+    let ancestors = walker.get_ancestors(&m_b.id()).unwrap();
 
     // It should find A (referenced by B), but stop there.
     assert_eq!(ancestors.len(), 1);
-    assert!(ancestors.contains(&a.id()));
+    assert!(ancestors.contains(&a_id));
 }
 
 #[test]
@@ -87,21 +75,15 @@ fn walker_respects_graph_boundaries() {
 
     // Chain 1: A -> B
     let chain1 = create_chain(2, &mut store);
-    let _head1 = chain1[1];
 
-    // Chain 2: X -> Y (Completely separate)
+    // Chain 2: X -> Y
     let chain2 = create_chain(2, &mut store);
     let head2 = chain2[1];
 
     let walker = GraphWalker::new(&store);
-
-    // Walk Chain 2
     let ancestors2 = walker.get_ancestors(&head2).unwrap();
 
-    // Must contain X
     assert!(ancestors2.contains(&chain2[0]));
-
-    // Must NOT contain A or B
     assert!(!ancestors2.contains(&chain1[0]));
     assert!(!ancestors2.contains(&chain1[1]));
 }

@@ -10,6 +10,7 @@ tonic = "0.12.1"
 prost = "0.13.1"
 serde = { version = "1.0.203", features = ["derive"] }
 uuid = { version = "1.8.0", features = ["v4"] }
+cid = "0.11.1"
 
 [build-dependencies]
 tonic-build = "0.12.1"

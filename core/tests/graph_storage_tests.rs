@@ -57,7 +57,7 @@ fn store_tracks_multiple_heads_on_fork() {
     store.put_manifest(&m_b).unwrap();
 
     // Fork C -> A (Must differ from B content-wise)
-    let unique_block = BlockId([0xFF; 32]);
+    let unique_block = BlockId::from_sha256(&[0xFF; 32]);
     let m_c = Manifest::new(graph_id, vec![unique_block], vec![m_a.id()], &identity);
     store.put_manifest(&m_c).unwrap();
 
@@ -78,7 +78,7 @@ fn store_merges_heads() {
     let m_b = Manifest::new(graph_id, vec![], vec![m_a.id()], &identity);
 
     // Fork C needs unique content
-    let unique_block = BlockId([0xFF; 32]);
+    let unique_block = BlockId::from_sha256(&[0xFF; 32]);
     let m_c = Manifest::new(graph_id, vec![unique_block], vec![m_a.id()], &identity);
 
     store.put_manifest(&m_a).unwrap();
@@ -96,8 +96,6 @@ fn store_merges_heads() {
 
 #[test]
 fn store_handles_out_of_order_insertion() {
-    // This documents the LIMITATION (FIXME) we noted.
-    // If Child arrives before Parent, both might remain as heads.
     let mut store = InMemoryStore::new();
     let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
 
@@ -111,12 +109,6 @@ fn store_handles_out_of_order_insertion() {
     store.put_manifest(&m_a).unwrap();
 
     let heads = store.get_heads(&graph_id).unwrap();
-
-    // Ideally, only B is head.
-    // But our current simplistic logic only removes *referenced parents*.
-    // When A is added, it has no parents, so it's a head.
-    // We don't check if A is *already referenced* by B.
-
     assert!(heads.contains(&m_b.id()));
-    assert!(heads.contains(&m_a.id())); // A is technically a "False Head" here
+    assert!(heads.contains(&m_a.id()));
 }

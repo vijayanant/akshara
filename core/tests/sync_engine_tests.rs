@@ -33,18 +33,16 @@ fn sync_engine_handles_forks() {
     let m_a_id = chain[0];
 
     let identity = create_identity();
-    let doc_id = GraphId::new();
-
-    // 1. Root A is already in store via create_chain
+    let graph_id = GraphId::new();
 
     // 2. Branch B (Child of A)
-    let b_block = BlockId([0xB1; 32]);
-    let m_b = Manifest::new(doc_id, vec![b_block], vec![m_a_id], &identity);
+    let b_block = BlockId::from_sha256(&[0xB1; 32]);
+    let m_b = Manifest::new(graph_id, vec![b_block], vec![m_a_id], &identity);
     store.put_manifest(&m_b).unwrap();
 
     // 3. Branch C (Child of A) - The Fork
-    let c_block = BlockId([0xC1; 32]);
-    let m_c = Manifest::new(doc_id, vec![c_block], vec![m_a_id], &identity);
+    let c_block = BlockId::from_sha256(&[0xC1; 32]);
+    let m_c = Manifest::new(graph_id, vec![c_block], vec![m_a_id], &identity);
     store.put_manifest(&m_c).unwrap();
 
     // Setup: Server has [B, C]. Client has [C].
@@ -82,16 +80,12 @@ fn sync_engine_ignores_unknown_remote_heads() {
     let local_heads = vec![chain[0]]; // A
 
     // Remote sends Z (unknown)
-    let unknown_head = ManifestId([0xFF; 32]);
+    let unknown_head = ManifestId::from_sha256(&[0xFF; 32]);
     let request = SyncRequest::new(vec![unknown_head]);
 
     let engine = SyncEngine::new(&store);
     let response = engine.calculate_response(&request, &local_heads).unwrap();
 
-    // Missing = Local(A) - Remote(Z).
-    // Remote(Z) traversal fails immediately, so Remote Known = {Z}.
-    // A is not in {Z}.
-    // So Server returns A.
     assert_eq!(response.missing_manifests().len(), 1);
     assert_eq!(response.missing_manifests()[0], chain[0]);
 }

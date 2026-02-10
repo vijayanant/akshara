@@ -1,59 +1,58 @@
-use rand::rngs::OsRng;
+mod common;
+use common::*;
 use sovereign_core::graph::{BlockId, GraphId, GraphWalker, Manifest};
-use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
 
 #[test]
 fn can_find_manifest_lca() {
-    let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
-    let graph_id = GraphId::new();
     let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let graph_id = GraphId::new();
 
-    // A
-    let a = Manifest::new(graph_id, vec![], vec![], &identity);
-    store.put_manifest(&a).unwrap();
+    // 1. Root A
+    let m_a = Manifest::new(graph_id, vec![], vec![], &identity);
+    store.put_manifest(&m_a).unwrap();
 
-    // B -> A
-    let b_block = BlockId([0xB1; 32]);
-    let b = Manifest::new(graph_id, vec![b_block], vec![a.id()], &identity);
-    store.put_manifest(&b).unwrap();
+    // 2. Branch B -> A
+    let b_block = BlockId::from_sha256(&[0xB1; 32]);
+    let m_b = Manifest::new(graph_id, vec![b_block], vec![m_a.id()], &identity);
+    store.put_manifest(&m_b).unwrap();
 
-    // C -> A
-    let c_block = BlockId([0xC1; 32]);
-    let c = Manifest::new(graph_id, vec![c_block], vec![a.id()], &identity);
-    store.put_manifest(&c).unwrap();
+    // 3. Branch C -> A
+    let c_block = BlockId::from_sha256(&[0xC1; 32]);
+    let m_c = Manifest::new(graph_id, vec![c_block], vec![m_a.id()], &identity);
+    store.put_manifest(&m_c).unwrap();
 
+    // 4. Find LCA of B and C
     let walker = GraphWalker::new(&store);
+    let lca = walker.find_lca(&m_b.id(), &m_c.id()).unwrap();
 
-    // LCA(B, C) should be A
-    let lca = walker.find_lca(&b.id(), &c.id()).unwrap();
-    assert_eq!(lca, Some(a.id()));
+    assert_eq!(lca, Some(m_a.id()));
 }
 
 #[test]
 fn can_diff_forked_manifests() {
-    let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
+    let mut store = InMemoryStore::new();
+    let identity = create_identity();
     let graph_id = GraphId::new();
 
-    let b1 = BlockId([1u8; 32]);
+    // Common Ancestor A
+    let m_a = Manifest::new(graph_id, vec![], vec![], &identity);
+    store.put_manifest(&m_a).unwrap();
 
-    let b2 = BlockId([2u8; 32]);
-    let b3 = BlockId([3u8; 32]);
+    // Left B (adds block 1)
+    let b1 = BlockId::from_sha256(&[1u8; 32]);
+    let m_b = Manifest::new(graph_id, vec![b1], vec![m_a.id()], &identity);
+    store.put_manifest(&m_b).unwrap();
 
-    // Base: [1]
-    let base = Manifest::new(graph_id, vec![b1], vec![], &identity);
+    // Right C (adds block 2)
+    let b2 = BlockId::from_sha256(&[2u8; 32]);
+    let m_c = Manifest::new(graph_id, vec![b2], vec![m_a.id()], &identity);
+    store.put_manifest(&m_c).unwrap();
 
-    // Left: [2] (Replaced 1 with 2)
-    let left = Manifest::new(graph_id, vec![b2], vec![base.id()], &identity);
+    // Diff
+    let diff = m_b.diff(&m_c, Some(&m_a));
 
-    // Right: [3] (Replaced 1 with 3)
-    let right = Manifest::new(graph_id, vec![b3], vec![base.id()], &identity);
-
-    // Diff Logic
-    let diff = left.diff(&right, Some(&base));
-
-    assert_eq!(diff.left_only, vec![b2]);
-    assert_eq!(diff.right_only, vec![b3]);
+    assert_eq!(diff.left_only, vec![b1]);
+    assert_eq!(diff.right_only, vec![b2]);
 }

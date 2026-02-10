@@ -1,4 +1,5 @@
 use crate::v1 as proto;
+use cid::Cid;
 use sovereign_core::crypto::{
     BlockContent, EncryptionPublicKey, Lockbox, Signature as CoreSignature, SigningPublicKey,
 };
@@ -11,35 +12,35 @@ use uuid::Uuid;
 
 impl From<BlockId> for proto::BlockId {
     fn from(id: BlockId) -> Self {
-        proto::BlockId { val: id.0.to_vec() }
+        proto::BlockId {
+            val: id.0.to_bytes(),
+        }
     }
 }
 
 impl TryFrom<proto::BlockId> for BlockId {
     type Error = StatusWrapper;
     fn try_from(p: proto::BlockId) -> Result<Self, Self::Error> {
-        let bytes: [u8; 32] = p
-            .val
-            .try_into()
-            .map_err(|_| StatusWrapper::invalid("Invalid BlockId length"))?;
-        Ok(BlockId(bytes))
+        let cid =
+            Cid::try_from(p.val).map_err(|_| StatusWrapper::invalid("Invalid CID in BlockId"))?;
+        Ok(BlockId(cid))
     }
 }
 
 impl From<ManifestId> for proto::ManifestId {
     fn from(id: ManifestId) -> Self {
-        proto::ManifestId { val: id.0.to_vec() }
+        proto::ManifestId {
+            val: id.0.to_bytes(),
+        }
     }
 }
 
 impl TryFrom<proto::ManifestId> for ManifestId {
     type Error = StatusWrapper;
     fn try_from(p: proto::ManifestId) -> Result<Self, Self::Error> {
-        let bytes: [u8; 32] = p
-            .val
-            .try_into()
-            .map_err(|_| StatusWrapper::invalid("Invalid ManifestId length"))?;
-        Ok(ManifestId(bytes))
+        let cid = Cid::try_from(p.val)
+            .map_err(|_| StatusWrapper::invalid("Invalid CID in ManifestId"))?;
+        Ok(ManifestId(cid))
     }
 }
 
@@ -161,16 +162,16 @@ impl TryFrom<proto::Block> for Block {
     type Error = StatusWrapper;
     fn try_from(p: proto::Block) -> Result<Self, Self::Error> {
         Ok(Block::from_raw_parts(
-            p.id.ok_or_else(|| Status::invalid_argument("Missing Block ID"))?
+            p.id.ok_or_else(|| StatusWrapper::invalid("Missing Block ID"))?
                 .try_into()?,
             p.author_key
-                .ok_or_else(|| Status::invalid_argument("Missing Author Key"))?
+                .ok_or_else(|| StatusWrapper::invalid("Missing Author Key"))?
                 .try_into()?,
             p.signature
-                .ok_or_else(|| Status::invalid_argument("Missing Signature"))?
+                .ok_or_else(|| StatusWrapper::invalid("Missing Signature"))?
                 .try_into()?,
             p.content
-                .ok_or_else(|| Status::invalid_argument("Missing Content"))?
+                .ok_or_else(|| StatusWrapper::invalid("Missing Content"))?
                 .try_into()?,
             p.rank,
             p.block_type,
@@ -201,10 +202,10 @@ impl TryFrom<proto::Manifest> for Manifest {
     type Error = StatusWrapper;
     fn try_from(p: proto::Manifest) -> Result<Self, Self::Error> {
         let doc_uuid = Uuid::parse_str(&p.graph_id)
-            .map_err(|_| Status::invalid_argument("Invalid GraphId format"))?;
+            .map_err(|_| StatusWrapper::invalid("Invalid GraphId format"))?;
 
         Ok(Manifest::from_raw_parts(
-            p.id.ok_or_else(|| Status::invalid_argument("Missing Manifest ID"))?
+            p.id.ok_or_else(|| StatusWrapper::invalid("Missing Manifest ID"))?
                 .try_into()?,
             GraphId(doc_uuid),
             p.parents
@@ -216,13 +217,13 @@ impl TryFrom<proto::Manifest> for Manifest {
                 .map(|id| id.try_into())
                 .collect::<Result<Vec<_>, _>>()?,
             p.merkle_root
-                .ok_or_else(|| Status::invalid_argument("Missing Merkle Root"))?
+                .ok_or_else(|| StatusWrapper::invalid("Missing Merkle Root"))?
                 .try_into()?,
             p.author_key
-                .ok_or_else(|| Status::invalid_argument("Missing Author Key"))?
+                .ok_or_else(|| StatusWrapper::invalid("Missing Author Key"))?
                 .try_into()?,
             p.signature
-                .ok_or_else(|| Status::invalid_argument("Missing Signature"))?
+                .ok_or_else(|| StatusWrapper::invalid("Missing Signature"))?
                 .try_into()?,
             p.created_at,
         ))

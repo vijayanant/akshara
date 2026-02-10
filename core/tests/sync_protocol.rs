@@ -3,8 +3,8 @@ use sovereign_core::sync::{SyncRequest, SyncResponse};
 
 #[test]
 fn sync_request_contains_graph_heads() {
-    let head1 = ManifestId([1u8; 32]);
-    let head2 = ManifestId([2u8; 32]);
+    let head1 = ManifestId::from_sha256(&[1u8; 32]);
+    let head2 = ManifestId::from_sha256(&[2u8; 32]);
 
     let request = SyncRequest::new(vec![head1, head2]);
 
@@ -15,10 +15,9 @@ fn sync_request_contains_graph_heads() {
 
 #[test]
 fn sync_response_contains_missing_ids() {
-    let m1 = ManifestId([0xA1; 32]);
-    let b1 = BlockId([0xB1; 32]);
+    let m1 = ManifestId::from_sha256(&[0xA1; 32]);
+    let b1 = BlockId::from_sha256(&[0xB1; 32]);
 
-    // This will fail to compile (RED)
     let response = SyncResponse::new(vec![m1], vec![b1]);
 
     assert_eq!(response.missing_manifests().len(), 1);

@@ -11,7 +11,7 @@ pub fn create_identity() -> SecretIdentity {
 
 #[allow(dead_code)]
 pub fn create_dummy_content(data: &[u8]) -> BlockContent {
-    let key = GraphKey::new([0u8; 32]);
+    let key = GraphKey::from([0u8; 32]);
     let nonce = [0u8; 12];
     BlockContent::encrypt(data, &key, nonce).unwrap()
 }

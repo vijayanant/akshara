@@ -199,7 +199,7 @@ fn block_supports_empty_content() {
     assert_eq!(block.content().as_bytes().len(), 16);
 
     // To decrypt we need the key used in helper. Helper uses 0-key.
-    let key = GraphKey::new([0u8; 32]);
+    let key = GraphKey::from([0u8; 32]);
     let decrypted = block.content().decrypt(&key).unwrap();
     assert!(decrypted.is_empty());
 }
@@ -209,8 +209,8 @@ fn block_supports_multiple_parents() {
     let identity = create_identity();
     let content = create_dummy_content(&[]);
 
-    let p1 = BlockId([1u8; 32]);
-    let p2 = BlockId([2u8; 32]);
+    let p1 = BlockId::from_sha256(&[1u8; 32]);
+    let p2 = BlockId::from_sha256(&[2u8; 32]);
     let parents = vec![p1, p2];
 
     let block = Block::new(

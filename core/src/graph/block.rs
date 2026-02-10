@@ -164,6 +164,6 @@ impl Block {
             hasher.update(parent.as_ref());
         }
 
-        BlockId(hasher.finalize().into())
+        BlockId::from_sha256(&hasher.finalize())
     }
 }

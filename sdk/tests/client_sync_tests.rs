@@ -64,7 +64,7 @@ fn create_valid_data() -> (Manifest, Block) {
     let block = Block::new(
         sovereign_core::crypto::BlockContent::encrypt(
             &[],
-            &sovereign_core::crypto::GraphKey::generate(&mut rng),
+            &sovereign_core::crypto::GraphKey::from([0u8; 32]),
             [0u8; 12],
         )
         .unwrap(),
