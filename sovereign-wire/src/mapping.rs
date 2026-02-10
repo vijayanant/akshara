@@ -1,5 +1,4 @@
 use crate::v1 as proto;
-use cid::Cid;
 use sovereign_core::crypto::{
     BlockContent, EncryptionPublicKey, Lockbox, Signature as CoreSignature, SigningPublicKey,
 };
@@ -21,9 +20,8 @@ impl From<BlockId> for proto::BlockId {
 impl TryFrom<proto::BlockId> for BlockId {
     type Error = StatusWrapper;
     fn try_from(p: proto::BlockId) -> Result<Self, Self::Error> {
-        let cid =
-            Cid::try_from(p.val).map_err(|_| StatusWrapper::invalid("Invalid CID in BlockId"))?;
-        Ok(BlockId(cid))
+        BlockId::try_from(p.val.as_slice())
+            .map_err(|_| StatusWrapper::invalid("Invalid CID in BlockId"))
     }
 }
 
@@ -38,9 +36,8 @@ impl From<ManifestId> for proto::ManifestId {
 impl TryFrom<proto::ManifestId> for ManifestId {
     type Error = StatusWrapper;
     fn try_from(p: proto::ManifestId) -> Result<Self, Self::Error> {
-        let cid = Cid::try_from(p.val)
-            .map_err(|_| StatusWrapper::invalid("Invalid CID in ManifestId"))?;
-        Ok(ManifestId(cid))
+        ManifestId::try_from(p.val.as_slice())
+            .map_err(|_| StatusWrapper::invalid("Invalid CID in ManifestId"))
     }
 }
 
@@ -133,10 +130,10 @@ impl TryFrom<proto::Lockbox> for Lockbox {
     fn try_from(p: proto::Lockbox) -> Result<Self, Self::Error> {
         Ok(Lockbox::from_raw_parts(
             p.ephemeral_public_key
-                .ok_or_else(|| Status::invalid_argument("Missing Ephemeral Public Key"))?
+                .ok_or_else(|| StatusWrapper::invalid("Missing Ephemeral Public Key"))?
                 .try_into()?,
             p.content
-                .ok_or_else(|| Status::invalid_argument("Missing Content"))?
+                .ok_or_else(|| StatusWrapper::invalid("Missing Content"))?
                 .try_into()?,
         ))
     }
@@ -234,7 +231,7 @@ impl TryFrom<proto::Manifest> for Manifest {
 pub struct StatusWrapper(pub Status);
 
 impl StatusWrapper {
-    fn invalid(msg: &str) -> Self {
+    pub fn invalid(msg: &str) -> Self {
         StatusWrapper(Status::invalid_argument(msg))
     }
 }

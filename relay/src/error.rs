@@ -30,13 +30,10 @@ impl From<RelayError> for Status {
 /// This logic is encapsulated within the RelayError conversion.
 fn map_sovereign_error(err: SovereignError) -> Status {
     match err {
-        SovereignError::Integrity(IntegrityError::BlockIdMismatch(_)) => {
-            Status::invalid_argument(format!("Integrity Check Failed: {}", err))
-        }
-        SovereignError::Integrity(IntegrityError::ManifestMerkleMismatch(_)) => {
-            Status::invalid_argument(format!("Integrity Check Failed: {}", err))
-        }
-        SovereignError::Integrity(IntegrityError::ManifestIdMismatch(_)) => {
+        SovereignError::Integrity(IntegrityError::BlockIdMismatch(_))
+        | SovereignError::Integrity(IntegrityError::ManifestMerkleMismatch(_))
+        | SovereignError::Integrity(IntegrityError::ManifestIdMismatch(_))
+        | SovereignError::Integrity(IntegrityError::MalformedId) => {
             Status::invalid_argument(format!("Integrity Check Failed: {}", err))
         }
 

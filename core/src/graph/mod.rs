@@ -1,6 +1,7 @@
+use crate::error::{IntegrityError, SovereignError};
 use cid::Cid;
 use multihash_codetable::{Code, MultihashDigest};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -16,17 +17,24 @@ pub use walker::{BlockWalker, GraphWalker};
 // --- Content Identifiers (CIDs) ---
 
 /// Multicodec for Sovereign Blocks (L0 Node)
+/// Identifies an encrypted, signed block.
 pub const CODEC_SOVEREIGN_BLOCK: u64 = 0x50;
 /// Multicodec for Sovereign Manifests (Snapshots)
+/// Identifies a signed graph state entry.
 pub const CODEC_SOVEREIGN_MANIFEST: u64 = 0x51;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct BlockId(pub Cid);
 
 impl BlockId {
     /// Creates a CID v1 for a Sovereign Block from a SHA2-256 digest.
     pub fn from_sha256(digest: &[u8]) -> Self {
-        let hash = Code::Sha2_256.digest(digest);
+        Self::from_digest(Code::Sha2_256, digest)
+    }
+
+    /// Creates a CID v1 for a Sovereign Block using a specific algorithm.
+    pub fn from_digest(code: Code, digest: &[u8]) -> Self {
+        let hash = code.digest(digest);
         let cid = Cid::new_v1(CODEC_SOVEREIGN_BLOCK, hash);
         BlockId(cid)
     }
@@ -52,24 +60,69 @@ impl AsRef<[u8]> for BlockId {
 
 impl fmt::Display for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Use default CID string representation (Base32 for CIDv1)
         write!(f, "{}", self.0)
     }
 }
 
 impl FromStr for BlockId {
-    type Err = cid::Error;
+    type Err = SovereignError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(BlockId(Cid::from_str(s)?))
+        let cid =
+            Cid::from_str(s).map_err(|_| SovereignError::Integrity(IntegrityError::MalformedId))?;
+        if cid.codec() != CODEC_SOVEREIGN_BLOCK {
+            return Err(SovereignError::Integrity(IntegrityError::MalformedId));
+        }
+        Ok(BlockId(cid))
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+impl TryFrom<&[u8]> for BlockId {
+    type Error = SovereignError;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        let mut cursor = std::io::Cursor::new(bytes);
+        let cid = Cid::read_bytes(&mut cursor)
+            .map_err(|_| SovereignError::Integrity(IntegrityError::MalformedId))?;
+
+        if cursor.position() != bytes.len() as u64 || cid.codec() != CODEC_SOVEREIGN_BLOCK {
+            return Err(SovereignError::Integrity(IntegrityError::MalformedId));
+        }
+        Ok(BlockId(cid))
+    }
+}
+
+// Custom Serde for BlockId to use string representation
+impl Serialize for BlockId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for BlockId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        BlockId::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ManifestId(pub Cid);
 
 impl ManifestId {
     /// Creates a CID v1 for a Sovereign Manifest from a SHA2-256 digest.
     pub fn from_sha256(digest: &[u8]) -> Self {
-        let hash = Code::Sha2_256.digest(digest);
+        Self::from_digest(Code::Sha2_256, digest)
+    }
+
+    /// Creates a CID v1 for a Sovereign Manifest using a specific algorithm.
+    pub fn from_digest(code: Code, digest: &[u8]) -> Self {
+        let hash = code.digest(digest);
         let cid = Cid::new_v1(CODEC_SOVEREIGN_MANIFEST, hash);
         ManifestId(cid)
     }
@@ -88,9 +141,48 @@ impl fmt::Display for ManifestId {
 }
 
 impl FromStr for ManifestId {
-    type Err = cid::Error;
+    type Err = SovereignError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(ManifestId(Cid::from_str(s)?))
+        let cid =
+            Cid::from_str(s).map_err(|_| SovereignError::Integrity(IntegrityError::MalformedId))?;
+        if cid.codec() != CODEC_SOVEREIGN_MANIFEST {
+            return Err(SovereignError::Integrity(IntegrityError::MalformedId));
+        }
+        Ok(ManifestId(cid))
+    }
+}
+
+impl TryFrom<&[u8]> for ManifestId {
+    type Error = SovereignError;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        let mut cursor = std::io::Cursor::new(bytes);
+        let cid = Cid::read_bytes(&mut cursor)
+            .map_err(|_| SovereignError::Integrity(IntegrityError::MalformedId))?;
+
+        if cursor.position() != bytes.len() as u64 || cid.codec() != CODEC_SOVEREIGN_MANIFEST {
+            return Err(SovereignError::Integrity(IntegrityError::MalformedId));
+        }
+        Ok(ManifestId(cid))
+    }
+}
+
+// Custom Serde for ManifestId
+impl Serialize for ManifestId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ManifestId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        ManifestId::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 

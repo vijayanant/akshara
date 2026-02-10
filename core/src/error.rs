@@ -36,6 +36,9 @@ pub enum CryptoError {
 
 #[derive(Error, Debug)]
 pub enum IntegrityError {
+    #[error("Identifier is malformed or has invalid length")]
+    MalformedId,
+
     #[error("Block ID {0:?} does not match its content hash")]
     BlockIdMismatch(BlockId),
 
