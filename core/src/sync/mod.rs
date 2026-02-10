@@ -1,4 +1,4 @@
-use crate::graph::{BlockId, ManifestId};
+use crate::graph::{BlockId, GraphId, ManifestId};
 use serde::{Deserialize, Serialize};
 
 pub mod engine;
@@ -7,12 +7,17 @@ pub use engine::SyncEngine;
 /// A request to synchronize the graph state, containing the known heads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncRequest {
+    graph_id: GraphId,
     heads: Vec<ManifestId>,
 }
 
 impl SyncRequest {
-    pub fn new(heads: Vec<ManifestId>) -> Self {
-        Self { heads }
+    pub fn new(graph_id: GraphId, heads: Vec<ManifestId>) -> Self {
+        Self { graph_id, heads }
+    }
+
+    pub fn graph_id(&self) -> &GraphId {
+        &self.graph_id
     }
 
     pub fn heads(&self) -> &[ManifestId] {

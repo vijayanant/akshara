@@ -1,12 +1,13 @@
-use sovereign_core::graph::{BlockId, ManifestId};
+use sovereign_core::graph::{BlockId, GraphId, ManifestId};
 use sovereign_core::sync::{SyncRequest, SyncResponse};
 
 #[test]
 fn sync_request_contains_graph_heads() {
     let head1 = ManifestId::from_sha256(&[1u8; 32]);
     let head2 = ManifestId::from_sha256(&[2u8; 32]);
+    let graph_id = GraphId::new();
 
-    let request = SyncRequest::new(vec![head1, head2]);
+    let request = SyncRequest::new(graph_id, vec![head1, head2]);
 
     assert_eq!(request.heads().len(), 2);
     assert!(request.heads().contains(&head1));

@@ -1,5 +1,5 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{BlockContent, GraphKey};
+use sovereign_core::crypto::{GraphKey};
 use sovereign_core::graph::{Block, BlockId};
 use sovereign_core::identity::SecretIdentity;
 use sovereign_core::store::{GraphStore, InMemoryStore};
@@ -8,16 +8,15 @@ use sovereign_core::store::{GraphStore, InMemoryStore};
 fn create_block(parents: Vec<BlockId>, store: &mut InMemoryStore) -> BlockId {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
-    let key = GraphKey::new([0u8; 32]);
-    let content = BlockContent::encrypt(&[], &key, [0u8; 12]).unwrap();
+    let key = GraphKey::from([0u8; 32]);
 
     let block = Block::new(
-        content,
-        "a".to_string(),
+        vec![],
         "p".to_string(),
         parents,
+        &key,
         &identity,
-    );
+    ).expect("Failed to create block");
     store.put_block(&block).unwrap();
     block.id()
 }
@@ -30,10 +29,6 @@ fn can_detect_block_ancestry() {
     let a = create_block(vec![], &mut store);
     let b = create_block(vec![a], &mut store);
     let c = create_block(vec![b], &mut store);
-
-    // We need logic to check if A is ancestor of C.
-    // GraphWalker currently works on ManifestId.
-    // We need a generic Walker or a specific BlockWalker.
 
     use sovereign_core::graph::BlockWalker;
     let walker = BlockWalker::new(&store);

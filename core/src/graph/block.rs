@@ -1,55 +1,76 @@
-use crate::crypto::{BlockContent, Signature, SigningPublicKey, SovereignSigner};
+use crate::crypto::{BlockContent, GraphKey, Signature, SigningPublicKey, SovereignSigner};
 use crate::error::{CryptoError, IntegrityError, SovereignError};
 use crate::graph::BlockId;
+use cid::Cid;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use tracing::{Level, info, span};
 
 /// A `Block` is the atomic unit of content in Sovereign.
 ///
 /// It is immutable, content-addressed, and cryptographically signed.
-/// Blocks form a Directed Acyclic Graph (DAG) where each block can
-/// reference previous versions via the `parents` field.
+/// All blocks are encrypted with the GraphKey before being hashed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
-    /// The unique identifier of the block, calculated as the SHA-256 hash
-    /// of its content and metadata. This ensures content-addressing.
+    /// The unique identifier of the block (CIDv1).
     id: BlockId,
     /// The public key of the user who authored this block.
     author: SigningPublicKey,
-    /// An Ed25519 signature over the `id`, proving authenticity and intent.
+    /// An Ed25519 signature over the `id`.
     signature: Signature,
-    /// The encrypted payload (text, image data, etc.) and its nonce.
+    /// The encrypted payload (text, image data, or a serialized Index Map).
     content: BlockContent,
-    /// A fractional index used for conflict-free lexicographical ordering
-    /// of blocks within a document.
-    rank: String,
-    /// A hint for the application layer on how to render this block (e.g., "p", "h1").
+    /// A hint for the application layer on how to render this block (e.g., "p", "index").
     block_type: String,
     /// References to the block IDs that this block replaces or merges.
     parents: Vec<BlockId>,
 }
 
 impl Block {
-    /// Creates and signs a new block.
-    ///
-    /// This constructor performs "pure construction" by calculating the
-    /// content-address (ID) and signature before initializing the struct,
-    /// ensuring that a `Block` instance is always valid from birth.
-    ///
-    /// Accepts any `SovereignSigner`, allowing for hardware wallets or remote signers.
+    /// Creates and signs a new Data Block.
     pub fn new(
+        plaintext: Vec<u8>,
+        block_type: String,
+        parents: Vec<BlockId>,
+        key: &GraphKey,
+        signer: &impl SovereignSigner,
+    ) -> Result<Self, SovereignError> {
+        let nonce = [0u8; 12]; // TODO: Real randomness
+        let content = BlockContent::encrypt(&plaintext, key, nonce)?;
+
+        Ok(Self::create(content, block_type, parents, signer))
+    }
+
+    /// Creates and signs a new Index Block.
+    ///
+    /// The index is a map of names to CIDs. It is serialized using CBOR
+    /// to ensure canonical byte ordering before encryption.
+    pub fn new_index(
+        index: BTreeMap<String, Cid>,
+        parents: Vec<BlockId>,
+        key: &GraphKey,
+        signer: &impl SovereignSigner,
+    ) -> Result<Self, SovereignError> {
+        let plaintext = serde_cbor::to_vec(&index).map_err(|e| {
+            SovereignError::InternalError(format!("CBOR serialization failed: {}", e))
+        })?;
+
+        let nonce = [0u8; 12]; // TODO: Real randomness
+        let content = BlockContent::encrypt(&plaintext, key, nonce)?;
+
+        Ok(Self::create(content, "index".to_string(), parents, signer))
+    }
+
+    /// Internal factory to handle ID calculation and signing.
+    fn create(
         content: BlockContent,
-        rank: String,
         block_type: String,
         parents: Vec<BlockId>,
         signer: &impl SovereignSigner,
     ) -> Self {
-        let span = span!(Level::INFO, "block_new", rank = %rank, block_type = %block_type);
-        let _enter = span.enter();
-
-        let id = Self::compute_id(&content, &rank, &block_type, &parents);
+        let id = Self::compute_id(&content, &block_type, &parents);
         let signature = signer.sign(id.as_ref());
 
         info!(block_id = ?id, "Block created");
@@ -60,7 +81,6 @@ impl Block {
             author: signer.public_key(),
             signature,
             content,
-            rank,
             block_type,
             parents,
         }
@@ -82,10 +102,6 @@ impl Block {
         &self.content
     }
 
-    pub fn rank(&self) -> &str {
-        &self.rank
-    }
-
     pub fn block_type(&self) -> &str {
         &self.block_type
     }
@@ -95,13 +111,11 @@ impl Block {
     }
 
     /// Restores a Block from its raw components.
-    /// Used for mapping from wire/storage formats.
     pub fn from_raw_parts(
         id: BlockId,
         author: SigningPublicKey,
         signature: Signature,
         content: BlockContent,
-        rank: String,
         block_type: String,
         parents: Vec<BlockId>,
     ) -> Self {
@@ -110,25 +124,18 @@ impl Block {
             author,
             signature,
             content,
-            rank,
             block_type,
             parents,
         }
     }
 
     /// Validates the internal consistency of the block.
-    ///
-    /// This performs two critical security checks:
-    /// 1. Content Integrity: Re-hashes the data to ensure it matches the `id`.
-    /// 2. Authenticity: Verifies the `signature` against the `author`'s public key.
     pub fn verify_integrity(&self) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "block_verify_integrity", block_id = ?self.id);
         let _enter = span.enter();
 
-        let calculated_id =
-            Self::compute_id(&self.content, &self.rank, &self.block_type, &self.parents);
+        let calculated_id = Self::compute_id(&self.content, &self.block_type, &self.parents);
         if self.id != calculated_id {
-            tracing::error!(stored = ?self.id, calculated = ?calculated_id, "Block ID mismatch");
             return Err(SovereignError::Integrity(IntegrityError::BlockIdMismatch(
                 self.id,
             )));
@@ -136,28 +143,17 @@ impl Block {
 
         self.author
             .verify(self.id.as_ref(), &self.signature)
-            .map_err(|e| {
-                tracing::error!(error = %e, "Block signature verification failed");
-                SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string()))
-            })?;
+            .map_err(|e| SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
 
         Ok(())
     }
 
-    /// Computes the canonical SHA-256 hash of the block's data.
-    /// Domain separation is used to prevent hash collisions with other object types.
-    fn compute_id(
-        content: &BlockContent,
-        rank: &str,
-        block_type: &str,
-        parents: &[BlockId],
-    ) -> BlockId {
+    /// Computes the canonical CID of the block's data.
+    fn compute_id(content: &BlockContent, block_type: &str, parents: &[BlockId]) -> BlockId {
         let mut hasher = Sha256::new();
         hasher.update(b"SOV_V1_BLOCK");
-
         hasher.update(content.as_bytes());
         hasher.update(content.nonce());
-        hasher.update(rank.as_bytes());
         hasher.update(block_type.as_bytes());
 
         for parent in parents {

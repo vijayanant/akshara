@@ -1,7 +1,9 @@
-use crate::error::SovereignError;
+use crate::crypto::GraphKey;
+use crate::error::{StoreError, SovereignError};
 use crate::graph::{BlockId, ManifestId};
 use crate::store::GraphStore;
-use std::collections::{HashSet, VecDeque};
+use cid::Cid;
+use std::collections::{HashSet, VecDeque, BTreeMap};
 
 pub struct GraphWalker<'a, S: GraphStore + ?Sized> {
     store: &'a S,
@@ -12,8 +14,41 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         Self { store }
     }
 
+    /// Resolves a human-readable path (e.g. "docs/title") into a CID.
+    ///
+    /// This method walks the Merkle Index Tree starting from the provided root.
+    /// It requires the GraphKey to decrypt the structural index blocks.
+    pub fn resolve_path(
+        &self,
+        root: BlockId,
+        path: &str,
+        key: &GraphKey,
+    ) -> Result<Cid, SovereignError> {
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let mut current_cid = root.0;
+
+        for segment in segments {
+            // 1. Fetch the current block
+            let block_id = BlockId(current_cid);
+            let block = self.store.get_block(&block_id)?
+                .ok_or_else(|| SovereignError::Store(StoreError::NotFound(format!("Block {}", block_id))))?;
+
+            // 2. Decrypt and parse as Index
+            // We use CBOR for indices.
+            let plaintext = block.content().decrypt(key)?;
+            let index: BTreeMap<String, Cid> = serde_cbor::from_slice(&plaintext)
+                .map_err(|e| SovereignError::InternalError(format!("Path resolution failed: Block is not a valid index: {}", e)))?;
+
+            // 3. Find the next segment
+            current_cid = index.get(segment)
+                .cloned()
+                .ok_or_else(|| SovereignError::Store(StoreError::NotFound(format!("Path segment '{}' not found", segment))))?;
+        }
+
+        Ok(current_cid)
+    }
+
     /// BFS to find all ancestors.
-    /// Returns a Set of IDs.
     pub fn get_ancestors(&self, start: &ManifestId) -> Result<HashSet<ManifestId>, SovereignError> {
         let mut ancestors = HashSet::new();
         let mut queue = VecDeque::new();
@@ -45,7 +80,6 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     }
 
     /// Finds the Lowest Common Ancestor (LCA) of two Manifests.
-    /// Returns the first common ancestor found by walking back from `b`.
     pub fn find_lca(
         &self,
         a: &ManifestId,
@@ -55,11 +89,9 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
             return Ok(Some(*a));
         }
 
-        // 1. Get all ancestors of A (inclusive of A itself)
         let mut ancestors_a = self.get_ancestors(a)?;
         ancestors_a.insert(*a);
 
-        // 2. Walk back from B
         let mut queue = VecDeque::new();
         let mut visited = HashSet::new();
 
@@ -83,10 +115,6 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
 
         Ok(None)
     }
-
-    // TODO: OPTIMISATION: This LCA algorithm involves two graph traversals.
-    // For very large graphs, a more efficient algorithm could involve a simultaneous
-    // traversal from both 'a' and 'b' to find the common ancestor faster.
 }
 
 pub struct BlockWalker<'a, S: GraphStore + ?Sized> {

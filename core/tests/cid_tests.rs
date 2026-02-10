@@ -1,4 +1,5 @@
 use sovereign_core::graph::BlockId;
+use sovereign_core::error::{SovereignError, IntegrityError};
 use std::str::FromStr;
 
 #[test]
@@ -83,13 +84,26 @@ fn test_cid_serde_json_representation() {
 }
 
 #[test]
-fn test_algorithm_agility_sha3() {
-    use multihash_codetable::Code;
-    let digest = [0u8; 32];
-    let cid = BlockId::from_digest(Code::Sha3_256, &digest);
+fn test_cid_codec_enforcement() {
+    use multihash_codetable::{Code, MultihashDigest};
+    use cid::Cid;
 
-    assert_eq!(cid.codec(), 0x50);
-    assert_eq!(cid.hash_type(), 0x16);
+    // 1. Create a valid CID but with the WRONG codec (e.g. Git = 0x71)
+    let hash = Code::Sha2_256.digest(b"not_a_sovereign_block");
+    let git_cid = Cid::new_v1(0x71, hash);
+    let git_cid_str = git_cid.to_string();
+
+    // 2. Attempt to parse this into a BlockId
+    // This MUST fail because BlockId only accepts 0x50
+    let result = BlockId::from_str(&git_cid_str);
+    
+    assert!(result.is_err(), "BlockId must reject CIDs with non-Sovereign codecs");
+    
+    if let Err(SovereignError::Integrity(IntegrityError::MalformedId)) = result {
+        // Success: Correct error returned
+    } else {
+        panic!("Expected MalformedId error, got {:?}", result);
+    }
 }
 
 #[cfg(test)]
@@ -110,7 +124,7 @@ mod properties {
         #[test]
         fn p_cid_roundtrip_integrity(ref digest in any::<[u8; 32]>()) {
             let original = BlockId::from_sha256(digest);
-            
+
             // Byte roundtrip
             let bytes = original.0.to_bytes();
             let restored_bytes = BlockId::try_from(bytes.as_slice()).expect("Byte roundtrip failed");

@@ -4,61 +4,56 @@ use crate::graph::{BlockId, GraphId, ManifestId};
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
 use tracing::{Level, info, span};
 
-/// A `Manifest` is a snapshot of the graph's state at a specific point in history.
+/// A `Manifest` is a signed snapshot of a graph's state.
 ///
-/// It acts like a "commit" in a version control system, grouping a set of `active_blocks`
-/// into a coherent version. The integrity of the blocks is guaranteed by a Merkle Root.
+/// It points to a single `content_root` (the top-level Index Block), forming
+/// a Merkle Tree. This ensures that the Manifest size remains constant regardless
+/// of the number of blocks in the graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
-    /// The unique identifier of this snapshot. Hashes the Merkle root, parents,
-    /// and metadata to bind the state to its specific historical context.
+    /// The unique identifier of this snapshot (CIDv1).
     id: ManifestId,
-    /// The unique ID of the graph (document) this manifest belongs to.
+    /// The unique ID of the graph this manifest belongs to.
     graph_id: GraphId,
+    /// The CID of the root Index Block (the top of the Merkle Tree).
+    content_root: BlockId,
     /// References to the manifest(s) that immediately preceded this one.
     parents: Vec<ManifestId>,
-    /// The complete, ordered set of blocks that make up this version of the graph.
-    active_blocks: Vec<BlockId>,
-    /// The root of a Merkle Tree built from `active_blocks`, providing a compact
-    /// proof of the graph's entire content.
-    merkle_root: ManifestId,
-    /// The public key of the user who published this state snapshot.
+    /// CID of the author's current Identity Manifest (The Authority Anchor).
+    identity_anchor: ManifestId,
+    /// The public key of the user who published this snapshot.
     author: SigningPublicKey,
-    /// A signature over the `id`, proving the author intended to publish this state.
+    /// A signature over the `id`.
     signature: Signature,
-    /// Unix timestamp of creation (local to the author).
+    /// Unix timestamp of creation.
     created_at: i64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ManifestDiff {
-    pub left_only: Vec<BlockId>,
-    pub right_only: Vec<BlockId>,
-    pub shared: Vec<BlockId>,
-}
-
 impl Manifest {
-    /// Creates and signs a new manifest snapshot.
-    ///
-    /// Accepts any `SovereignSigner`, allowing for hardware wallets or remote signers.
+    /// Creates and signs a new manifest snapshot using the Merkle Index model.
     pub fn new(
         graph_id: GraphId,
-        active_blocks: Vec<BlockId>,
+        content_root: BlockId,
         parents: Vec<ManifestId>,
+        identity_anchor: ManifestId,
         signer: &impl SovereignSigner,
     ) -> Self {
-        // Use debug formatting for GraphId (Uuid wrapper)
         let span = span!(Level::INFO, "manifest_new", graph_id = ?graph_id);
         let _enter = span.enter();
 
-        let merkle_root = Self::compute_merkle_root(&active_blocks);
-        let created_at = 0; // TODO: Integrate real system time
+        let created_at = 0; // TODO: Real system time
         let author = signer.public_key();
 
-        let id = Self::compute_id(&merkle_root, &graph_id, &parents, &author, created_at);
+        let id = Self::compute_id(
+            &graph_id,
+            &content_root,
+            &parents,
+            &identity_anchor,
+            &author,
+            created_at,
+        );
 
         let signature = signer.sign(id.as_ref());
 
@@ -68,9 +63,9 @@ impl Manifest {
         Manifest {
             id,
             graph_id,
+            content_root,
             parents,
-            active_blocks,
-            merkle_root,
+            identity_anchor,
             author,
             signature,
             created_at,
@@ -85,12 +80,16 @@ impl Manifest {
         self.graph_id
     }
 
-    pub fn active_blocks(&self) -> &Vec<BlockId> {
-        &self.active_blocks
+    pub fn content_root(&self) -> BlockId {
+        self.content_root
     }
 
-    pub fn parents(&self) -> &Vec<ManifestId> {
+    pub fn parents(&self) -> &[ManifestId] {
         &self.parents
+    }
+
+    pub fn identity_anchor(&self) -> ManifestId {
+        self.identity_anchor
     }
 
     pub fn author(&self) -> &SigningPublicKey {
@@ -101,23 +100,18 @@ impl Manifest {
         &self.signature
     }
 
-    pub fn merkle_root(&self) -> ManifestId {
-        self.merkle_root
-    }
-
     pub fn created_at(&self) -> i64 {
         self.created_at
     }
 
-    /// Restores a Manifest from its raw components.
-    /// Used for mapping from wire/storage formats.
+    /// Restores a Manifest from raw components.
     #[allow(clippy::too_many_arguments)]
     pub fn from_raw_parts(
         id: ManifestId,
         graph_id: GraphId,
+        content_root: BlockId,
         parents: Vec<ManifestId>,
-        active_blocks: Vec<BlockId>,
-        merkle_root: ManifestId,
+        identity_anchor: ManifestId,
         author: SigningPublicKey,
         signature: Signature,
         created_at: i64,
@@ -125,9 +119,9 @@ impl Manifest {
         Self {
             id,
             graph_id,
+            content_root,
             parents,
-            active_blocks,
-            merkle_root,
+            identity_anchor,
             author,
             signature,
             created_at,
@@ -135,28 +129,16 @@ impl Manifest {
     }
 
     /// Verifies the cryptographic integrity of the manifest.
-    ///
-    /// Ensures that:
-    /// 1. The Merkle root correctly represents the `active_blocks`.
-    /// 2. The `id` correctly represents the manifest's metadata and history.
-    /// 3. The `signature` is valid for the `id`.
     pub fn verify_integrity(&self) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "manifest_verify_integrity", manifest_id = ?self.id);
         let _enter = span.enter();
 
-        // 1. Re-calculate Merkle Root
-        let calculated_root = Self::compute_merkle_root(&self.active_blocks);
-        if self.merkle_root != calculated_root {
-            return Err(SovereignError::Integrity(
-                IntegrityError::ManifestMerkleMismatch(self.id),
-            ));
-        }
-
-        // 2. Re-calculate ID
+        // 1. Re-calculate ID
         let calculated_id = Self::compute_id(
-            &self.merkle_root,
             &self.graph_id,
+            &self.content_root,
             &self.parents,
+            &self.identity_anchor,
             &self.author,
             self.created_at,
         );
@@ -166,7 +148,7 @@ impl Manifest {
             ));
         }
 
-        // 3. Verify signature
+        // 2. Verify signature
         self.author
             .verify(self.id.as_ref(), &self.signature)
             .map_err(|e| SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
@@ -174,74 +156,23 @@ impl Manifest {
         Ok(())
     }
 
-    /// Calculates the difference between this manifest (Left) and another (Right).
-    ///
-    /// Returns a `ManifestDiff` struct containing blocks exclusive to each side and shared blocks.
-    /// This is the foundation for 3-way merge logic.
-    pub fn diff(&self, right: &Manifest, _base: Option<&Manifest>) -> ManifestDiff {
-        let left_set: HashSet<_> = self.active_blocks.iter().cloned().collect();
-        let right_set: HashSet<_> = right.active_blocks.iter().cloned().collect();
-
-        let left_only: Vec<_> = left_set.difference(&right_set).cloned().collect();
-        let right_only: Vec<_> = right_set.difference(&left_set).cloned().collect();
-        let shared: Vec<_> = left_set.intersection(&right_set).cloned().collect();
-
-        ManifestDiff {
-            left_only,
-            right_only,
-            shared,
-        }
-    }
-
-    /// Computes a Merkle Root from a list of block IDs using pairwise recursive hashing.
-    fn compute_merkle_root(active_blocks: &[BlockId]) -> ManifestId {
-        if active_blocks.is_empty() {
-            return ManifestId::from_sha256(&[0; 32]);
-        }
-
-        let mut nodes: Vec<[u8; 32]> = active_blocks
-            .iter()
-            .map(|b| {
-                let mut bytes = [0u8; 32];
-                bytes.copy_from_slice(b.as_ref());
-                bytes
-            })
-            .collect();
-
-        while nodes.len() > 1 {
-            let mut next_level = Vec::new();
-            for chunk in nodes.chunks(2) {
-                let mut hasher = Sha256::new();
-                hasher.update(b"SOV_V1_NODE");
-                hasher.update(chunk[0]);
-                if chunk.len() == 2 {
-                    hasher.update(chunk[1]);
-                } else {
-                    hasher.update(chunk[0]);
-                }
-                next_level.push(hasher.finalize().into());
-            }
-            nodes = next_level;
-        }
-
-        ManifestId::from_sha256(&nodes[0])
-    }
-
     /// Canonical hash function for the manifest's identity.
     fn compute_id(
-        merkle_root: &ManifestId,
         graph_id: &GraphId,
+        content_root: &BlockId,
         parents: &[ManifestId],
+        identity_anchor: &ManifestId,
         author: &SigningPublicKey,
         created_at: i64,
     ) -> ManifestId {
         let mut hasher = Sha256::new();
         hasher.update(b"SOV_V1_MANIFEST");
-        hasher.update(merkle_root.as_ref());
         hasher.update(graph_id.0.as_bytes());
+        hasher.update(content_root.as_ref());
         for p in parents {
             hasher.update(p.as_ref());
         }
+        hasher.update(identity_anchor.as_ref());
         hasher.update(author.as_bytes());
         hasher.update(created_at.to_le_bytes());
 

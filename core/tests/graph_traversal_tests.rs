@@ -21,23 +21,25 @@ fn walker_handles_diamond_graph() {
     let mut store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
+    let root = create_dummy_root();
+    let anchor = create_dummy_anchor();
 
     // 1. Root A
-    let m_a = Manifest::new(graph_id, vec![], vec![], &identity);
+    let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity);
     store.put_manifest(&m_a).unwrap();
 
     // 2. Branch B -> A (Add a unique block)
     let b_block = BlockId::from_sha256(&[0xB1; 32]);
-    let m_b = Manifest::new(graph_id, vec![b_block], vec![m_a.id()], &identity);
+    let m_b = Manifest::new(graph_id, b_block, vec![m_a.id()], anchor, &identity);
     store.put_manifest(&m_b).unwrap();
 
     // 3. Branch C -> A (Add a different unique block)
     let c_block = BlockId::from_sha256(&[0xC1; 32]);
-    let m_c = Manifest::new(graph_id, vec![c_block], vec![m_a.id()], &identity);
+    let m_c = Manifest::new(graph_id, c_block, vec![m_a.id()], anchor, &identity);
     store.put_manifest(&m_c).unwrap();
 
     // 4. Merge D -> B, C
-    let m_d = Manifest::new(graph_id, vec![], vec![m_b.id(), m_c.id()], &identity);
+    let m_d = Manifest::new(graph_id, root, vec![m_b.id(), m_c.id()], anchor, &identity);
     store.put_manifest(&m_d).unwrap();
 
     let walker = GraphWalker::new(&store);
@@ -55,16 +57,17 @@ fn walker_handles_missing_parent() {
     let mut store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
+    let root = create_dummy_root();
+    let anchor = create_dummy_anchor();
 
     // Manifest B pointing to A, but A is not in store
     let a_id = ManifestId::from_sha256(&[0xEE; 32]);
-    let m_b = Manifest::new(graph_id, vec![], vec![a_id], &identity);
+    let m_b = Manifest::new(graph_id, root, vec![a_id], anchor, &identity);
     store.put_manifest(&m_b).unwrap();
 
     let walker = GraphWalker::new(&store);
     let ancestors = walker.get_ancestors(&m_b.id()).unwrap();
 
-    // It should find A (referenced by B), but stop there.
     assert_eq!(ancestors.len(), 1);
     assert!(ancestors.contains(&a_id));
 }
