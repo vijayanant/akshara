@@ -1,6 +1,6 @@
-use sovereign_core::error::{IntegrityError, SovereignError};
-use sovereign_core::graph::BlockId;
 use std::str::FromStr;
+
+use crate::base::{BlockId, IntegrityError, ManifestId, SovereignError};
 
 #[test]
 fn test_cid_creation_from_sha256() {
@@ -53,8 +53,6 @@ fn test_cid_strict_from_bytes() {
 
 #[test]
 fn test_cid_type_confusion_protection() {
-    use sovereign_core::graph::ManifestId;
-
     let digest = [0u8; 32];
     let block_id = BlockId::from_sha256(&digest);
     let bytes = block_id.0.to_bytes();

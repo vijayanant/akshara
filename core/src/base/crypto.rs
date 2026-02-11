@@ -1,4 +1,3 @@
-use crate::error::{CryptoError, SovereignError};
 use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
@@ -9,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use tracing::{Level, debug, error, span, trace};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+use crate::base::{CryptoError, SovereignError};
 
 // --- Signing Keys (Ed25519) ---
 

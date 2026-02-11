@@ -1,7 +1,29 @@
-mod common;
-use common::*;
-use sovereign_core::graph::{BlockId, GraphId, GraphWalker, Manifest};
-use sovereign_core::store::{GraphStore, InMemoryStore};
+use rand::rngs::OsRng;
+
+use crate::{
+    BlockId, GraphId, ManifestId,
+    graph::Manifest,
+    identity::SecretIdentity,
+    state::{GraphStore, in_memory_store::InMemoryStore},
+    traversal::walker::GraphWalker,
+};
+
+// Heper function
+
+#[allow(dead_code)]
+pub fn create_identity() -> SecretIdentity {
+    SecretIdentity::generate(&mut OsRng)
+}
+
+#[allow(dead_code)]
+pub fn create_dummy_anchor() -> ManifestId {
+    ManifestId::from_sha256(&[0u8; 32])
+}
+
+#[allow(dead_code)]
+pub fn create_dummy_root() -> BlockId {
+    BlockId::from_sha256(&[0xFFu8; 32])
+}
 
 #[test]
 fn can_find_manifest_lca() {

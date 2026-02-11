@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
-use sovereign_core::graph::{BlockId, GraphId, Manifest, ManifestId};
-use sovereign_core::identity::SecretIdentity;
+
+use crate::{BlockId, GraphId, ManifestId, graph::Manifest, identity::SecretIdentity};
 
 #[test]
 fn manifest_id_depends_on_content_root_and_authority() {

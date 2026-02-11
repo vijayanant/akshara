@@ -1,7 +1,11 @@
-mod common;
-use common::*;
-use sovereign_core::graph::{BlockId, GraphId, GraphWalker, Manifest, ManifestId};
-use sovereign_core::store::{GraphStore, InMemoryStore};
+use crate::{
+    BlockId, GraphId, ManifestId,
+    graph::Manifest,
+    state::{GraphStore, in_memory_store::InMemoryStore},
+    traversal::{
+        create_chain, create_dummy_anchor, create_dummy_root, create_identity, walker::GraphWalker,
+    },
+};
 
 #[test]
 fn can_find_ancestors_in_chain() {

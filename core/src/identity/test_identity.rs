@@ -1,6 +1,6 @@
-use rand::rngs::OsRng;
-use sovereign_core::crypto::{Signature, SovereignSigner};
-use sovereign_core::identity::SecretIdentity;
+pub use rand::rngs::OsRng;
+
+use crate::{GraphId, Signature, SovereignSigner, graph::Block, identity::SecretIdentity};
 
 #[test]
 fn identity_can_be_generated_and_sign_messages() {
@@ -89,8 +89,6 @@ fn test_mnemonic_normalization_and_whitespace() {
 
 #[test]
 fn test_full_identity_rebirth_recovery() {
-    use sovereign_core::graph::{Block, GraphId};
-
     // --- SCENARIO: Device A (The Past) ---
     let phrase = SecretIdentity::generate_mnemonic();
     let graph_id = GraphId::new();
@@ -142,7 +140,6 @@ fn identity_can_generate_valid_mnemonics() {
 
 #[test]
 fn identity_derives_isolated_graph_keys() {
-    use sovereign_core::graph::GraphId;
     let mut rng = rand::thread_rng();
     let secret_id = SecretIdentity::generate(&mut rng);
 
@@ -191,9 +188,9 @@ fn identity_fails_on_invalid_mnemonic() {
 
 #[cfg(test)]
 mod properties {
-    use super::*;
+    use crate::GraphId;
+    use crate::identity::SecretIdentity;
     use proptest::prelude::*;
-    use sovereign_core::graph::GraphId;
 
     proptest! {
         #[test]

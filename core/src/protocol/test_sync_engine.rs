@@ -1,8 +1,49 @@
-mod common;
-use common::*;
-use sovereign_core::graph::{BlockId, GraphId, Manifest, ManifestId};
-use sovereign_core::store::{GraphStore, InMemoryStore};
-use sovereign_core::sync::{SyncEngine, SyncRequest};
+use rand::rngs::OsRng;
+
+use crate::{
+    BlockId, GraphId, ManifestId,
+    graph::Manifest,
+    identity::SecretIdentity,
+    protocol::{SyncEngine, SyncRequest},
+    state::{GraphStore, in_memory_store::InMemoryStore},
+};
+
+// Helper functions
+
+#[allow(dead_code)]
+pub fn create_identity() -> SecretIdentity {
+    SecretIdentity::generate(&mut OsRng)
+}
+
+#[allow(dead_code)]
+pub fn create_dummy_anchor() -> ManifestId {
+    ManifestId::from_sha256(&[0u8; 32])
+}
+
+#[allow(dead_code)]
+pub fn create_dummy_root() -> BlockId {
+    BlockId::from_sha256(&[0xFFu8; 32])
+}
+
+#[allow(dead_code)]
+pub fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId> {
+    let mut rng = OsRng;
+    let identity = SecretIdentity::generate(&mut rng);
+    let graph_id = GraphId::new();
+    let anchor = create_dummy_anchor();
+    let root = create_dummy_root();
+
+    let mut parents = vec![];
+    let mut ids = vec![];
+
+    for _ in 0..length {
+        let manifest = Manifest::new(graph_id, root, parents.clone(), anchor, &identity);
+        store.put_manifest(&manifest).unwrap();
+        parents = vec![manifest.id()];
+        ids.push(manifest.id());
+    }
+    ids
+}
 
 #[test]
 fn sync_engine_identifies_missing_manifests() {
@@ -42,7 +83,8 @@ fn sync_engine_handles_forks() {
     let root_c = BlockId::from_sha256(&[0xC1; 32]);
 
     // 2. Branch B (Child of A)
-    let m_b = Manifest::new(graph_id, root_b, vec![m_a_id], anchor, &identity);
+    let m_b: crate::graph::Manifest =
+        Manifest::new(graph_id, root_b, vec![m_a_id], anchor, &identity);
     store.put_manifest(&m_b).unwrap();
 
     // 3. Branch C (Child of A) - The Fork

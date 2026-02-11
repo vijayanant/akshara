@@ -1,9 +1,26 @@
-mod common;
-use common::*;
-use sovereign_core::graph::{Block, BlockId, GraphId, GraphWalker, Manifest};
-use sovereign_core::identity::SecretIdentity;
-use sovereign_core::store::{GraphStore, InMemoryStore};
 use std::collections::BTreeMap;
+
+use rand::rngs::OsRng;
+
+use crate::{
+    BlockId, GraphId, GraphKey, ManifestId,
+    graph::{Block, Manifest},
+    identity::SecretIdentity,
+    state::{GraphStore, in_memory_store::InMemoryStore},
+    traversal::walker::GraphWalker,
+};
+
+// Helper functions
+
+#[allow(dead_code)]
+pub fn create_dummy_key() -> GraphKey {
+    GraphKey::generate(&mut OsRng)
+}
+
+#[allow(dead_code)]
+pub fn create_dummy_anchor() -> ManifestId {
+    ManifestId::from_sha256(&[0u8; 32])
+}
 
 #[test]
 fn test_identity_graph_device_resolution() {

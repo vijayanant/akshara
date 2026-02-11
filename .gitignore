@@ -2,4 +2,5 @@
 Cargo.lock
 /docs
 cobertura.xml
-tarpaulin-report.html
+tarpaulin-report.html**/target
+**/*.rs.bk

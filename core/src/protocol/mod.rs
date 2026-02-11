@@ -1,4 +1,4 @@
-use crate::graph::{BlockId, GraphId, ManifestId};
+use crate::base::address::{BlockId, GraphId, ManifestId};
 use serde::{Deserialize, Serialize};
 
 pub mod engine;
@@ -49,3 +49,9 @@ impl SyncResponse {
         &self.missing_blocks
     }
 }
+
+#[cfg(test)]
+mod test_sync_engine;
+
+#[cfg(test)]
+mod test_sync_protocol;

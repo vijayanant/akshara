@@ -1,8 +1,10 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{GraphKey, Lockbox};
-use sovereign_core::graph::GraphId;
-use sovereign_core::identity::SecretIdentity;
-use sovereign_core::store::{GraphStore, InMemoryStore};
+
+use crate::{
+    GraphId, GraphKey, Lockbox,
+    identity::SecretIdentity,
+    state::{GraphStore, in_memory_store::InMemoryStore},
+};
 
 #[test]
 fn store_can_save_and_load_lockboxes() {

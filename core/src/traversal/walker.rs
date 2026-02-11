@@ -1,9 +1,10 @@
-use crate::crypto::GraphKey;
-use crate::error::{IntegrityError, SovereignError, StoreError};
-use crate::graph::{BlockId, ManifestId};
-use crate::store::GraphStore;
 use cid::Cid;
 use std::collections::{BTreeMap, HashSet, VecDeque};
+
+use crate::base::address::{BlockId, ManifestId};
+use crate::base::crypto::GraphKey;
+use crate::base::error::{IntegrityError, SovereignError, StoreError};
+use crate::state::store::GraphStore;
 
 /// The absolute maximum depth allowed for path resolution.
 ///
@@ -12,6 +13,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 /// is limited to 256 segments to protect the host system.
 pub const MAX_PATH_DEPTH: usize = 256;
 
+#[derive()]
 pub struct GraphWalker<'a, S: GraphStore + ?Sized> {
     store: &'a S,
 }

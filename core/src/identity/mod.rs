@@ -1,9 +1,3 @@
-use crate::crypto::{
-    EncryptionPublicKey, EncryptionSecretKey, GraphKey, Signature, SigningPublicKey,
-    SigningSecretKey, SovereignSigner,
-};
-use crate::error::{IdentityError, SovereignError};
-use crate::graph::GraphId;
 use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signer, SigningKey};
 use hmac::{Hmac, Mac};
@@ -12,6 +6,11 @@ use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha512;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
+
+use crate::{
+    EncryptionPublicKey, EncryptionSecretKey, GraphId, GraphKey, IdentityError, Signature,
+    SigningPublicKey, SigningSecretKey, SovereignError, SovereignSigner,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identity {
@@ -176,3 +175,12 @@ impl SovereignSigner for SecretIdentity {
         self.public.signing_key().clone()
     }
 }
+
+#[cfg(test)]
+mod test_identity;
+
+#[cfg(test)]
+mod test_identity_graph;
+
+#[cfg(test)]
+mod test_identity_protocol;

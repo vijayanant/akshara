@@ -1,10 +1,11 @@
-use crate::crypto::{Signature, SigningPublicKey, SovereignSigner};
-use crate::error::{CryptoError, IntegrityError, SovereignError};
-use crate::graph::{BlockId, GraphId, ManifestId};
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{Level, info, span};
+
+use crate::base::address::{BlockId, GraphId, ManifestId};
+use crate::base::crypto::{Signature, SigningPublicKey, SovereignSigner};
+use crate::base::error::{CryptoError, IntegrityError, SovereignError};
 
 /// A `Manifest` is a signed snapshot of a graph's state.
 ///

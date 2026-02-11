@@ -1,12 +1,13 @@
-use crate::crypto::{BlockContent, GraphKey, Signature, SigningPublicKey, SovereignSigner};
-use crate::error::{CryptoError, IntegrityError, SovereignError};
-use crate::graph::BlockId;
 use cid::Cid;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use tracing::{Level, info, span};
+
+use crate::base::address::BlockId;
+use crate::base::crypto::{BlockContent, GraphKey, Signature, SigningPublicKey, SovereignSigner};
+use crate::base::error::{CryptoError, IntegrityError, SovereignError};
 
 /// A `Block` is the atomic unit of content in Sovereign.
 ///

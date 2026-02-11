@@ -1,8 +1,10 @@
-use crate::error::SovereignError;
-use crate::graph::{GraphWalker, ManifestId};
-use crate::store::GraphStore;
-use crate::sync::{SyncRequest, SyncResponse};
 use std::collections::HashSet;
+
+use crate::base::address::ManifestId;
+use crate::base::error::SovereignError;
+use crate::protocol::{SyncRequest, SyncResponse};
+use crate::state::store::GraphStore;
+use crate::traversal::walker::GraphWalker;
 
 pub struct SyncEngine<'a, S: GraphStore + ?Sized> {
     store: &'a S,

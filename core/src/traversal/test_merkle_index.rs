@@ -1,8 +1,13 @@
-mod common;
-use common::*;
-use sovereign_core::graph::{Block, BlockId, GraphId, GraphWalker, Manifest};
-use sovereign_core::store::{GraphStore, InMemoryStore};
 use std::collections::BTreeMap;
+
+use crate::{
+    BlockId, GraphId,
+    graph::{Block, Manifest},
+    state::{GraphStore, in_memory_store::InMemoryStore},
+    traversal::{create_dummy_anchor, create_dummy_key, create_identity, walker::GraphWalker},
+};
+
+// Helper functions
 
 #[test]
 fn test_merkle_index_path_resolution() {

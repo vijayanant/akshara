@@ -1,5 +1,7 @@
-use sovereign_core::graph::{BlockId, GraphId, ManifestId};
-use sovereign_core::sync::{SyncRequest, SyncResponse};
+use crate::{
+    BlockId, GraphId, ManifestId,
+    protocol::{SyncRequest, SyncResponse},
+};
 
 #[test]
 fn sync_request_contains_graph_heads() {

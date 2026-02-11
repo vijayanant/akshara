@@ -1,8 +1,12 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::GraphKey;
-use sovereign_core::graph::{Block, BlockId};
-use sovereign_core::identity::SecretIdentity;
-use sovereign_core::store::{GraphStore, InMemoryStore};
+
+use crate::{
+    BlockId, GraphKey,
+    graph::Block,
+    identity::SecretIdentity,
+    state::{GraphStore, in_memory_store::InMemoryStore},
+    traversal::walker::BlockWalker,
+};
 
 // Helper to create a block pointing to parents
 fn create_block(parents: Vec<BlockId>, store: &mut InMemoryStore) -> BlockId {
@@ -25,7 +29,6 @@ fn can_detect_block_ancestry() {
     let b = create_block(vec![a], &mut store);
     let c = create_block(vec![b], &mut store);
 
-    use sovereign_core::graph::BlockWalker;
     let walker = BlockWalker::new(&store);
     assert!(walker.is_ancestor(&c, &a).unwrap());
     assert!(!walker.is_ancestor(&a, &c).unwrap());

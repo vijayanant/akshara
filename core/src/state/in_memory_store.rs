@@ -1,34 +1,13 @@
-use crate::crypto::{EncryptionPublicKey, Lockbox};
-use crate::error::{SovereignError, StoreError};
-use crate::graph::{Block, BlockId, GraphId, Manifest, ManifestId};
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, RwLock},
+};
 
-/// A generic interface for storing and retrieving graph objects.
-pub trait GraphStore {
-    fn put_block(&mut self, block: &Block) -> Result<(), SovereignError>;
-    fn get_block(&self, id: &BlockId) -> Result<Option<Block>, SovereignError>;
-
-    fn put_manifest(&mut self, manifest: &Manifest) -> Result<(), SovereignError>;
-    fn get_manifest(&self, id: &ManifestId) -> Result<Option<Manifest>, SovereignError>;
-
-    /// Returns the current heads (unreferenced leaf manifests) for a given graph.
-    fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, SovereignError>;
-
-    // Lockbox Storage
-    fn put_lockbox(
-        &mut self,
-        graph_id: GraphId,
-        recipient: &EncryptionPublicKey,
-        lockbox: &Lockbox,
-    ) -> Result<(), SovereignError>;
-    fn get_lockboxes_for_recipient(
-        &self,
-        recipient: &EncryptionPublicKey,
-    ) -> Result<Vec<(GraphId, Lockbox)>, SovereignError>;
-}
-
-type RecipientLockboxes = Vec<(GraphId, Lockbox)>;
+use crate::base::address::{BlockId, GraphId, ManifestId};
+use crate::base::crypto::{EncryptionPublicKey, Lockbox};
+use crate::base::error::{SovereignError, StoreError};
+use crate::graph::{Block, Manifest};
+use crate::state::store::{GraphStore, RecipientLockboxes};
 
 /// A simple in-memory implementation of GraphStore for testing and temporary storage.
 #[derive(Debug, Clone, Default)]

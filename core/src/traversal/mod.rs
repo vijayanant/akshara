@@ -1,9 +1,21 @@
 use rand::rngs::OsRng;
-use sovereign_core::crypto::{BlockContent, GraphKey};
-use sovereign_core::graph::{Block, BlockId, GraphId, Manifest, ManifestId};
-use sovereign_core::identity::SecretIdentity;
-use sovereign_core::store::{GraphStore, InMemoryStore};
 
+use crate::base::address::{BlockId, GraphId, ManifestId};
+use crate::base::crypto::GraphKey;
+use crate::graph::Manifest;
+use crate::identity::SecretIdentity;
+use crate::state::store::GraphStore;
+use crate::state::in_memory_store::InMemoryStore;
+
+pub mod walker;
+
+#[cfg(test)]
+mod test_traversal;
+
+#[cfg(test)]
+mod test_merkle_index;
+
+//Helper functions
 #[allow(dead_code)]
 pub fn create_identity() -> SecretIdentity {
     SecretIdentity::generate(&mut OsRng)
@@ -22,28 +34,6 @@ pub fn create_dummy_anchor() -> ManifestId {
 #[allow(dead_code)]
 pub fn create_dummy_root() -> BlockId {
     BlockId::from_sha256(&[0xFFu8; 32])
-}
-
-#[allow(dead_code)]
-pub fn create_dummy_content(data: &[u8]) -> BlockContent {
-    let key = GraphKey::from([0u8; 32]);
-    let nonce = [0u8; 12];
-    BlockContent::encrypt(data, &key, nonce).unwrap()
-}
-
-#[allow(dead_code)]
-pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
-    let identity = create_identity();
-    let key = create_dummy_key();
-    let block = Block::new(
-        content_data.to_vec(),
-        "p".to_string(),
-        vec![],
-        &key,
-        &identity,
-    )
-    .expect("Failed to create block");
-    (block, identity)
 }
 
 #[allow(dead_code)]

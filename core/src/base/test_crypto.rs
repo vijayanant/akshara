@@ -1,7 +1,8 @@
+use crate::base::crypto::{
+    BlockContent, EncryptionPublicKey, EncryptionSecretKey, GraphKey, Lockbox, SigningPublicKey,
+};
 use rand::rngs::OsRng;
 use serde_json::Value;
-use sovereign_core::crypto::{BlockContent, GraphKey, Lockbox};
-use sovereign_core::identity::SecretIdentity;
 
 #[test]
 fn dockey_generation_is_random() {
@@ -31,45 +32,49 @@ fn block_content_encryption_roundtrip() {
 #[test]
 fn lockbox_lifecycle() {
     let mut rng = OsRng;
-    let alice = SecretIdentity::generate(&mut rng); // Sender
-    let bob = SecretIdentity::generate(&mut rng); // Recipient
     let graph_key = GraphKey::generate(&mut rng);
 
+    // Generate real X25519 keys for Bob
+    let bob_secret_bytes = [2u8; 32];
+    let bob_secret = EncryptionSecretKey::new(bob_secret_bytes);
+    let bob_public = EncryptionPublicKey::new(
+        *x25519_dalek::PublicKey::from(&x25519_dalek::StaticSecret::from(bob_secret_bytes))
+            .as_bytes(),
+    );
+
     // Create lockbox for Bob
-    let lockbox = Lockbox::create(bob.public().encryption_key(), &graph_key, &mut rng)
-        .expect("Lockbox creation failed");
+    let lockbox = Lockbox::create(&bob_public, &graph_key, &mut rng).expect("Lockbox failed");
 
     // Bob opens it
-    let unlocked_key = lockbox
-        .open(bob.encryption_key())
-        .expect("Bob should open lockbox");
-
+    let unlocked_key = lockbox.open(&bob_secret).expect("Open failed");
     assert_eq!(unlocked_key.as_bytes(), graph_key.as_bytes());
 
-    // Eve (Alice) tries to open Bob's lockbox with her own key
-    let result = lockbox.open(alice.encryption_key());
+    // Alice's key (wrong key)
+    let alice_secret = EncryptionSecretKey::new([1u8; 32]);
+    let result = lockbox.open(&alice_secret);
     assert!(result.is_err(), "Wrong key must not open lockbox");
 }
 
 #[test]
 fn lockbox_fails_on_tampered_ciphertext() {
     let mut rng = OsRng;
-    let bob = SecretIdentity::generate(&mut rng);
+    let bob_secret_bytes = [7u8; 32];
+    let bob_secret = EncryptionSecretKey::new(bob_secret_bytes);
+    let bob_public = EncryptionPublicKey::new(
+        *x25519_dalek::PublicKey::from(&x25519_dalek::StaticSecret::from(bob_secret_bytes))
+            .as_bytes(),
+    );
     let graph_key = GraphKey::generate(&mut rng);
+    let lockbox = Lockbox::create(&bob_public, &graph_key, &mut rng).unwrap();
 
-    let lockbox = Lockbox::create(bob.public().encryption_key(), &graph_key, &mut rng).unwrap();
-
-    // Tamper via JSON Value manipulation
     let mut val: Value = serde_json::to_value(&lockbox).unwrap();
 
-    // Navigate: lockbox -> content -> ciphertext
     if let Some(arr) = val
         .get_mut("content")
         .and_then(|c| c.get_mut("ciphertext"))
         .and_then(|ct| ct.as_array_mut())
         .filter(|a| !a.is_empty())
     {
-        // Flip the first byte
         let first = arr[0]
             .as_u64()
             .expect("Ciphertext element should be a number");
@@ -77,8 +82,7 @@ fn lockbox_fails_on_tampered_ciphertext() {
     }
 
     let tampered_lockbox: Lockbox = serde_json::from_value(val).unwrap();
-
-    let result = tampered_lockbox.open(bob.encryption_key());
+    let result = tampered_lockbox.open(&bob_secret);
 
     assert!(
         result.is_err(),
@@ -88,14 +92,12 @@ fn lockbox_fails_on_tampered_ciphertext() {
 
 #[test]
 fn signing_verify_fails_on_malformed_signature() {
-    let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
-    let public = identity.public();
     let msg = b"test";
+    let public_key = SigningPublicKey::new([0u8; 32]);
 
     // Wrong length (not 64)
-    let bad_sig = sovereign_core::crypto::Signature::new(vec![0u8; 32]);
-    let result = public.signing_key().verify(msg, &bad_sig);
+    let bad_sig = crate::base::crypto::Signature::new(vec![0u8; 32]);
+    let result = public_key.verify(msg, &bad_sig);
 
     assert!(result.is_err());
 }

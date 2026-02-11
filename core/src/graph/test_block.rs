@@ -1,9 +1,32 @@
-mod common;
-use common::*;
 use rand::rngs::OsRng;
-use sovereign_core::crypto::GraphKey;
-use sovereign_core::graph::{Block, BlockId};
-use sovereign_core::identity::SecretIdentity;
+
+use crate::{BlockId, GraphKey, graph::Block, identity::SecretIdentity};
+
+// Helper functions
+#[allow(dead_code)]
+pub fn create_identity() -> SecretIdentity {
+    SecretIdentity::generate(&mut OsRng)
+}
+
+#[allow(dead_code)]
+pub fn create_dummy_key() -> GraphKey {
+    GraphKey::generate(&mut OsRng)
+}
+
+#[allow(dead_code)]
+pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
+    let identity = create_identity();
+    let key = create_dummy_key();
+    let block = Block::new(
+        content_data.to_vec(),
+        "p".to_string(),
+        vec![],
+        &key,
+        &identity,
+    )
+    .expect("Failed to create block");
+    (block, identity)
+}
 
 // --- Identity & Determinism Tests ---
 
