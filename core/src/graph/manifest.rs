@@ -96,6 +96,7 @@ impl Manifest {
         self.header.created_at
     }
 
+    /// Public-Crate API: Used by sibling crates for wire mapping.
     #[allow(dead_code)]
     pub(crate) fn from_raw_parts(
         id: ManifestId,

@@ -37,13 +37,11 @@ impl BlockId {
     }
 
     /// Internal constructor for crate-only logic or testing.
-    #[allow(dead_code)]
     pub(crate) fn from_cid(cid: Cid) -> Self {
         BlockId(cid)
     }
 
     /// Internal accessor for the underlying CID.
-    #[allow(dead_code)]
     pub(crate) fn as_cid(&self) -> &Cid {
         &self.0
     }
@@ -148,11 +146,13 @@ impl ManifestId {
         ManifestId(cid)
     }
 
+    /// Public-Crate API: Used by sibling crates for wire mapping.
     #[allow(dead_code)]
     pub(crate) fn from_cid(cid: Cid) -> Self {
         ManifestId(cid)
     }
 
+    /// Public-Crate API: Used by sibling crates for wire mapping.
     #[allow(dead_code)]
     pub(crate) fn as_cid(&self) -> &Cid {
         &self.0
@@ -234,6 +234,7 @@ impl GraphId {
         GraphId(Uuid::new_v4())
     }
 
+    /// Public-Crate API: Used by sibling crates for wire mapping.
     #[allow(dead_code)]
     pub(crate) fn from_bytes(bytes: [u8; 16]) -> Self {
         GraphId(Uuid::from_bytes(bytes))

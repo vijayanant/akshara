@@ -75,6 +75,7 @@ impl SecretIdentity {
     pub fn generate_mnemonic() -> Result<String, SovereignError> {
         let mut entropy = [0u8; 32];
         OsRng.fill_bytes(&mut entropy);
+
         let mnemonic = Mnemonic::from_entropy(&entropy).map_err(|e| {
             error!(error = %e, "Failed to generate mnemonic entropy");
             SovereignError::Identity(IdentityError::MnemonicInvalid(format!(
@@ -82,6 +83,7 @@ impl SecretIdentity {
                 e
             )))
         })?;
+
         Ok(mnemonic.to_string())
     }
 
@@ -99,7 +101,7 @@ impl SecretIdentity {
         let normalized = phrase.trim().to_lowercase();
         let mnemonic =
             Mnemonic::parse_in_normalized(Language::English, &normalized).map_err(|e| {
-                debug!(error = %e, "Invalid mnemonic phrase provided");
+                debug!(error = %e, "Mnemonic validation failed - possible user typo");
                 SovereignError::Identity(IdentityError::MnemonicInvalid(e.to_string()))
             })?;
 
@@ -179,7 +181,7 @@ impl SecretIdentity {
     ///
     /// This allows a user to "blindly" find their data on a relay without
     /// the relay knowing their public identity.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Public-Crate API: Used by sibling crates for blind discovery.
     pub(crate) fn derive_discovery_id(&self) -> GraphId {
         let span = span!(Level::DEBUG, "derive_discovery_id");
         let _enter = span.enter();

@@ -215,6 +215,7 @@ impl BlockContent {
         &self.nonce
     }
 
+    /// Public-Crate API: Used by sibling crates for wire mapping.
     #[allow(dead_code)]
     pub(crate) fn from_raw_parts(ciphertext: Vec<u8>, nonce: [u8; 12]) -> Self {
         Self { ciphertext, nonce }
@@ -290,6 +291,7 @@ impl Lockbox {
         Ok(GraphKey::new(key_bytes))
     }
 
+    /// Public-Crate API: Used by sibling crates for wire mapping.
     #[allow(dead_code)]
     pub(crate) fn from_raw_parts(
         ephemeral_public_key: EncryptionPublicKey,
