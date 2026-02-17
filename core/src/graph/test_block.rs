@@ -3,17 +3,15 @@ use rand::rngs::OsRng;
 use crate::{BlockId, GraphKey, graph::Block, identity::SecretIdentity};
 
 // Helper functions
-#[allow(dead_code)]
+
 pub fn create_identity() -> SecretIdentity {
     SecretIdentity::generate(&mut OsRng)
 }
 
-#[allow(dead_code)]
 pub fn create_dummy_key() -> GraphKey {
     GraphKey::generate(&mut OsRng)
 }
 
-#[allow(dead_code)]
 pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
     let identity = create_identity();
     let key = create_dummy_key();

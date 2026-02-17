@@ -15,8 +15,13 @@ pub const CODEC_SOVEREIGN_BLOCK: u64 = 0x50;
 /// Multicodec for Sovereign Manifests (Snapshots)
 pub const CODEC_SOVEREIGN_MANIFEST: u64 = 0x51;
 
+/// `BlockId` is a cryptographically bound identifier for a Sovereign data block.
+///
+/// We wrap `cid::Cid` to prevent "Library Physics" from leaking into the domain logic.
+/// This allows us to change the underlying identifier technology without breaking
+/// the platform's API.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct BlockId(Cid); // PUBLIC TYPE, PRIVATE FIELD
+pub struct BlockId(Cid);
 
 impl BlockId {
     /// Creates a CID v1 for a Sovereign Block from a SHA2-256 digest.
@@ -31,11 +36,13 @@ impl BlockId {
         BlockId(cid)
     }
 
+    /// Internal constructor for crate-only logic or testing.
     #[allow(dead_code)]
     pub(crate) fn from_cid(cid: Cid) -> Self {
         BlockId(cid)
     }
 
+    /// Internal accessor for the underlying CID.
     #[allow(dead_code)]
     pub(crate) fn as_cid(&self) -> &Cid {
         &self.0
@@ -85,6 +92,12 @@ impl FromStr for BlockId {
 
 impl TryFrom<&[u8]> for BlockId {
     type Error = SovereignError;
+
+    /// Implements the "Strict Ingestion" rule.
+    ///
+    /// We use a `Cursor` to ensure the entire byte slice is consumed.
+    /// If there are trailing bytes, we reject the ID. This prevents attackers from
+    /// appending malicious metadata or "hidden tags" to a valid identifier.
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let mut cursor = std::io::Cursor::new(bytes);
         let cid = Cid::read_bytes(&mut cursor)
@@ -116,6 +129,10 @@ impl<'de> Deserialize<'de> for BlockId {
     }
 }
 
+/// `ManifestId` identifies a signed snapshot of a graph.
+///
+/// Uses Multicodec `0x51` to prevent type-confusion attacks where a Manifest
+/// might be mistaken for a Data Block.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ManifestId(Cid);
 
@@ -205,6 +222,10 @@ impl<'de> Deserialize<'de> for ManifestId {
 
 // --- Graph Namespace ---
 
+/// `GraphId` is the stable, permanent identity of a Sovereign document or project.
+///
+/// While data content changes (CID updates), the `GraphId` remains constant.
+/// It acts as the "Home Address" for all historical manifestations of a graph.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct GraphId(Uuid);
 

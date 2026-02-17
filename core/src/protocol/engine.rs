@@ -3,7 +3,9 @@ use crate::base::error::SovereignError;
 use crate::protocol::{SyncRequest, SyncResponse};
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
+use metrics::counter;
 use std::collections::HashSet;
+use tracing::{Level, debug, span, trace};
 
 pub struct SyncEngine<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
@@ -19,6 +21,9 @@ impl<'a, S: GraphStore + ?Sized> SyncEngine<'a, S> {
         request: &SyncRequest,
         local_heads: &[ManifestId],
     ) -> Result<SyncResponse, SovereignError> {
+        let span = span!(Level::INFO, "sync_calculate", graph_id = ?request.graph_id);
+        let _enter = span.enter();
+
         let walker = GraphWalker::new(self.store);
 
         // 1. Calculate Local Known Set (What the Server Has)
@@ -28,6 +33,10 @@ impl<'a, S: GraphStore + ?Sized> SyncEngine<'a, S> {
             let ancestors = walker.get_ancestors(head)?;
             local_known.extend(ancestors);
         }
+        trace!(
+            local_count = local_known.len(),
+            "Calculated local known set"
+        );
 
         // 2. Calculate Remote Known Set (What the Client Has)
         let mut remote_known = HashSet::new();
@@ -38,6 +47,10 @@ impl<'a, S: GraphStore + ?Sized> SyncEngine<'a, S> {
                 remote_known.extend(ancestors);
             }
         }
+        trace!(
+            remote_count = remote_known.len(),
+            "Calculated common ancestor set"
+        );
 
         // 3. Diff Manifests
         let missing_manifests: Vec<ManifestId> =
@@ -50,6 +63,16 @@ impl<'a, S: GraphStore + ?Sized> SyncEngine<'a, S> {
                 missing_blocks_set.insert(manifest.content_root());
             }
         }
+
+        // --- Log before Move ---
+        debug!(
+            manifests = missing_manifests.len(),
+            blocks = missing_blocks_set.len(),
+            "Sync calculation complete"
+        );
+
+        counter!("sovereign.sync.manifests_missing").increment(missing_manifests.len() as u64);
+        counter!("sovereign.sync.blocks_missing").increment(missing_blocks_set.len() as u64);
 
         let missing_blocks = missing_blocks_set.into_iter().collect();
 

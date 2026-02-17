@@ -10,17 +10,14 @@ use crate::{
 
 // Heper function
 
-#[allow(dead_code)]
 pub fn create_identity() -> SecretIdentity {
     SecretIdentity::generate(&mut OsRng)
 }
 
-#[allow(dead_code)]
 pub fn create_dummy_anchor() -> ManifestId {
     ManifestId::from_sha256(&[0u8; 32])
 }
 
-#[allow(dead_code)]
 pub fn create_dummy_root() -> BlockId {
     BlockId::from_sha256(&[0xFFu8; 32])
 }

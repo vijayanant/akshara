@@ -7,12 +7,19 @@ use crate::base::error::{IdentityError, SovereignError};
 use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signer, SigningKey};
 use hmac::{Hmac, Mac};
+use metrics::{counter, histogram};
 use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha512;
+use tracing::{Level, debug, error, info, span, trace};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 
+/// `Identity` represents the public profile of a Sovereign user.
+///
+/// It binds a Signing key (for provenance) and an Encryption key (for privacy)
+/// into a single unit. This allows other users to both verify a user's
+/// messages and send them encrypted data using only their public identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identity {
     pub(crate) signing_key: SigningPublicKey,
@@ -40,6 +47,12 @@ impl Identity {
     }
 }
 
+/// `SecretIdentity` is the root of a user's sovereignty.
+///
+/// It holds the private keys derived from the master seed. In Sovereign,
+/// all document keys are deterministically derived from this secret,
+/// ensuring that a user can recover their entire digital life using only
+/// their 24-word mnemonic (Akshara).
 pub struct SecretIdentity {
     pub(crate) signing_key: SigningSecretKey,
     pub(crate) encryption_key: EncryptionSecretKey,
@@ -49,7 +62,12 @@ pub struct SecretIdentity {
 impl SecretIdentity {
     /// Generates a fresh random identity (24-word entropy equivalent).
     pub fn generate(rng: &mut (impl CryptoRng + RngCore)) -> Self {
+        let span = span!(Level::DEBUG, "identity_generate");
+        let _enter = span.enter();
+
         let signing_key = SigningKey::generate(rng);
+        counter!("sovereign.identity.generated").increment(1);
+
         Self::from_signing_key(signing_key)
     }
 
@@ -58,6 +76,7 @@ impl SecretIdentity {
         let mut entropy = [0u8; 32];
         OsRng.fill_bytes(&mut entropy);
         let mnemonic = Mnemonic::from_entropy(&entropy).map_err(|e| {
+            error!(error = %e, "Failed to generate mnemonic entropy");
             SovereignError::Identity(IdentityError::MnemonicInvalid(format!(
                 "Entropy failure: {}",
                 e
@@ -67,10 +86,22 @@ impl SecretIdentity {
     }
 
     /// Derives an identity from a BIP-39 mnemonic using the SLIP-0010 standard.
+    ///
+    /// We use SLIP-0010 for Ed25519 derivation because it ensures that the
+    /// resulting keys are compatible with industry-standard hardware wallets
+    /// and recovery procedures.
     pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, SovereignError> {
+        // High-level span for the entire recovery process
+        let span = span!(Level::INFO, "identity_rebirth");
+        let _enter = span.enter();
+        let start_time = std::time::Instant::now();
+
         let normalized = phrase.trim().to_lowercase();
-        let mnemonic = Mnemonic::parse_in_normalized(Language::English, &normalized)
-            .map_err(|e| SovereignError::Identity(IdentityError::MnemonicInvalid(e.to_string())))?;
+        let mnemonic =
+            Mnemonic::parse_in_normalized(Language::English, &normalized).map_err(|e| {
+                debug!(error = %e, "Invalid mnemonic phrase provided");
+                SovereignError::Identity(IdentityError::MnemonicInvalid(e.to_string()))
+            })?;
 
         let seed = mnemonic.to_seed(passphrase);
 
@@ -84,6 +115,10 @@ impl SecretIdentity {
         master_key.copy_from_slice(&output[0..32]);
         chain_code.copy_from_slice(&output[32..64]);
 
+        // Derivation Path: m/44'/999'/0'/0'/0'
+        // 44' = Purpose (BIP-44)
+        // 999' = Coin Type (Sovereign)
+        // 0'/0'/0' = Account/Change/Index
         let path: [u32; 5] = [
             44 + 0x8000_0000,
             999 + 0x8000_0000,
@@ -95,7 +130,9 @@ impl SecretIdentity {
         let mut current_key = master_key;
         let mut current_chain = chain_code;
 
-        for index in path {
+        // Trace each step of the derivation path for mathematical audit
+        for (i, index) in path.iter().enumerate() {
+            trace!(level = i, derivation_index = %index, "Deriving child key");
             let mut hmac = Hmac::<Sha512>::new_from_slice(&current_chain)
                 .map_err(|e| SovereignError::InternalError(e.to_string()))?;
             hmac.update(&[0x00]);
@@ -108,6 +145,16 @@ impl SecretIdentity {
         }
 
         let signing_key = SigningKey::from_bytes(&current_key);
+
+        let elapsed = start_time.elapsed();
+        histogram!("sovereign.identity.rebirth_latency").record(elapsed);
+        counter!("sovereign.identity.rebirth_success").increment(1);
+
+        info!(
+            latency_ms = elapsed.as_millis(),
+            "Identity successfully rebirthed from mnemonic"
+        );
+
         Ok(Self::from_signing_key(signing_key))
     }
 
@@ -129,8 +176,14 @@ impl SecretIdentity {
     }
 
     /// Derives a stable, private GraphId used to locate the user's data on a Relay.
+    ///
+    /// This allows a user to "blindly" find their data on a relay without
+    /// the relay knowing their public identity.
     #[allow(dead_code)]
     pub(crate) fn derive_discovery_id(&self) -> GraphId {
+        let span = span!(Level::DEBUG, "derive_discovery_id");
+        let _enter = span.enter();
+
         let mut hmac = Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes())
             .expect("HMAC must accept 32-byte Ed25519 key");
         hmac.update(b"sovereign.v1.discovery");
@@ -138,11 +191,20 @@ impl SecretIdentity {
         let output = hmac.finalize().into_bytes();
         let mut uuid_bytes = [0u8; 16];
         uuid_bytes.copy_from_slice(&output[..16]);
-        GraphId::from_bytes(uuid_bytes)
+
+        let id = GraphId::from_bytes(uuid_bytes);
+        trace!(discovery_id = ?id, "Stable discovery identifier derived");
+        id
     }
 
     /// Derives a deterministic 32-byte GraphKey for a specific graph.
+    ///
+    /// By binding the `graph_id` into the key derivation, we ensure that
+    /// compromise of one document key does not compromise others (Key Isolation).
     pub fn derive_graph_key(&self, graph_id: &GraphId) -> GraphKey {
+        let span = span!(Level::DEBUG, "derive_graph_key", graph_id = ?graph_id);
+        let _enter = span.enter();
+
         let mut hmac = Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes())
             .expect("HMAC must accept 32-byte Ed25519 key");
 
@@ -153,6 +215,7 @@ impl SecretIdentity {
         let mut key_bytes = [0u8; 32];
         key_bytes.copy_from_slice(&output[0..32]);
 
+        counter!("sovereign.identity.graph_key_derived").increment(1);
         GraphKey::from(key_bytes)
     }
 

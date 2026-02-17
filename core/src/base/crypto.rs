@@ -4,6 +4,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
 };
 use ed25519_dalek::{Signature as EdSignature, Verifier, VerifyingKey};
+use metrics::counter;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use tracing::{Level, debug, error, span, trace};
@@ -12,6 +13,10 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // --- Signing Keys (Ed25519) ---
 
+/// `SigningPublicKey` represents the public half of a user's signature authority.
+///
+/// We use Ed25519 because it is deterministic, high-performance, and resistant
+/// to many side-channel attacks common in elliptic curve cryptography.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct SigningPublicKey([u8; 32]);
 
@@ -44,6 +49,7 @@ impl SigningPublicKey {
 
         verifying_key.verify(msg, &ed_sig).map_err(|e| {
             debug!(error = %e, "Signature verification failed");
+            counter!("sovereign.crypto.verify_failure").increment(1);
             SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string()))
         })?;
 
@@ -94,6 +100,11 @@ impl EncryptionSecretKey {
 
 // --- Symmetric Keys (AES-256) ---
 
+/// `GraphKey` is the AES-256 symmetric key used to encrypt the content of a graph.
+///
+/// This key is the "Master Secret" for a specific document. Anyone with this key
+/// can read every block in the graph. We use AES-256-GCM to provide both
+/// Confidentiality and Authenticated Integrity.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct GraphKey([u8; 32]);
 
@@ -137,6 +148,7 @@ pub trait SovereignSigner {
     fn public_key(&self) -> SigningPublicKey;
 }
 
+/// `BlockContent` holds the encrypted ciphertext and the nonce of a data block.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct BlockContent {
     ciphertext: Vec<u8>,
@@ -144,6 +156,11 @@ pub struct BlockContent {
 }
 
 impl BlockContent {
+    /// Encrypts plaintext using AES-256-GCM.
+    ///
+    /// SAFETY: Every encryption operation MUST use a unique nonce.
+    /// Reusing a nonce with the same key allows an attacker to XOR two ciphertexts
+    /// and recover the plaintext (The "Forbidden Attack").
     pub fn encrypt(
         plaintext: &[u8],
         key: &GraphKey,
@@ -180,6 +197,7 @@ impl BlockContent {
             .decrypt(nonce, self.ciphertext.as_slice())
             .map_err(|e| {
                 debug!(error = %e, "AES-GCM decryption failed");
+                counter!("sovereign.crypto.decryption_failure").increment(1);
                 SovereignError::Crypto(CryptoError::DecryptionFailed(format!(
                     "AES-GCM failed: {}",
                     e
@@ -203,6 +221,12 @@ impl BlockContent {
     }
 }
 
+/// `Lockbox` implements a Hybrid Encryption scheme (X25519 + AES-GCM).
+///
+/// It allows a sender to share a `GraphKey` with a specific recipient without
+/// pre-sharing a secret. We use an ephemeral X25519 key for every lockbox
+/// to ensure that if the sender's master key is compromised, previous
+/// lockboxes cannot be decrypted (Forward Secrecy).
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct Lockbox {
     pub(crate) ephemeral_public_key: EncryptionPublicKey,
