@@ -1,6 +1,5 @@
+use crate::base::address::{BlockId, ManifestId};
 use thiserror::Error;
-
-use crate::base::{BlockId, ManifestId};
 
 #[derive(Error, Debug)]
 pub enum SovereignError {

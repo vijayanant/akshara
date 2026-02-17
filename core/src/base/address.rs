@@ -8,17 +8,15 @@ use cid::Cid;
 use multihash_codetable::{Code, MultihashDigest};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::base::{IntegrityError, SovereignError};
+use crate::base::error::{IntegrityError, SovereignError};
 
 /// Multicodec for Sovereign Blocks (L0 Node)
-/// Identifies an encrypted, signed block.
 pub const CODEC_SOVEREIGN_BLOCK: u64 = 0x50;
 /// Multicodec for Sovereign Manifests (Snapshots)
-/// Identifies a signed graph state entry.
 pub const CODEC_SOVEREIGN_MANIFEST: u64 = 0x51;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct BlockId(pub Cid);
+pub struct BlockId(Cid); // PUBLIC TYPE, PRIVATE FIELD
 
 impl BlockId {
     /// Creates a CID v1 for a Sovereign Block from a SHA2-256 digest.
@@ -33,6 +31,16 @@ impl BlockId {
         BlockId(cid)
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn from_cid(cid: Cid) -> Self {
+        BlockId(cid)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn as_cid(&self) -> &Cid {
+        &self.0
+    }
+
     pub fn version(&self) -> u64 {
         self.0.version().into()
     }
@@ -44,6 +52,11 @@ impl BlockId {
     pub fn hash_type(&self) -> u64 {
         self.0.hash().code()
     }
+
+    /// Returns the raw binary representation of the identifier.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.to_bytes()
+    }
 }
 
 impl AsRef<[u8]> for BlockId {
@@ -54,7 +67,6 @@ impl AsRef<[u8]> for BlockId {
 
 impl fmt::Display for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Use default CID string representation (Base32 for CIDv1)
         write!(f, "{}", self.0)
     }
 }
@@ -85,7 +97,6 @@ impl TryFrom<&[u8]> for BlockId {
     }
 }
 
-// Custom Serde for BlockId to use string representation
 impl Serialize for BlockId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -106,7 +117,7 @@ impl<'de> Deserialize<'de> for BlockId {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ManifestId(pub Cid);
+pub struct ManifestId(Cid);
 
 impl ManifestId {
     /// Creates a CID v1 for a Sovereign Manifest from a SHA2-256 digest.
@@ -114,11 +125,24 @@ impl ManifestId {
         Self::from_digest(Code::Sha2_256, digest)
     }
 
-    /// Creates a CID v1 for a Sovereign Manifest using a specific algorithm.
     pub fn from_digest(code: Code, digest: &[u8]) -> Self {
         let hash = code.digest(digest);
         let cid = Cid::new_v1(CODEC_SOVEREIGN_MANIFEST, hash);
         ManifestId(cid)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_cid(cid: Cid) -> Self {
+        ManifestId(cid)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn as_cid(&self) -> &Cid {
+        &self.0
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.to_bytes()
     }
 }
 
@@ -160,7 +184,6 @@ impl TryFrom<&[u8]> for ManifestId {
     }
 }
 
-// Custom Serde for ManifestId
 impl Serialize for ManifestId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -183,11 +206,20 @@ impl<'de> Deserialize<'de> for ManifestId {
 // --- Graph Namespace ---
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-pub struct GraphId(pub Uuid);
+pub struct GraphId(Uuid);
 
 impl GraphId {
     pub fn new() -> Self {
         GraphId(Uuid::new_v4())
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_bytes(bytes: [u8; 16]) -> Self {
+        GraphId(Uuid::from_bytes(bytes))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 16] {
+        self.0.as_bytes()
     }
 }
 
@@ -203,17 +235,17 @@ impl From<Uuid> for GraphId {
     }
 }
 
-impl AsRef<Uuid> for GraphId {
-    fn as_ref(&self) -> &Uuid {
-        &self.0
-    }
-}
-
 impl FromStr for GraphId {
     type Err = uuid::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::parse_str(s)?;
         Ok(GraphId(uuid))
+    }
+}
+
+impl fmt::Display for GraphId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }

@@ -1,26 +1,8 @@
-use std::collections::BTreeMap;
-
-use rand::rngs::OsRng;
-
+use crate::traversal::{create_dummy_anchor, create_dummy_key};
 use crate::{
-    BlockId, GraphId, GraphKey, ManifestId,
-    graph::{Block, Manifest},
-    identity::SecretIdentity,
-    state::{GraphStore, in_memory_store::InMemoryStore},
-    traversal::walker::GraphWalker,
+    Block, BlockId, GraphId, GraphStore, GraphWalker, InMemoryStore, Manifest, SecretIdentity,
 };
-
-// Helper functions
-
-#[allow(dead_code)]
-pub fn create_dummy_key() -> GraphKey {
-    GraphKey::generate(&mut OsRng)
-}
-
-#[allow(dead_code)]
-pub fn create_dummy_anchor() -> ManifestId {
-    ManifestId::from_sha256(&[0u8; 32])
-}
+use std::collections::BTreeMap;
 
 #[test]
 fn test_sovereign_blind_discovery_derivation() {
@@ -51,7 +33,6 @@ fn test_sovereign_full_authority_chain_verification() {
     let laptop_pub_key = laptop.public().signing_key().clone();
 
     // 3. Alice publishes her Identity Graph
-    // Path: /devices/laptop -> laptop_pub_key
     let device_block = Block::new(
         laptop_pub_key.as_bytes().to_vec(),
         "key".to_string(),
@@ -63,12 +44,13 @@ fn test_sovereign_full_authority_chain_verification() {
     store.put_block(&device_block).unwrap();
 
     let mut devices_map = BTreeMap::new();
-    devices_map.insert("laptop".to_string(), device_block.id().0);
+    devices_map.insert("laptop".to_string(), *device_block.id().as_cid());
+
     let devices_index = Block::new_index(devices_map, vec![], &master_key, &master).unwrap();
     store.put_block(&devices_index).unwrap();
 
     let mut root_map = BTreeMap::new();
-    root_map.insert("devices".to_string(), devices_index.id().0);
+    root_map.insert("devices".to_string(), *devices_index.id().as_cid());
     let root_index = Block::new_index(root_map, vec![], &master_key, &master).unwrap();
     store.put_block(&root_index).unwrap();
 
@@ -104,7 +86,10 @@ fn test_sovereign_full_authority_chain_verification() {
         )
         .expect("Identity resolution failed");
 
-    let key_block = store.get_block(&BlockId(resolved_cid)).unwrap().unwrap();
+    let key_block = store
+        .get_block(&BlockId::from_cid(resolved_cid))
+        .unwrap()
+        .unwrap();
     let decrypted_key_bytes = key_block.content().decrypt(&master_key).unwrap();
 
     assert_eq!(

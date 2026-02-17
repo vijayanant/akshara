@@ -1,14 +1,14 @@
 use crate::base::address::{BlockId, GraphId, ManifestId};
 use serde::{Deserialize, Serialize};
 
-pub mod engine;
+pub(crate) mod engine;
 pub use engine::SyncEngine;
 
 /// A request to synchronize the graph state, containing the known heads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncRequest {
-    graph_id: GraphId,
-    heads: Vec<ManifestId>,
+    pub(crate) graph_id: GraphId,
+    pub(crate) heads: Vec<ManifestId>,
 }
 
 impl SyncRequest {
@@ -25,12 +25,11 @@ impl SyncRequest {
     }
 }
 
-/// A response to a sync request, identifying the missing objects required
-/// to reach the target state.
+/// A response to a sync request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncResponse {
-    missing_manifests: Vec<ManifestId>,
-    missing_blocks: Vec<BlockId>,
+    pub(crate) missing_manifests: Vec<ManifestId>,
+    pub(crate) missing_blocks: Vec<BlockId>,
 }
 
 impl SyncResponse {

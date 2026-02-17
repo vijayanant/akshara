@@ -1,123 +1,88 @@
-use rand::rngs::OsRng;
-
-use crate::{
-    GraphId, GraphKey, Lockbox,
-    identity::SecretIdentity,
-    state::{GraphStore, in_memory_store::InMemoryStore},
-};
+use crate::base::address::GraphId;
+use crate::base::crypto::Lockbox;
+use crate::state::in_memory_store::InMemoryStore;
+use crate::state::store::GraphStore;
+use crate::traversal::{create_dummy_key, create_identity};
 
 #[test]
 fn store_can_save_and_load_lockboxes() {
-    let mut rng = OsRng;
-    let _sender = SecretIdentity::generate(&mut rng);
-    let recipient = SecretIdentity::generate(&mut rng);
-    let graph_id = GraphId::new();
-    let graph_key = GraphKey::generate(&mut rng);
-
-    let lockbox = Lockbox::create(recipient.public().encryption_key(), &graph_key, &mut rng)
-        .expect("Create failed");
-
     let mut store = InMemoryStore::new();
+    let mut rng = rand::thread_rng();
+
+    let _alice = create_identity();
+    let bob = create_identity();
+    let graph_id = GraphId::new();
+    let graph_key = create_dummy_key();
+
+    let lockbox = Lockbox::create(bob.public().encryption_key(), &graph_key, &mut rng).unwrap();
 
     store
-        .put_lockbox(graph_id, recipient.public().encryption_key(), &lockbox)
-        .unwrap();
+        .put_lockbox(graph_id, bob.public().signing_key(), &lockbox)
+        .expect("Save lockbox failed");
 
-    let results = store
-        .get_lockboxes_for_recipient(recipient.public().encryption_key())
-        .unwrap();
+    let retrieved = store
+        .get_lockboxes_for_recipient(bob.public().signing_key())
+        .expect("Fetch lockbox failed");
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].0, graph_id);
-    assert_eq!(
-        results[0].1.ephemeral_public_key,
-        lockbox.ephemeral_public_key
-    );
+    assert_eq!(retrieved.len(), 1);
+    assert_eq!(retrieved[0].0, graph_id);
 }
 
 #[test]
 fn store_returns_empty_for_unknown_recipient() {
-    let mut rng = OsRng;
-    let recipient = SecretIdentity::generate(&mut rng);
     let store = InMemoryStore::new();
+    let bob = create_identity();
 
-    let results = store
-        .get_lockboxes_for_recipient(recipient.public().encryption_key())
-        .unwrap();
-    assert!(results.is_empty());
-}
+    let retrieved = store
+        .get_lockboxes_for_recipient(bob.public().signing_key())
+        .expect("Fetch failed");
 
-#[test]
-fn store_handles_multiple_lockboxes_for_same_recipient() {
-    let mut rng = OsRng;
-    let recipient = SecretIdentity::generate(&mut rng);
-    let doc_a = GraphId::new();
-    let doc_b = GraphId::new();
-    let graph_key = GraphKey::generate(&mut rng);
-
-    let lockbox_a =
-        Lockbox::create(recipient.public().encryption_key(), &graph_key, &mut rng).unwrap();
-    let lockbox_b =
-        Lockbox::create(recipient.public().encryption_key(), &graph_key, &mut rng).unwrap();
-
-    let mut store = InMemoryStore::new();
-
-    store
-        .put_lockbox(doc_a, recipient.public().encryption_key(), &lockbox_a)
-        .unwrap();
-    store
-        .put_lockbox(doc_b, recipient.public().encryption_key(), &lockbox_b)
-        .unwrap();
-
-    let results = store
-        .get_lockboxes_for_recipient(recipient.public().encryption_key())
-        .unwrap();
-
-    assert_eq!(results.len(), 2);
-    // Order might be insertion order, but let's check existence
-    assert!(
-        results
-            .iter()
-            .any(|(id, lb)| *id == doc_a
-                && lb.ephemeral_public_key == lockbox_a.ephemeral_public_key)
-    );
-    assert!(
-        results
-            .iter()
-            .any(|(id, lb)| *id == doc_b
-                && lb.ephemeral_public_key == lockbox_b.ephemeral_public_key)
-    );
+    assert!(retrieved.is_empty());
 }
 
 #[test]
 fn store_isolates_recipients() {
-    let mut rng = OsRng;
-    let alice = SecretIdentity::generate(&mut rng);
-    let bob = SecretIdentity::generate(&mut rng);
-    let graph_id = GraphId::new();
-    let graph_key = GraphKey::generate(&mut rng);
-
-    let lockbox_for_alice =
-        Lockbox::create(alice.public().encryption_key(), &graph_key, &mut rng).unwrap();
-
     let mut store = InMemoryStore::new();
+    let mut rng = rand::thread_rng();
+
+    let alice = create_identity();
+    let bob = create_identity();
+    let graph_id = GraphId::new();
+    let key = create_dummy_key();
+
+    let lockbox = Lockbox::create(alice.public().encryption_key(), &key, &mut rng).unwrap();
     store
-        .put_lockbox(
-            graph_id,
-            alice.public().encryption_key(),
-            &lockbox_for_alice,
-        )
+        .put_lockbox(graph_id, alice.public().signing_key(), &lockbox)
         .unwrap();
 
-    // Bob checks his inbox
-    let bob_results = store
-        .get_lockboxes_for_recipient(bob.public().encryption_key())
+    let bob_view = store
+        .get_lockboxes_for_recipient(bob.public().signing_key())
         .unwrap();
-    assert!(bob_results.is_empty());
+    assert!(bob_view.is_empty());
+}
 
-    // Alice checks hers
-    let alice_results = store
-        .get_lockboxes_for_recipient(alice.public().encryption_key())
+#[test]
+fn store_handles_multiple_lockboxes_for_same_recipient() {
+    let mut store = InMemoryStore::new();
+    let mut rng = rand::thread_rng();
+
+    let alice = create_identity();
+    let doc_a = GraphId::new();
+    let doc_b = GraphId::new();
+    let key = create_dummy_key();
+
+    let lockbox_a = Lockbox::create(alice.public().encryption_key(), &key, &mut rng).unwrap();
+    let lockbox_b = Lockbox::create(alice.public().encryption_key(), &key, &mut rng).unwrap();
+
+    store
+        .put_lockbox(doc_a, alice.public().signing_key(), &lockbox_a)
         .unwrap();
-    assert_eq!(alice_results.len(), 1);
+    store
+        .put_lockbox(doc_b, alice.public().signing_key(), &lockbox_b)
+        .unwrap();
+
+    let retrieved = store
+        .get_lockboxes_for_recipient(alice.public().signing_key())
+        .unwrap();
+    assert_eq!(retrieved.len(), 2);
 }

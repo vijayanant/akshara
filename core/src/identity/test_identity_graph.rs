@@ -1,26 +1,9 @@
+use crate::identity::SecretIdentity;
+use crate::state::in_memory_store::InMemoryStore;
+use crate::state::store::GraphStore;
+use crate::traversal::{create_dummy_anchor, create_dummy_key};
+use crate::{Block, BlockId, GraphId, GraphWalker, Manifest};
 use std::collections::BTreeMap;
-
-use rand::rngs::OsRng;
-
-use crate::{
-    BlockId, GraphId, GraphKey, ManifestId,
-    graph::{Block, Manifest},
-    identity::SecretIdentity,
-    state::{GraphStore, in_memory_store::InMemoryStore},
-    traversal::walker::GraphWalker,
-};
-
-// Helper functions
-
-#[allow(dead_code)]
-pub fn create_dummy_key() -> GraphKey {
-    GraphKey::generate(&mut OsRng)
-}
-
-#[allow(dead_code)]
-pub fn create_dummy_anchor() -> ManifestId {
-    ManifestId::from_sha256(&[0u8; 32])
-}
 
 #[test]
 fn test_identity_graph_device_resolution() {
@@ -29,14 +12,13 @@ fn test_identity_graph_device_resolution() {
 
     // 1. Tier 1: Master Identity (The Authority)
     let master_identity = SecretIdentity::generate(&mut rng);
-    let master_key = create_dummy_key(); // The Master Seed's encryption key
+    let master_key = create_dummy_key();
 
     // 2. Tier 2: The Device (e.g. this laptop)
     let device_identity = SecretIdentity::generate(&mut rng);
     let device_pub_key = device_identity.public().signing_key().as_bytes();
 
     // 3. Build the Identity Graph Structure
-    // Path: /devices/laptop_1 -> [Device Public Key]
     let device_block = Block::new(
         device_pub_key.to_vec(),
         "key".to_string(),
@@ -48,19 +30,19 @@ fn test_identity_graph_device_resolution() {
     store.put_block(&device_block).unwrap();
 
     let mut devices_map = BTreeMap::new();
-    devices_map.insert("laptop_1".to_string(), device_block.id().0);
+    devices_map.insert("laptop_1".to_string(), *device_block.id().as_cid());
+
     let devices_index = Block::new_index(devices_map, vec![], &master_key, &master_identity)
         .expect("Failed to create devices index");
     store.put_block(&devices_index).unwrap();
 
     let mut root_map = BTreeMap::new();
-    root_map.insert("devices".to_string(), devices_index.id().0);
+    root_map.insert("devices".to_string(), *devices_index.id().as_cid());
     let root_index = Block::new_index(root_map, vec![], &master_key, &master_identity)
         .expect("Failed to create identity root index");
     store.put_block(&root_index).unwrap();
 
     // 4. Create the Identity Manifest
-    // Signed by Master Seed, points to the Device Index
     let graph_id = GraphId::new();
     let anchor = create_dummy_anchor();
     let manifest = Manifest::new(graph_id, root_index.id(), vec![], anchor, &master_identity);
@@ -72,7 +54,10 @@ fn test_identity_graph_device_resolution() {
         .resolve_path(manifest.content_root(), "devices/laptop_1", &master_key)
         .expect("Failed to resolve device path");
 
-    let resolved_block = store.get_block(&BlockId(resolved_cid)).unwrap().unwrap();
+    let resolved_block = store
+        .get_block(&BlockId::from_cid(resolved_cid))
+        .unwrap()
+        .unwrap();
     let decrypted_payload = resolved_block.content().decrypt(&master_key).unwrap();
 
     assert_eq!(&decrypted_payload, device_pub_key);
@@ -93,7 +78,7 @@ fn test_identity_graph_missing_device_failure() {
     store.put_block(&devices_index).unwrap();
 
     let mut root_map = BTreeMap::new();
-    root_map.insert("devices".to_string(), devices_index.id().0);
+    root_map.insert("devices".to_string(), *devices_index.id().as_cid());
     let root_index = Block::new_index(root_map, vec![], &master_key, &master_identity).unwrap();
     store.put_block(&root_index).unwrap();
 
@@ -114,7 +99,7 @@ fn test_identity_graph_unauthorized_traversal_failure() {
 
     let alice = SecretIdentity::generate(&mut rng);
     let alice_key = create_dummy_key();
-    let eve_key = create_dummy_key(); // Someone else's key
+    let eve_key = create_dummy_key();
 
     let root_index = Block::new_index(BTreeMap::new(), vec![], &alice_key, &alice).unwrap();
     store.put_block(&root_index).unwrap();

@@ -1,9 +1,6 @@
-pub mod address;
-pub mod crypto;
-pub mod error;
-
-pub use address::{BlockId, ManifestId};
-pub use error::{CryptoError, IdentityError, IntegrityError, SovereignError, StoreError};
+pub(crate) mod address;
+pub(crate) mod crypto;
+pub(crate) mod error;
 
 #[cfg(test)]
 mod test_address;

@@ -1,39 +1,32 @@
-use metrics::counter;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use tracing::{Level, info, span};
-
 use crate::base::address::{BlockId, GraphId, ManifestId};
 use crate::base::crypto::{Signature, SigningPublicKey, SovereignSigner};
 use crate::base::error::{CryptoError, IntegrityError, SovereignError};
+use metrics::counter;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{Level, info, span};
+
+/// Represents the historical and structural metadata of a graph snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestHeader {
+    pub(crate) graph_id: GraphId,
+    pub(crate) content_root: BlockId,
+    pub(crate) parents: Vec<ManifestId>,
+    pub(crate) identity_anchor: ManifestId,
+    pub(crate) created_at: i64,
+}
 
 /// A `Manifest` is a signed snapshot of a graph's state.
-///
-/// It points to a single `content_root` (the top-level Index Block), forming
-/// a Merkle Tree. This ensures that the Manifest size remains constant regardless
-/// of the number of blocks in the graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
-    /// The unique identifier of this snapshot (CIDv1).
-    id: ManifestId,
-    /// The unique ID of the graph this manifest belongs to.
-    graph_id: GraphId,
-    /// The CID of the root Index Block (the top of the Merkle Tree).
-    content_root: BlockId,
-    /// References to the manifest(s) that immediately preceded this one.
-    parents: Vec<ManifestId>,
-    /// CID of the author's current Identity Manifest (The Authority Anchor).
-    identity_anchor: ManifestId,
-    /// The public key of the user who published this snapshot.
-    author: SigningPublicKey,
-    /// A signature over the `id`.
-    signature: Signature,
-    /// Unix timestamp of creation.
-    created_at: i64,
+    pub(crate) id: ManifestId,
+    pub(crate) header: ManifestHeader,
+    pub(crate) author: SigningPublicKey,
+    pub(crate) signature: Signature,
 }
 
 impl Manifest {
-    /// Creates and signs a new manifest snapshot using the Merkle Index model.
     pub fn new(
         graph_id: GraphId,
         content_root: BlockId,
@@ -44,18 +37,20 @@ impl Manifest {
         let span = span!(Level::INFO, "manifest_new", graph_id = ?graph_id);
         let _enter = span.enter();
 
-        let created_at = 0; // TODO: Real system time
-        let author = signer.public_key();
+        let created_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
 
-        let id = Self::compute_id(
-            &graph_id,
-            &content_root,
-            &parents,
-            &identity_anchor,
-            &author,
+        let header = ManifestHeader {
+            graph_id,
+            content_root,
+            parents,
+            identity_anchor,
             created_at,
-        );
+        };
 
+        let id = Self::compute_id(&header, &signer.public_key());
         let signature = signer.sign(id.as_ref());
 
         info!(manifest_id = ?id, "Manifest created");
@@ -63,13 +58,9 @@ impl Manifest {
 
         Manifest {
             id,
-            graph_id,
-            content_root,
-            parents,
-            identity_anchor,
-            author,
+            header,
+            author: signer.public_key(),
             signature,
-            created_at,
         }
     }
 
@@ -78,19 +69,19 @@ impl Manifest {
     }
 
     pub fn graph_id(&self) -> GraphId {
-        self.graph_id
+        self.header.graph_id
     }
 
     pub fn content_root(&self) -> BlockId {
-        self.content_root
+        self.header.content_root
     }
 
     pub fn parents(&self) -> &[ManifestId] {
-        &self.parents
+        &self.header.parents
     }
 
     pub fn identity_anchor(&self) -> ManifestId {
-        self.identity_anchor
+        self.header.identity_anchor
     }
 
     pub fn author(&self) -> &SigningPublicKey {
@@ -102,54 +93,35 @@ impl Manifest {
     }
 
     pub fn created_at(&self) -> i64 {
-        self.created_at
+        self.header.created_at
     }
 
-    /// Restores a Manifest from raw components.
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_raw_parts(
+    #[allow(dead_code)]
+    pub(crate) fn from_raw_parts(
         id: ManifestId,
-        graph_id: GraphId,
-        content_root: BlockId,
-        parents: Vec<ManifestId>,
-        identity_anchor: ManifestId,
+        header: ManifestHeader,
         author: SigningPublicKey,
         signature: Signature,
-        created_at: i64,
     ) -> Self {
         Self {
             id,
-            graph_id,
-            content_root,
-            parents,
-            identity_anchor,
+            header,
             author,
             signature,
-            created_at,
         }
     }
 
-    /// Verifies the cryptographic integrity of the manifest.
     pub fn verify_integrity(&self) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "manifest_verify_integrity", manifest_id = ?self.id);
         let _enter = span.enter();
 
-        // 1. Re-calculate ID
-        let calculated_id = Self::compute_id(
-            &self.graph_id,
-            &self.content_root,
-            &self.parents,
-            &self.identity_anchor,
-            &self.author,
-            self.created_at,
-        );
+        let calculated_id = Self::compute_id(&self.header, &self.author);
         if self.id != calculated_id {
             return Err(SovereignError::Integrity(
                 IntegrityError::ManifestIdMismatch(self.id),
             ));
         }
 
-        // 2. Verify signature
         self.author
             .verify(self.id.as_ref(), &self.signature)
             .map_err(|e| SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
@@ -157,25 +129,17 @@ impl Manifest {
         Ok(())
     }
 
-    /// Canonical hash function for the manifest's identity.
-    fn compute_id(
-        graph_id: &GraphId,
-        content_root: &BlockId,
-        parents: &[ManifestId],
-        identity_anchor: &ManifestId,
-        author: &SigningPublicKey,
-        created_at: i64,
-    ) -> ManifestId {
+    fn compute_id(header: &ManifestHeader, author: &SigningPublicKey) -> ManifestId {
         let mut hasher = Sha256::new();
         hasher.update(b"SOV_V1_MANIFEST");
-        hasher.update(graph_id.0.as_bytes());
-        hasher.update(content_root.as_ref());
-        for p in parents {
+        hasher.update(header.graph_id.as_bytes());
+        hasher.update(header.content_root.as_ref());
+        for p in &header.parents {
             hasher.update(p.as_ref());
         }
-        hasher.update(identity_anchor.as_ref());
+        hasher.update(header.identity_anchor.as_ref());
         hasher.update(author.as_bytes());
-        hasher.update(created_at.to_le_bytes());
+        hasher.update(header.created_at.to_le_bytes());
 
         ManifestId::from_sha256(&hasher.finalize())
     }

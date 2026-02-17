@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::base::{BlockId, IntegrityError, ManifestId, SovereignError};
+use crate::{BlockId, IntegrityError, ManifestId, SovereignError};
 
 #[test]
 fn test_cid_creation_from_sha256() {
@@ -55,7 +55,7 @@ fn test_cid_strict_from_bytes() {
 fn test_cid_type_confusion_protection() {
     let digest = [0u8; 32];
     let block_id = BlockId::from_sha256(&digest);
-    let bytes = block_id.0.to_bytes();
+    let bytes = block_id.to_bytes();
 
     // Attempt to parse BlockId bytes as a ManifestId
     // This MUST fail because the multicodec (0x50 vs 0x51) is different.
@@ -127,7 +127,7 @@ mod properties {
             let original = BlockId::from_sha256(digest);
 
             // Byte roundtrip
-            let bytes = original.0.to_bytes();
+            let bytes = original.to_bytes();
             let restored_bytes = BlockId::try_from(bytes.as_slice()).expect("Byte roundtrip failed");
             prop_assert_eq!(&original, &restored_bytes);
 

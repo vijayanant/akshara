@@ -1,17 +1,20 @@
-pub mod base;
+pub(crate) mod base;
+pub(crate) mod graph;
+pub(crate) mod identity;
+pub(crate) mod protocol;
+pub(crate) mod state;
+pub(crate) mod traversal;
 
-pub mod graph;
-pub mod identity;
-pub mod protocol;
-pub mod state;
-pub mod traversal;
+// --- Public API ---
 
-// Re-export foundational types for internal compatibility
-pub use base::address::{
-    BlockId, CODEC_SOVEREIGN_BLOCK, CODEC_SOVEREIGN_MANIFEST, GraphId, ManifestId,
-};
+pub use base::address::{BlockId, GraphId, ManifestId};
 pub use base::crypto::{
-    BlockContent, EncryptionPublicKey, EncryptionSecretKey, GraphKey, Lockbox, Signature,
-    SigningPublicKey, SigningSecretKey, SovereignSigner,
+    EncryptionPublicKey, GraphKey, Lockbox, Signature, SigningPublicKey, SovereignSigner,
 };
-pub use base::error::{CryptoError, IdentityError, IntegrityError, SovereignError, StoreError};
+pub use base::error::{IntegrityError, SovereignError};
+
+pub use graph::{Block, Manifest};
+pub use identity::SecretIdentity;
+pub use protocol::{SyncEngine, SyncRequest, SyncResponse};
+pub use state::{GraphStore, InMemoryStore};
+pub use traversal::{BlockWalker, GraphWalker};

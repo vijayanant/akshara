@@ -1,3 +1,4 @@
+use crate::base::error::{CryptoError, SovereignError};
 use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
@@ -9,11 +10,8 @@ use tracing::{Level, debug, error, span, trace};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::base::{CryptoError, SovereignError};
-
 // --- Signing Keys (Ed25519) ---
 
-/// A public key used for Ed25519 signature verification.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct SigningPublicKey([u8; 32]);
 
@@ -26,7 +24,6 @@ impl SigningPublicKey {
         &self.0
     }
 
-    /// Verifies that a signature was created by the corresponding private key for the given message.
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<(), SovereignError> {
         let span = span!(Level::TRACE, "signing_verify");
         let _enter = span.enter();
@@ -54,9 +51,6 @@ impl SigningPublicKey {
     }
 }
 
-/// A secret key used for creating digital signatures.
-///
-/// Memory is zeroed on drop to protect the secret bytes.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SigningSecretKey([u8; 32]);
 
@@ -65,14 +59,13 @@ impl SigningSecretKey {
         Self(bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
 
 // --- Encryption Keys (X25519) ---
 
-/// A public key used for Diffie-Hellman key exchange.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct EncryptionPublicKey([u8; 32]);
 
@@ -86,9 +79,6 @@ impl EncryptionPublicKey {
     }
 }
 
-/// A secret key used for establishing shared secrets via Diffie-Hellman.
-///
-/// Memory is zeroed on drop.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct EncryptionSecretKey([u8; 32]);
 
@@ -97,16 +87,13 @@ impl EncryptionSecretKey {
         Self(bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
 
 // --- Symmetric Keys (AES-256) ---
 
-/// The master symmetric key used to encrypt the actual content of a graph.
-///
-/// This key is never shared directly; it is always encapsulated within a `Lockbox`.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct GraphKey([u8; 32]);
 
@@ -121,7 +108,7 @@ impl GraphKey {
         Self(bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
@@ -132,7 +119,6 @@ impl From<[u8; 32]> for GraphKey {
     }
 }
 
-/// A generic cryptographic signature container.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct Signature(Vec<u8>);
 
@@ -146,21 +132,11 @@ impl Signature {
     }
 }
 
-/// A trait for entities capable of signing messages.
-///
-/// This allows decoupling the `Block`/`Manifest` creation from the specific
-/// key storage mechanism (e.g., in-memory `SecretIdentity`, Hardware Wallet, Remote Signer).
 pub trait SovereignSigner {
-    /// Signs the message and returns the signature.
     fn sign(&self, message: &[u8]) -> Signature;
-
-    /// Returns the public key associated with this signer.
     fn public_key(&self) -> SigningPublicKey;
 }
 
-/// Encapsulates encrypted content and its unique initialization vector (nonce).
-/// An encrypted payload protected by AES-256-GCM.
-/// Provides both confidentiality (encryption) and integrity (authentication tag).
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct BlockContent {
     ciphertext: Vec<u8>,
@@ -168,8 +144,6 @@ pub struct BlockContent {
 }
 
 impl BlockContent {
-    /// Encrypts data using the provided symmetric key.
-    /// A unique nonce is required for every encryption operation with the same key.
     pub fn encrypt(
         plaintext: &[u8],
         key: &GraphKey,
@@ -195,8 +169,6 @@ impl BlockContent {
         })
     }
 
-    /// Decrypts data using the provided symmetric key.
-    /// Fails if the key is incorrect or the ciphertext has been tampered with.
     pub fn decrypt(&self, key: &GraphKey) -> Result<Vec<u8>, SovereignError> {
         let span = span!(Level::TRACE, "content_decrypt");
         let _enter = span.enter();
@@ -225,27 +197,19 @@ impl BlockContent {
         &self.nonce
     }
 
-    /// Restores a BlockContent from its raw components.
-    /// Used for mapping from wire/storage formats.
-    pub fn from_raw_parts(ciphertext: Vec<u8>, nonce: [u8; 12]) -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn from_raw_parts(ciphertext: Vec<u8>, nonce: [u8; 12]) -> Self {
         Self { ciphertext, nonce }
     }
 }
 
-/// A Key Encapsulation Mechanism (KEM) used to securely share a `GraphKey` with a recipient.
-///
-/// It uses a fresh ephemeral X25519 keypair for every creation to ensure that the
-/// exchange is unlinkable and provides forward secrecy for the document key transport.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct Lockbox {
-    /// The sender's one-time public key for this specific key exchange.
-    pub ephemeral_public_key: EncryptionPublicKey,
-    /// The `GraphKey` encrypted with the shared secret derived from the exchange.
-    pub content: BlockContent,
+    pub(crate) ephemeral_public_key: EncryptionPublicKey,
+    pub(crate) content: BlockContent,
 }
 
 impl Lockbox {
-    /// Wraps a `GraphKey` for a specific recipient public key.
     pub fn create(
         recipient_public: &EncryptionPublicKey,
         secret_to_lock: &GraphKey,
@@ -254,20 +218,17 @@ impl Lockbox {
         let span = span!(Level::DEBUG, "lockbox_create");
         let _enter = span.enter();
 
-        // Generate an ephemeral keypair for this specific lockbox
         let ephemeral_secret = StaticSecret::random_from_rng(&mut *rng);
         let ephemeral_public = XPublicKey::from(&ephemeral_secret);
 
         let recipient_xpub = XPublicKey::from(*recipient_public.as_bytes());
 
-        // Derive shared secret via Diffie-Hellman
         let shared_secret = ephemeral_secret.diffie_hellman(&recipient_xpub);
         let shared_key = GraphKey::new(*shared_secret.as_bytes());
 
         let mut nonce = [0u8; 12];
         rng.fill_bytes(&mut nonce);
 
-        // Encrypt the target key using the shared secret
         let content = BlockContent::encrypt(secret_to_lock.as_bytes(), &shared_key, nonce)?;
 
         trace!("Lockbox created with ephemeral key");
@@ -278,7 +239,6 @@ impl Lockbox {
         })
     }
 
-    /// Recovers the encapsulated `GraphKey` using the recipient's secret key.
     pub fn open(&self, recipient_secret: &EncryptionSecretKey) -> Result<GraphKey, SovereignError> {
         let span = span!(Level::DEBUG, "lockbox_open");
         let _enter = span.enter();
@@ -286,11 +246,9 @@ impl Lockbox {
         let recipient_secret_scalar = StaticSecret::from(*recipient_secret.as_bytes());
         let ephemeral_public_point = XPublicKey::from(*self.ephemeral_public_key.as_bytes());
 
-        // Re-derive the shared secret
         let shared_secret = recipient_secret_scalar.diffie_hellman(&ephemeral_public_point);
         let shared_key = GraphKey::new(*shared_secret.as_bytes());
 
-        // Decrypt the encapsulated Document Key
         let decrypted_bytes = self.content.decrypt(&shared_key).map_err(|e| {
             debug!(error = ?e, "Failed to decrypt lockbox content");
             e
@@ -308,8 +266,8 @@ impl Lockbox {
         Ok(GraphKey::new(key_bytes))
     }
 
-    /// Restores a Lockbox from its raw components.
-    pub fn from_raw_parts(
+    #[allow(dead_code)]
+    pub(crate) fn from_raw_parts(
         ephemeral_public_key: EncryptionPublicKey,
         content: BlockContent,
     ) -> Self {

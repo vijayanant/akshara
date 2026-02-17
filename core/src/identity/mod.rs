@@ -1,3 +1,9 @@
+use crate::base::address::GraphId;
+use crate::base::crypto::{
+    EncryptionPublicKey, EncryptionSecretKey, GraphKey, Signature, SigningPublicKey,
+    SigningSecretKey, SovereignSigner,
+};
+use crate::base::error::{IdentityError, SovereignError};
 use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signer, SigningKey};
 use hmac::{Hmac, Mac};
@@ -7,15 +13,10 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha512;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 
-use crate::{
-    EncryptionPublicKey, EncryptionSecretKey, GraphId, GraphKey, IdentityError, Signature,
-    SigningPublicKey, SigningSecretKey, SovereignError, SovereignSigner,
-};
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identity {
-    signing_key: SigningPublicKey,
-    encryption_key: EncryptionPublicKey,
+    pub(crate) signing_key: SigningPublicKey,
+    pub(crate) encryption_key: EncryptionPublicKey,
 }
 
 impl Identity {
@@ -40,9 +41,9 @@ impl Identity {
 }
 
 pub struct SecretIdentity {
-    signing_key: SigningSecretKey,
-    encryption_key: EncryptionSecretKey,
-    public: Identity,
+    pub(crate) signing_key: SigningSecretKey,
+    pub(crate) encryption_key: EncryptionSecretKey,
+    pub(crate) public: Identity,
 }
 
 impl SecretIdentity {
@@ -53,12 +54,16 @@ impl SecretIdentity {
     }
 
     /// Generates a new valid 24-word BIP-39 mnemonic phrase.
-    pub fn generate_mnemonic() -> String {
+    pub fn generate_mnemonic() -> Result<String, SovereignError> {
         let mut entropy = [0u8; 32];
         OsRng.fill_bytes(&mut entropy);
-        let mnemonic =
-            Mnemonic::from_entropy(&entropy).expect("RNG failure during mnemonic generation");
-        mnemonic.to_string()
+        let mnemonic = Mnemonic::from_entropy(&entropy).map_err(|e| {
+            SovereignError::Identity(IdentityError::MnemonicInvalid(format!(
+                "Entropy failure: {}",
+                e
+            )))
+        })?;
+        Ok(mnemonic.to_string())
     }
 
     /// Derives an identity from a BIP-39 mnemonic using the SLIP-0010 standard.
@@ -124,25 +129,25 @@ impl SecretIdentity {
     }
 
     /// Derives a stable, private GraphId used to locate the user's data on a Relay.
-    ///
-    /// This provides "Blind Discovery": the ID is unique to the user but
-    /// reveals zero information about their master seed or public key.
-    pub fn derive_discovery_id(&self) -> GraphId {
+    #[allow(dead_code)]
+    pub(crate) fn derive_discovery_id(&self) -> GraphId {
         let mut hmac = Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes())
-            .expect("HMAC should accept signing key");
+            .expect("HMAC must accept 32-byte Ed25519 key");
         hmac.update(b"sovereign.v1.discovery");
 
         let output = hmac.finalize().into_bytes();
-        GraphId(uuid::Uuid::from_slice(&output[..16]).expect("UUID from hash failed"))
+        let mut uuid_bytes = [0u8; 16];
+        uuid_bytes.copy_from_slice(&output[..16]);
+        GraphId::from_bytes(uuid_bytes)
     }
 
     /// Derives a deterministic 32-byte GraphKey for a specific graph.
     pub fn derive_graph_key(&self, graph_id: &GraphId) -> GraphKey {
         let mut hmac = Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes())
-            .expect("HMAC should accept signing key");
+            .expect("HMAC must accept 32-byte Ed25519 key");
 
         hmac.update(b"sovereign.v1.graph_key");
-        hmac.update(graph_id.0.as_bytes());
+        hmac.update(graph_id.as_bytes());
 
         let output = hmac.finalize().into_bytes();
         let mut key_bytes = [0u8; 32];

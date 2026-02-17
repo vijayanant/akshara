@@ -1,36 +1,26 @@
+use crate::base::address::BlockId;
+use crate::base::crypto::{BlockContent, GraphKey, Signature, SigningPublicKey, SovereignSigner};
+use crate::base::error::{CryptoError, IntegrityError, SovereignError};
 use cid::Cid;
 use metrics::counter;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use tracing::{Level, info, span};
 
-use crate::base::address::BlockId;
-use crate::base::crypto::{BlockContent, GraphKey, Signature, SigningPublicKey, SovereignSigner};
-use crate::base::error::{CryptoError, IntegrityError, SovereignError};
-
 /// A `Block` is the atomic unit of content in Sovereign.
-///
-/// It is immutable, content-addressed, and cryptographically signed.
-/// All blocks are encrypted with the GraphKey before being hashed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
-    /// The unique identifier of the block (CIDv1).
-    id: BlockId,
-    /// The public key of the user who authored this block.
-    author: SigningPublicKey,
-    /// An Ed25519 signature over the `id`.
-    signature: Signature,
-    /// The encrypted payload (text, image data, or a serialized Index Map).
-    content: BlockContent,
-    /// A hint for the application layer on how to render this block (e.g., "p", "index").
-    block_type: String,
-    /// References to the block IDs that this block replaces or merges.
-    parents: Vec<BlockId>,
+    pub(crate) id: BlockId,
+    pub(crate) author: SigningPublicKey,
+    pub(crate) signature: Signature,
+    pub(crate) content: BlockContent,
+    pub(crate) block_type: String,
+    pub(crate) parents: Vec<BlockId>,
 }
 
 impl Block {
-    /// Creates and signs a new Data Block.
     pub fn new(
         plaintext: Vec<u8>,
         block_type: String,
@@ -38,16 +28,13 @@ impl Block {
         key: &GraphKey,
         signer: &impl SovereignSigner,
     ) -> Result<Self, SovereignError> {
-        let nonce = [0u8; 12]; // TODO: Real randomness
+        let mut nonce = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce);
         let content = BlockContent::encrypt(&plaintext, key, nonce)?;
 
         Ok(Self::create(content, block_type, parents, signer))
     }
 
-    /// Creates and signs a new Index Block.
-    ///
-    /// The index is a map of names to CIDs. It is serialized using CBOR
-    /// to ensure canonical byte ordering before encryption.
     pub fn new_index(
         index: BTreeMap<String, Cid>,
         parents: Vec<BlockId>,
@@ -58,13 +45,13 @@ impl Block {
             SovereignError::InternalError(format!("CBOR serialization failed: {}", e))
         })?;
 
-        let nonce = [0u8; 12]; // TODO: Real randomness
+        let mut nonce = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce);
         let content = BlockContent::encrypt(&plaintext, key, nonce)?;
 
         Ok(Self::create(content, "index".to_string(), parents, signer))
     }
 
-    /// Internal factory to handle ID calculation and signing.
     fn create(
         content: BlockContent,
         block_type: String,
@@ -111,8 +98,8 @@ impl Block {
         &self.parents
     }
 
-    /// Restores a Block from its raw components.
-    pub fn from_raw_parts(
+    #[allow(dead_code)]
+    pub(crate) fn from_raw_parts(
         id: BlockId,
         author: SigningPublicKey,
         signature: Signature,
@@ -130,7 +117,6 @@ impl Block {
         }
     }
 
-    /// Validates the internal consistency of the block.
     pub fn verify_integrity(&self) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "block_verify_integrity", block_id = ?self.id);
         let _enter = span.enter();
@@ -149,7 +135,6 @@ impl Block {
         Ok(())
     }
 
-    /// Computes the canonical CID of the block's data.
     fn compute_id(content: &BlockContent, block_type: &str, parents: &[BlockId]) -> BlockId {
         let mut hasher = Sha256::new();
         hasher.update(b"SOV_V1_BLOCK");

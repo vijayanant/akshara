@@ -28,22 +28,23 @@ pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
     (block, identity)
 }
 
-// --- Identity & Determinism Tests ---
+// --- Identity & Randomness Tests ---
 
 #[test]
-fn block_id_is_deterministic() {
+fn block_id_is_unique_due_to_random_nonce() {
     let identity = create_identity();
     let key = create_dummy_key();
     let content = b"data".to_vec();
 
     let block1 = Block::new(content.clone(), "p".to_string(), vec![], &key, &identity).unwrap();
-
     let block2 = Block::new(content, "p".to_string(), vec![], &key, &identity).unwrap();
 
-    assert_eq!(
+    // Since each block generation now uses a random 96-bit nonce,
+    // identical content MUST result in different CIDs to ensure cryptographic safety (AES-GCM).
+    assert_ne!(
         block1.id(),
         block2.id(),
-        "Identical blocks must have identical IDs"
+        "Identical content must have different IDs due to unique nonces"
     );
 }
 
@@ -95,11 +96,7 @@ fn block_content_encryption_cycle() {
 
     // Verify decryption
     let decrypted = block.content().decrypt(&graph_key).unwrap();
-    // In our new Block implementation, the payload is wrapped in an enum/JSON.
-    // So the decrypted bytes aren't just the plaintext anymore.
-    // They are the serialized BlockPayload::Data(plaintext).
-    // Let's check that.
-    assert!(String::from_utf8_lossy(&decrypted).contains("Sensitive Data"));
+    assert_eq!(decrypted, plaintext);
 }
 
 // --- Integrity Tests ---
@@ -132,7 +129,6 @@ fn block_supports_empty_content() {
 
     // Decrypt and check
     let decrypted = block.content().decrypt(&key).unwrap();
-    // It should be empty!
     assert!(decrypted.is_empty());
 }
 

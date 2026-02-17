@@ -1,6 +1,6 @@
-pub use rand::rngs::OsRng;
-
-use crate::{GraphId, Signature, SovereignSigner, graph::Block, identity::SecretIdentity};
+use crate::base::crypto::{Signature, SovereignSigner};
+use crate::identity::SecretIdentity;
+use rand::rngs::OsRng;
 
 #[test]
 fn identity_can_be_generated_and_sign_messages() {
@@ -19,7 +19,7 @@ fn identity_can_be_generated_and_sign_messages() {
 
 #[test]
 fn identity_is_deterministic_from_mnemonic() {
-    let phrase = SecretIdentity::generate_mnemonic();
+    let phrase = SecretIdentity::generate_mnemonic().unwrap();
 
     let id1 = SecretIdentity::from_mnemonic(&phrase, "").expect("Failed to derive from mnemonic");
     let id2 = SecretIdentity::from_mnemonic(&phrase, "").expect("Failed to derive from mnemonic");
@@ -33,7 +33,7 @@ fn identity_is_deterministic_from_mnemonic() {
 
 #[test]
 fn identity_derivation_changes_with_passphrase() {
-    let phrase = SecretIdentity::generate_mnemonic();
+    let phrase = SecretIdentity::generate_mnemonic().unwrap();
 
     let id_no_pass = SecretIdentity::from_mnemonic(&phrase, "").unwrap();
     let id_with_pass =
@@ -61,8 +61,8 @@ fn identity_derivation_matches_bip39_standard_phrase() {
 
 #[test]
 fn identity_derivation_avalanche_effect() {
-    let m1 = SecretIdentity::generate_mnemonic();
-    let m2 = SecretIdentity::generate_mnemonic();
+    let m1 = SecretIdentity::generate_mnemonic().unwrap();
+    let m2 = SecretIdentity::generate_mnemonic().unwrap();
 
     assert_ne!(m1, m2);
 
@@ -89,8 +89,11 @@ fn test_mnemonic_normalization_and_whitespace() {
 
 #[test]
 fn test_full_identity_rebirth_recovery() {
+    use crate::base::address::GraphId;
+    use crate::graph::Block;
+
     // --- SCENARIO: Device A (The Past) ---
-    let phrase = SecretIdentity::generate_mnemonic();
+    let phrase = SecretIdentity::generate_mnemonic().unwrap();
     let graph_id = GraphId::new();
     let id_a = SecretIdentity::from_mnemonic(&phrase, "pass").unwrap();
     let graph_key = id_a.derive_graph_key(&graph_id);
@@ -106,24 +109,21 @@ fn test_full_identity_rebirth_recovery() {
     .unwrap();
 
     // --- SCENARIO: Device B (The Future) ---
-    // Device B has NOTHING but the mnemonic and the encrypted block.
     let id_b = SecretIdentity::from_mnemonic(&phrase, "pass").unwrap();
 
-    // Bob re-derives the key for the graph ID
     let recovered_key = id_b.derive_graph_key(&graph_id);
     assert_eq!(
         graph_key, recovered_key,
         "Recovered key must match original"
     );
 
-    // Bob decrypts the data
     let decrypted = block.content().decrypt(&recovered_key).unwrap();
     assert_eq!(decrypted, plaintext.to_vec());
 }
 
 #[test]
 fn identity_can_generate_valid_mnemonics() {
-    let phrase = SecretIdentity::generate_mnemonic();
+    let phrase = SecretIdentity::generate_mnemonic().unwrap();
     let words: Vec<&str> = phrase.split_whitespace().collect();
     assert_eq!(
         words.len(),
@@ -140,6 +140,7 @@ fn identity_can_generate_valid_mnemonics() {
 
 #[test]
 fn identity_derives_isolated_graph_keys() {
+    use crate::base::address::GraphId;
     let mut rng = rand::thread_rng();
     let secret_id = SecretIdentity::generate(&mut rng);
 
@@ -188,8 +189,7 @@ fn identity_fails_on_invalid_mnemonic() {
 
 #[cfg(test)]
 mod properties {
-    use crate::GraphId;
-    use crate::identity::SecretIdentity;
+    use super::*;
     use proptest::prelude::*;
 
     proptest! {
@@ -207,8 +207,9 @@ mod properties {
 
         #[test]
         fn p_graph_key_isolation(ref g1_uuid in any::<[u8; 16]>(), ref g2_uuid in any::<[u8; 16]>()) {
-            let g1 = GraphId(uuid::Uuid::from_bytes(*g1_uuid));
-            let g2 = GraphId(uuid::Uuid::from_bytes(*g2_uuid));
+            use crate::base::address::GraphId;
+            let g1 = GraphId::from_bytes(*g1_uuid);
+            let g2 = GraphId::from_bytes(*g2_uuid);
 
             let mut rng = rand::thread_rng();
             let secret_id = SecretIdentity::generate(&mut rng);

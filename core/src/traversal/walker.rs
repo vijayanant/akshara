@@ -1,21 +1,12 @@
-use cid::Cid;
-use std::collections::{BTreeMap, HashSet, VecDeque};
-
 use crate::base::address::{BlockId, ManifestId};
 use crate::base::crypto::GraphKey;
 use crate::base::error::{IntegrityError, SovereignError, StoreError};
 use crate::state::store::GraphStore;
+use cid::Cid;
+use std::collections::{BTreeMap, HashSet, VecDeque};
 
-/// The absolute maximum depth allowed for path resolution.
-///
-/// This is a "Safety Valve" to prevent stack exhaustion. In a Merkle Graph,
-/// applications are free to define their own hierarchies, but resolution
-/// is limited to 256 segments to protect the host system.
-pub const MAX_PATH_DEPTH: usize = 256;
-
-#[derive()]
 pub struct GraphWalker<'a, S: GraphStore + ?Sized> {
-    store: &'a S,
+    pub(crate) store: &'a S,
 }
 
 impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
@@ -40,20 +31,20 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     ) -> Result<Cid, SovereignError> {
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
-        if segments.len() > MAX_PATH_DEPTH {
+        if segments.len() > 256 {
             return Err(SovereignError::InternalError(format!(
                 "Path resolution depth limit exceeded (max: {})",
-                MAX_PATH_DEPTH
+                256
             )));
         }
 
-        let mut current_cid = root.0;
+        let mut current_cid = *root.as_cid();
         let mut visited = HashSet::new();
         visited.insert(current_cid);
 
         for segment in segments {
             // 1. Fetch the current block
-            let block_id = BlockId(current_cid);
+            let block_id = BlockId::from_cid(current_cid);
             let block = self.store.get_block(&block_id)?.ok_or_else(|| {
                 SovereignError::Store(StoreError::NotFound(format!("Block {}", block_id)))
             })?;
@@ -82,7 +73,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         }
 
         // 5. SATYATA CHECK: Ensure the target actually exists
-        let final_id = BlockId(current_cid);
+        let final_id = BlockId::from_cid(current_cid);
         if self.store.get_block(&final_id)?.is_none() {
             return Err(SovereignError::Store(StoreError::NotFound(format!(
                 "Resolved leaf block {} missing from store",
@@ -163,7 +154,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
 }
 
 pub struct BlockWalker<'a, S: GraphStore + ?Sized> {
-    store: &'a S,
+    pub(crate) store: &'a S,
 }
 
 impl<'a, S: GraphStore + ?Sized> BlockWalker<'a, S> {
