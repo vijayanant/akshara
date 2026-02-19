@@ -3,8 +3,10 @@ use rand::rngs::OsRng;
 use sovereign_core::{
     Address, Block, Delta, GraphKey, GraphStore, InMemoryStore, Reconciler, SecretIdentity,
 };
+use tokio::runtime::Runtime;
 
 fn bench_fulfillment(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
     let key = GraphKey::generate(&mut rng);
@@ -12,13 +14,15 @@ fn bench_fulfillment(c: &mut Criterion) {
 
     // 1. Pre-fill the store with 1000 blocks
     let mut addresses = Vec::new();
-    for i in 0..1000 {
-        let data = vec![i as u8; 1024]; // 1KB blocks
-        let block = Block::new(data, "test".into(), vec![], &key, &identity).unwrap();
-        let addr = Address::from(block.id());
-        store.put_block(&block).unwrap();
-        addresses.push(addr);
-    }
+    rt.block_on(async {
+        for i in 0..1000 {
+            let data = vec![i as u8; 1024]; // 1KB blocks
+            let block = Block::new(data, "test".into(), vec![], &key, &identity).unwrap();
+            let addr = Address::from(block.id());
+            store.put_block(&block).await.unwrap();
+            addresses.push(addr);
+        }
+    });
 
     let delta = Delta::new(addresses);
     let reconciler = Reconciler::new(&store, identity.public().signing_key().clone());
@@ -28,10 +32,11 @@ fn bench_fulfillment(c: &mut Criterion) {
 
     group.bench_function(BenchmarkId::new("fulfill", 1000), |b| {
         b.iter(|| {
-            // We iterate through the fulfillment iterator
-            for portion_res in reconciler.fulfill(&delta) {
-                let _ = portion_res.unwrap();
-            }
+            rt.block_on(async {
+                // Now we await the full fulfillment
+                let portions = reconciler.fulfill(&delta).await.unwrap();
+                assert_eq!(portions.len(), 1000);
+            });
         });
     });
 

@@ -4,8 +4,7 @@ use sovereign_core::{
     Address, Block, GraphKey, GraphStore, GraphWalker, InMemoryStore, SecretIdentity,
 };
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::sync::Arc;
 
 #[test]
 #[ignore]
@@ -58,16 +57,16 @@ fn test_byzantine_manifest_corruption() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_byzantine_walker_robustness() {
+async fn test_byzantine_walker_robustness() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let master = SecretIdentity::generate(&mut rng);
     let key = GraphKey::generate(&mut rng);
 
     let leaf = Block::new(b"leaf".to_vec(), "data".into(), vec![], &key, &master).unwrap();
-    store.put_block(&leaf).unwrap();
+    store.put_block(&leaf).await.unwrap();
 
     let mut root_map = BTreeMap::new();
     root_map.insert("file".to_string(), Address::from(leaf.id()));
@@ -79,7 +78,7 @@ fn test_byzantine_walker_robustness() {
         &master,
     )
     .unwrap();
-    store.put_block(&root_block).unwrap();
+    store.put_block(&root_block).await.unwrap();
 
     for _ in 0..50 {
         let mut corrupt_bytes = serde_cbor::to_vec(&leaf).unwrap();
@@ -87,25 +86,25 @@ fn test_byzantine_walker_robustness() {
         corrupt_bytes[pos] ^= 0xFF;
 
         if let Ok(corrupt_block) = serde_cbor::from_slice::<Block>(&corrupt_bytes) {
-            store.put_block(&corrupt_block).unwrap();
+            store.put_block(&corrupt_block).await.unwrap();
         }
 
         {
             let walker = GraphWalker::new(&store, master.public().signing_key().clone());
-            let _ = walker.resolve_path(root_block.id(), "file", &key);
+            let _ = walker.resolve_path(root_block.id(), "file", &key).await;
         }
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn store_rwlock_torture_test() {
-    let store = Arc::new(Mutex::new(InMemoryStore::new()));
-    let mut threads = vec![];
+async fn store_rwlock_torture_test() {
+    let store = Arc::new(InMemoryStore::new());
+    let mut handles = vec![];
 
     for i in 0..10 {
         let store_ref = Arc::clone(&store);
-        let t = thread::spawn(move || {
+        let h = tokio::spawn(async move {
             let mut rng = OsRng;
             let identity = SecretIdentity::generate(&mut rng);
             let key = GraphKey::generate(&mut rng);
@@ -117,21 +116,78 @@ fn store_rwlock_torture_test() {
                 let id = block.id();
 
                 {
-                    let mut lock = store_ref.lock().unwrap();
-                    lock.put_block(&block).unwrap();
+                    // No need for Mutex here as InMemoryStore is thread-safe internally
+                    let mut store_mut = (*store_ref).clone();
+                    store_mut.put_block(&block).await.unwrap();
                 }
 
                 {
-                    let lock = store_ref.lock().unwrap();
-                    let retrieved = lock.get_block(&id).unwrap().unwrap();
+                    let retrieved = store_ref.get_block(&id).await.unwrap().unwrap();
                     assert_eq!(retrieved.id(), id);
                 }
             }
         });
-        threads.push(t);
+        handles.push(h);
     }
 
-    for t in threads {
-        t.join().unwrap();
+    for h in handles {
+        h.await.unwrap();
     }
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_async_storm_manifest_heads() {
+    let store = Arc::new(tokio::sync::RwLock::new(InMemoryStore::new()));
+    let graph_id = sovereign_core::GraphId::new();
+    let root = sovereign_core::BlockId::from_sha256(&[0xAA; 32]);
+    let anchor = sovereign_core::ManifestId::from_sha256(&[0x00; 32]);
+
+    let mut handles = vec![];
+
+    // Spawn 50 tasks trying to update heads simultaneously
+    for _ in 0..50 {
+        let store_ref = Arc::clone(&store);
+        let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+        let identity_ref = SecretIdentity::from_mnemonic(&mnemonic, "pass").unwrap();
+
+        let h = tokio::spawn(async move {
+            for _ in 0..10 {
+                // 1. Get current heads
+                let heads = {
+                    let s = store_ref.read().await;
+                    s.get_heads(&graph_id).await.unwrap()
+                };
+
+                // 2. Create new manifest pointing to current heads
+                let m = sovereign_core::Manifest::new(graph_id, root, heads, anchor, &identity_ref);
+
+                // 3. Put manifest
+                {
+                    let mut s = store_ref.write().await;
+                    s.put_manifest(&m).await.unwrap();
+                }
+            }
+        });
+        handles.push(h);
+    }
+
+    for h in handles {
+        h.await.unwrap();
+    }
+
+    // FINAL VERIFICATION:
+    // The heads must be convergent. Since every manifest points to previous heads,
+    // we should ultimately end up with a small number of heads (likely 1 if sequential,
+    // or few if highly concurrent).
+    let s = store.read().await;
+    let final_heads = s.get_heads(&graph_id).await.unwrap();
+    assert!(
+        !final_heads.is_empty(),
+        "Heads should not be empty after storm"
+    );
+    assert!(
+        final_heads.len() <= 50,
+        "Heads count exploded - logic error in head pruning"
+    );
 }

@@ -28,8 +28,8 @@ fn test_sovereign_blind_discovery_derivation() {
     );
 }
 
-#[test]
-fn test_sovereign_full_authority_chain_verification() {
+#[tokio::test]
+async fn test_sovereign_full_authority_chain_verification() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
 
@@ -48,7 +48,7 @@ fn test_sovereign_full_authority_chain_verification() {
         &master,
     )
     .unwrap();
-    store.put_block(&device_block).unwrap();
+    store.put_block(&device_block).await.unwrap();
 
     let mut devices_map = BTreeMap::new();
     devices_map.insert("laptop".to_string(), Address::from(device_block.id()));
@@ -60,7 +60,7 @@ fn test_sovereign_full_authority_chain_verification() {
         &master,
     )
     .unwrap();
-    store.put_block(&devices_index).unwrap();
+    store.put_block(&devices_index).await.unwrap();
 
     let mut root_map = BTreeMap::new();
     root_map.insert("devices".to_string(), Address::from(devices_index.id()));
@@ -72,11 +72,11 @@ fn test_sovereign_full_authority_chain_verification() {
         &master,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let anchor = ManifestId::from_sha256(&[0u8; 32]);
     let manifest = Manifest::new(graph_id, root_index.id(), vec![], anchor, &master);
-    store.put_manifest(&manifest).unwrap();
+    store.put_manifest(&manifest).await.unwrap();
 
     // 3. Device signs a document update
     let doc_root = BlockId::from_sha256(&[0xAA; 32]);
@@ -86,11 +86,13 @@ fn test_sovereign_full_authority_chain_verification() {
     let walker = GraphWalker::new(&store, master.public().signing_key().clone());
     let resolved_addr = walker
         .resolve_path(root_index.id(), "/devices/laptop", &key)
+        .await
         .unwrap();
 
     let resolved_block_id = BlockId::try_from(resolved_addr).unwrap();
     let block = store
         .get_block(&resolved_block_id)
+        .await
         .unwrap()
         .expect("Block not found");
 

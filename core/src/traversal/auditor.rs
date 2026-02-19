@@ -26,7 +26,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
     }
 
     /// Performs a full audit of a Manifest, including mathematical and social integrity.
-    pub fn audit_manifest(&self, manifest: &Manifest) -> Result<(), SovereignError> {
+    pub async fn audit_manifest(&self, manifest: &Manifest) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "audit_manifest", id = ?manifest.id());
         let _enter = span.enter();
 
@@ -39,11 +39,13 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         // Proving the Right to Rule:
         // Is this signer's public key present and unrevoked in the graph
         // that ultimately anchors to our expected_root_key?
-        identity_graph.verify_authority(
-            manifest.author(),
-            &manifest.identity_anchor(),
-            &self.expected_root_key,
-        )?;
+        identity_graph
+            .verify_authority(
+                manifest.author(),
+                &manifest.identity_anchor(),
+                &self.expected_root_key,
+            )
+            .await?;
 
         debug!("Manifest fully audited (Integrity + Authority)");
         Ok(())
@@ -62,10 +64,10 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
     }
 
     /// Verifies that an Address matches the expected type and exists in the store.
-    pub fn verify_existence(&self, addr: &Address) -> Result<(), SovereignError> {
+    pub async fn verify_existence(&self, addr: &Address) -> Result<(), SovereignError> {
         if addr.codec() == crate::base::address::CODEC_SOVEREIGN_MANIFEST {
             let id = ManifestId::try_from(*addr)?;
-            self.store.get_manifest(&id).and_then(|opt| {
+            self.store.get_manifest(&id).await.and_then(|opt| {
                 opt.ok_or_else(|| {
                     SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
                         "Manifest {}",
@@ -76,7 +78,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
             })
         } else {
             let id = BlockId::try_from(*addr)?;
-            self.store.get_block(&id).and_then(|opt| {
+            self.store.get_block(&id).await.and_then(|opt| {
                 opt.ok_or_else(|| {
                     SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
                         "Block {}",

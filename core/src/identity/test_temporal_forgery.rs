@@ -8,8 +8,8 @@ use crate::traversal::walker::GraphWalker;
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 
-#[test]
-fn test_identity_temporal_forgery_rejection() {
+#[tokio::test]
+async fn test_identity_temporal_forgery_rejection() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let master = SecretIdentity::generate(&mut rng);
@@ -43,9 +43,9 @@ fn test_identity_temporal_forgery_rejection() {
         &master,
     )
     .unwrap();
-    store.put_block(&root_index_v1).unwrap();
+    store.put_block(&root_index_v1).await.unwrap();
     let manifest_v1 = Manifest::new(graph_id, root_index_v1.id(), vec![], anchor, &master);
-    store.put_manifest(&manifest_v1).unwrap();
+    store.put_manifest(&manifest_v1).await.unwrap();
 
     // 2. AT T=10: Revoke Device A (Phone stolen!)
     let revoked_map: BTreeMap<String, Address> = BTreeMap::new();
@@ -58,7 +58,7 @@ fn test_identity_temporal_forgery_rejection() {
         &master,
     )
     .unwrap();
-    store.put_block(&root_index_v2).unwrap();
+    store.put_block(&root_index_v2).await.unwrap();
     let manifest_v2 = Manifest::new(
         graph_id,
         root_index_v2.id(),
@@ -66,7 +66,7 @@ fn test_identity_temporal_forgery_rejection() {
         anchor,
         &master,
     );
-    store.put_manifest(&manifest_v2).unwrap();
+    store.put_manifest(&manifest_v2).await.unwrap();
 
     // 3. THE ATTACK: Device A (Attacker) creates a block with a fake historical timestamp
     // They claim they wrote it at T=5 (before revocation) but they are signing it NOW.
@@ -79,7 +79,7 @@ fn test_identity_temporal_forgery_rejection() {
 
     // The Auditor stands upon manifest_v2 (The current truth)
     let current_root = manifest_v2.content_root();
-    let result = walker.resolve_path(current_root, "/phone", &key);
+    let result = walker.resolve_path(current_root, "/phone", &key).await;
 
     // The resolution MUST fail because at the current frontier, "phone" is gone.
     // It doesn't matter what the malicious block's timestamp says; the authority is missing.

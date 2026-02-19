@@ -8,8 +8,8 @@ use crate::traversal::walker::GraphWalker;
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 
-#[test]
-fn test_identity_graph_device_resolution() {
+#[tokio::test]
+async fn test_identity_graph_device_resolution() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -26,7 +26,7 @@ fn test_identity_graph_device_resolution() {
         &device_identity,
     )
     .unwrap();
-    store.put_block(&device_block).unwrap();
+    store.put_block(&device_block).await.unwrap();
 
     // 2. Create Devices Index
     let mut devices_map = BTreeMap::new();
@@ -39,7 +39,7 @@ fn test_identity_graph_device_resolution() {
         &identity,
     )
     .unwrap();
-    store.put_block(&devices_index).unwrap();
+    store.put_block(&devices_index).await.unwrap();
 
     // 3. Create Root Index
     let mut root_map = BTreeMap::new();
@@ -52,23 +52,25 @@ fn test_identity_graph_device_resolution() {
         &identity,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     // 4. Create Identity Manifest
     let anchor = ManifestId::from_sha256(&[0u8; 32]);
     let manifest =
         crate::graph::Manifest::new(graph_id, root_index.id(), vec![], anchor, &identity);
-    store.put_manifest(&manifest).unwrap();
+    store.put_manifest(&manifest).await.unwrap();
 
     // 5. Walk the Identity Graph
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved_addr = walker
         .resolve_path(root_index.id(), "/devices/laptop_1", &key)
+        .await
         .unwrap();
 
     let resolved_block_id = BlockId::try_from(resolved_addr).unwrap();
     let block = store
         .get_block(&resolved_block_id)
+        .await
         .unwrap()
         .expect("Block not found");
 
@@ -76,8 +78,8 @@ fn test_identity_graph_device_resolution() {
     assert_eq!(name, "my-iphone");
 }
 
-#[test]
-fn test_identity_graph_missing_device_failure() {
+#[tokio::test]
+async fn test_identity_graph_missing_device_failure() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -94,7 +96,7 @@ fn test_identity_graph_missing_device_failure() {
         &identity,
     )
     .unwrap();
-    store.put_block(&devices_index).unwrap();
+    store.put_block(&devices_index).await.unwrap();
 
     let mut root_map = BTreeMap::new();
     root_map.insert("devices".to_string(), Address::from(devices_index.id()));
@@ -106,16 +108,18 @@ fn test_identity_graph_missing_device_failure() {
         &identity,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
-    let result = walker.resolve_path(root_index.id(), "/devices/stolen_laptop", &key);
+    let result = walker
+        .resolve_path(root_index.id(), "/devices/stolen_laptop", &key)
+        .await;
 
     assert!(result.is_err());
 }
 
-#[test]
-fn test_identity_graph_unauthorized_traversal_failure() {
+#[tokio::test]
+async fn test_identity_graph_unauthorized_traversal_failure() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -126,12 +130,14 @@ fn test_identity_graph_unauthorized_traversal_failure() {
     let fake_root = BlockId::from_sha256(&[0xFF; 32]);
 
     // Should fail because the block doesn't exist in store
-    let result = walker.resolve_path(fake_root, "/devices/laptop", &key);
+    let result = walker
+        .resolve_path(fake_root, "/devices/laptop", &key)
+        .await;
     assert!(result.is_err());
 }
 
-#[test]
-fn test_identity_graph_revocation() {
+#[tokio::test]
+async fn test_identity_graph_revocation() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let master = SecretIdentity::generate(&mut rng);
@@ -175,13 +181,13 @@ fn test_identity_graph_revocation() {
         &master,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let manifest = Manifest::new(graph_id, root_index.id(), vec![], anchor, &master);
-    store.put_manifest(&manifest).unwrap();
+    store.put_manifest(&manifest).await.unwrap();
 
     let walker = GraphWalker::new(&store, master.public().signing_key().clone());
-    let result = walker.resolve_path(root_index.id(), "/phone", &key);
+    let result = walker.resolve_path(root_index.id(), "/phone", &key).await;
 
     // Must fail because the device is no longer in the graph
     assert!(result.is_err());

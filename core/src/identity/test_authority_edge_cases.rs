@@ -15,8 +15,8 @@ use std::collections::BTreeMap;
 /// An attacker (Eve) tries to create a new genesis manifest (anchor: 0) for Alice's
 /// document. Even if the signature is mathematically correct (Eve signed it),
 /// the Auditor must reject it because the signer is not Alice's Master Root Key.
-#[test]
-fn test_negative_imposter_genesis_hijack() {
+#[tokio::test]
+async fn test_negative_imposter_genesis_hijack() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
 
@@ -44,7 +44,7 @@ fn test_negative_imposter_genesis_hijack() {
     let auditor = Auditor::new(&store, master_key);
 
     // Audit must fail because the genesis manifest isn't signed by the master key
-    let result = auditor.audit_manifest(&imposter_manifest);
+    let result = auditor.audit_manifest(&imposter_manifest).await;
     assert!(
         result.is_err(),
         "Auditor should have rejected genesis manifest not signed by master key"
@@ -57,8 +57,8 @@ fn test_negative_imposter_genesis_hijack() {
 /// Bob signs a manifest but points the `identity_anchor` to Alice's identity graph.
 /// Since Bob is not an authorized device in Alice's graph, the walk will fail
 /// to find his public key, and the manifest must be rejected.
-#[test]
-fn test_negative_identity_graph_swap() {
+#[tokio::test]
+async fn test_negative_identity_graph_swap() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
 
@@ -66,7 +66,7 @@ fn test_negative_identity_graph_swap() {
     let bob = SecretIdentity::generate(&mut rng);
 
     // 1. Setup Alice's real anchor (Alice is authorized in her own graph)
-    let alice_anchor = create_valid_anchor(&mut store, &alice);
+    let alice_anchor = create_valid_anchor(&mut store, &alice).await;
 
     // 2. Bob tries to sign a manifest but points to ALICE'S identity graph
     let graph_id = GraphId::new();
@@ -84,7 +84,7 @@ fn test_negative_identity_graph_swap() {
     let auditor = Auditor::new(&store, alice.public().signing_key().clone());
 
     // Audit must fail because Bob is not authorized in Alice's history
-    let result = auditor.audit_manifest(&forged_manifest);
+    let result = auditor.audit_manifest(&forged_manifest).await;
     assert!(
         result.is_err(),
         "Auditor should have rejected Bob signing with Alice's anchor"
@@ -101,15 +101,15 @@ fn test_negative_identity_graph_swap() {
 /// This must fail because at the Genesis point, Device A did not yet exist
 /// in the authorized device list. Signers cannot reach back in time to
 /// exercise authority they didn't have yet.
-#[test]
-fn test_negative_identity_stale_authority() {
+#[tokio::test]
+async fn test_negative_identity_stale_authority() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let alice = SecretIdentity::generate(&mut rng);
     let master_key = alice.public().signing_key().clone();
 
     // 1. Genesis State (Master Key only)
-    let genesis_anchor = create_valid_anchor(&mut store, &alice);
+    let genesis_anchor = create_valid_anchor(&mut store, &alice).await;
 
     // 2. Device A is added in a NEW identity snapshot
     let device_a = SecretIdentity::generate(&mut rng);
@@ -119,8 +119,8 @@ fn test_negative_identity_stale_authority() {
     // Master Key (from genesis) + Device A
     let auth_master = Block::new(vec![], "auth".into(), vec![], &identity_key, &alice).unwrap();
     let auth_device_a = Block::new(vec![], "auth".into(), vec![], &identity_key, &alice).unwrap();
-    store.put_block(&auth_master).unwrap();
-    store.put_block(&auth_device_a).unwrap();
+    store.put_block(&auth_master).await.unwrap();
+    store.put_block(&auth_device_a).await.unwrap();
 
     // Manual hex encoding for test setup
     let master_hex = master_key
@@ -148,7 +148,7 @@ fn test_negative_identity_stale_authority() {
         &alice,
     )
     .unwrap();
-    store.put_block(&devices_index).unwrap();
+    store.put_block(&devices_index).await.unwrap();
     devices_index_map.insert("devices".to_string(), Address::from(devices_index.id()));
 
     let root_index = Block::new(
@@ -159,7 +159,7 @@ fn test_negative_identity_stale_authority() {
         &alice,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let _snapshot_2 = Manifest::new(
         GraphId::new(),
@@ -181,7 +181,7 @@ fn test_negative_identity_stale_authority() {
     );
 
     let auditor = Auditor::new(&store, master_key);
-    let result = auditor.audit_manifest(&stale_manifest);
+    let result = auditor.audit_manifest(&stale_manifest).await;
 
     assert!(
         result.is_err(),

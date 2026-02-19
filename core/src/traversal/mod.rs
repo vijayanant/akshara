@@ -29,7 +29,7 @@ pub(crate) fn create_dummy_root() -> crate::base::address::BlockId {
 }
 
 #[cfg(test)]
-pub(crate) fn create_valid_anchor(
+pub(crate) async fn create_valid_anchor(
     store: &mut crate::state::in_memory_store::InMemoryStore,
     identity: &crate::identity::SecretIdentity,
 ) -> crate::base::address::ManifestId {
@@ -49,7 +49,7 @@ pub(crate) fn create_valid_anchor(
     let auth_block =
         crate::graph::Block::new(vec![], "auth".to_string(), vec![], &identity_key, identity)
             .unwrap();
-    store.put_block(&auth_block).unwrap();
+    store.put_block(&auth_block).await.unwrap();
 
     devices_map.insert(
         signer_hex,
@@ -65,7 +65,7 @@ pub(crate) fn create_valid_anchor(
         identity,
     )
     .unwrap();
-    store.put_block(&devices_index).unwrap();
+    store.put_block(&devices_index).await.unwrap();
 
     root_map.insert(
         "devices".to_string(),
@@ -80,7 +80,7 @@ pub(crate) fn create_valid_anchor(
         identity,
     )
     .unwrap();
-    store.put_block(&genesis_index).unwrap();
+    store.put_block(&genesis_index).await.unwrap();
 
     let null_id = crate::base::address::ManifestId::from_sha256(&[0x00; 32]);
     let genesis_manifest = crate::graph::Manifest::new(
@@ -91,12 +91,12 @@ pub(crate) fn create_valid_anchor(
         identity,
     );
 
-    store.put_manifest(&genesis_manifest).unwrap();
+    store.put_manifest(&genesis_manifest).await.unwrap();
     genesis_manifest.id()
 }
 
 #[cfg(test)]
-pub(crate) fn create_chain(
+pub(crate) async fn create_chain(
     length: usize,
     store: &mut crate::state::in_memory_store::InMemoryStore,
 ) -> (
@@ -109,7 +109,7 @@ pub(crate) fn create_chain(
     let graph_id = crate::base::address::GraphId::new();
     let root = create_dummy_root();
 
-    let anchor = create_valid_anchor(store, &identity);
+    let anchor = create_valid_anchor(store, &identity).await;
 
     let mut parents = vec![];
     let mut ids = vec![];
@@ -117,7 +117,7 @@ pub(crate) fn create_chain(
     for _ in 0..length {
         let manifest =
             crate::graph::Manifest::new(graph_id, root, parents.clone(), anchor, &identity);
-        store.put_manifest(&manifest).unwrap();
+        store.put_manifest(&manifest).await.unwrap();
         parents = vec![manifest.id()];
         ids.push(manifest.id());
     }

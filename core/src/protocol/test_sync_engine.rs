@@ -15,7 +15,7 @@ pub fn create_identity() -> SecretIdentity {
     SecretIdentity::generate(&mut OsRng)
 }
 
-pub fn create_chain(
+pub async fn create_chain(
     length: usize,
     store: &mut InMemoryStore,
 ) -> (Vec<ManifestId>, crate::base::crypto::SigningPublicKey) {
@@ -24,24 +24,24 @@ pub fn create_chain(
     let graph_id = GraphId::new();
     let root = create_dummy_root();
 
-    let anchor = create_valid_anchor(store, &identity);
+    let anchor = create_valid_anchor(store, &identity).await;
 
     let mut parents = vec![];
     let mut ids = vec![];
 
     for _ in 0..length {
         let manifest = Manifest::new(graph_id, root, parents.clone(), anchor, &identity);
-        store.put_manifest(&manifest).unwrap();
+        store.put_manifest(&manifest).await.unwrap();
         parents = vec![manifest.id()];
         ids.push(manifest.id());
     }
     (ids, identity.public().signing_key().clone())
 }
 
-#[test]
-fn reconciler_identifies_peer_surplus() {
+#[tokio::test]
+async fn reconciler_identifies_peer_surplus() {
     let mut store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(3, &mut store); // A -> B -> C
+    let (chain, master_key) = create_chain(3, &mut store).await; // A -> B -> C
 
     let graph_id = GraphId::new();
 
@@ -52,6 +52,7 @@ fn reconciler_identifies_peer_surplus() {
     let reconciler = Reconciler::new(&store, master_key);
     let comparison = reconciler
         .reconcile(&peer_heads, &self_heads)
+        .await
         .expect("Reconciliation failed");
 
     // I (Self) need B and C from the Peer.
@@ -72,10 +73,10 @@ fn reconciler_identifies_peer_surplus() {
     assert!(comparison.self_surplus.is_empty());
 }
 
-#[test]
-fn reconciler_identifies_self_surplus() {
+#[tokio::test]
+async fn reconciler_identifies_self_surplus() {
     let mut store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(3, &mut store); // A -> B -> C
+    let (chain, master_key) = create_chain(3, &mut store).await; // A -> B -> C
 
     let graph_id = GraphId::new();
 
@@ -86,6 +87,7 @@ fn reconciler_identifies_self_surplus() {
     let reconciler = Reconciler::new(&store, master_key);
     let comparison = reconciler
         .reconcile(&peer_heads, &self_heads)
+        .await
         .expect("Reconciliation failed");
 
     // I (Self) need nothing from the Peer.
@@ -106,15 +108,15 @@ fn reconciler_identifies_self_surplus() {
     );
 }
 
-#[test]
-fn reconciler_handles_symmetric_forks() {
+#[tokio::test]
+async fn reconciler_handles_symmetric_forks() {
     let mut store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(1, &mut store); // A
+    let (chain, master_key) = create_chain(1, &mut store).await; // A
     let m_a_id = chain[0];
 
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_valid_anchor(&mut store, &identity);
+    let anchor = create_valid_anchor(&mut store, &identity).await;
 
     // Create two DIFFERENT content roots to force different CIDs
     let root_b = BlockId::from_sha256(&[0xB1; 32]);
@@ -122,18 +124,21 @@ fn reconciler_handles_symmetric_forks() {
 
     // 2. Branch B (Child of A)
     let m_b = Manifest::new(graph_id, root_b, vec![m_a_id], anchor, &identity);
-    store.put_manifest(&m_b).unwrap();
+    store.put_manifest(&m_b).await.unwrap();
 
     // 3. Branch C (Child of A)
     let m_c = Manifest::new(graph_id, root_c, vec![m_a_id], anchor, &identity);
-    store.put_manifest(&m_c).unwrap();
+    store.put_manifest(&m_c).await.unwrap();
 
     // Scenario: SELF has Branch [C]. PEER has Branch [B].
     let self_heads = vec![m_c.id()];
     let peer_heads = Heads::new(graph_id, vec![m_b.id()]);
 
     let reconciler = Reconciler::new(&store, master_key);
-    let comparison = reconciler.reconcile(&peer_heads, &self_heads).unwrap();
+    let comparison = reconciler
+        .reconcile(&peer_heads, &self_heads)
+        .await
+        .unwrap();
 
     // I need B from you.
     assert!(
@@ -151,25 +156,28 @@ fn reconciler_handles_symmetric_forks() {
     );
 }
 
-#[test]
-fn reconciler_returns_empty_if_identical() {
+#[tokio::test]
+async fn reconciler_returns_empty_if_identical() {
     let mut store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(2, &mut store); // A -> B
+    let (chain, master_key) = create_chain(2, &mut store).await; // A -> B
     let self_heads = vec![chain[1]]; // B
     let graph_id = GraphId::new();
     let peer_heads = Heads::new(graph_id, vec![chain[1]]); // B
 
     let reconciler = Reconciler::new(&store, master_key);
-    let comparison = reconciler.reconcile(&peer_heads, &self_heads).unwrap();
+    let comparison = reconciler
+        .reconcile(&peer_heads, &self_heads)
+        .await
+        .unwrap();
 
     assert!(comparison.peer_surplus.is_empty());
     assert!(comparison.self_surplus.is_empty());
 }
 
-#[test]
-fn test_converge_returns_detailed_report() {
+#[tokio::test]
+async fn test_converge_returns_detailed_report() {
     let mut store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(2, &mut store); // A -> B
+    let (chain, master_key) = create_chain(2, &mut store).await; // A -> B
 
     // We create a second store to converge INTO
     let mut dest_store = InMemoryStore::new();
@@ -180,6 +188,7 @@ fn test_converge_returns_detailed_report() {
 
     let report = reconciler
         .converge(&delta, &mut dest_store)
+        .await
         .expect("Convergence failed");
 
     // TDD Assertions: We expect a struct with telemetry
@@ -188,8 +197,8 @@ fn test_converge_returns_detailed_report() {
     assert!(report.total_bytes > 0);
 }
 
-#[test]
-fn test_converge_empty_delta() {
+#[tokio::test]
+async fn test_converge_empty_delta() {
     let store = InMemoryStore::new();
     let identity = create_identity();
     let reconciler = Reconciler::new(&store, identity.public().signing_key().clone());
@@ -197,6 +206,7 @@ fn test_converge_empty_delta() {
     let delta = crate::protocol::Delta::default();
     let report = reconciler
         .converge(&delta, &mut InMemoryStore::new())
+        .await
         .unwrap();
 
     assert_eq!(report.manifests_synced, 0);
@@ -204,10 +214,10 @@ fn test_converge_empty_delta() {
     assert_eq!(report.total_bytes, 0);
 }
 
-#[test]
-fn test_converge_idempotency_with_duplicates() {
+#[tokio::test]
+async fn test_converge_idempotency_with_duplicates() {
     let mut store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(1, &mut store);
+    let (chain, master_key) = create_chain(1, &mut store).await;
     let m_id = chain[0];
 
     let mut dest_store = InMemoryStore::new();
@@ -216,17 +226,17 @@ fn test_converge_idempotency_with_duplicates() {
     // Delta contains the SAME manifest twice
     let delta = crate::protocol::Delta::new(vec![Address::from(m_id), Address::from(m_id)]);
 
-    let report = reconciler.converge(&delta, &mut dest_store).unwrap();
+    let report = reconciler.converge(&delta, &mut dest_store).await.unwrap();
 
     // Telemetry reflects the work done: 2 items processed (even if redundant at storage layer)
     // Note: This matches the 'fulfill' iterator logic which yields for every entry in the Delta.
     assert_eq!(report.manifests_synced, 2);
 }
 
-#[test]
-fn test_converge_fails_on_first_error() {
+#[tokio::test]
+async fn test_converge_fails_on_first_error() {
     let mut store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(2, &mut store);
+    let (chain, master_key) = create_chain(2, &mut store).await;
 
     let mut dest_store = InMemoryStore::new();
     let reconciler = Reconciler::new(&store, master_key);
@@ -238,7 +248,7 @@ fn test_converge_fails_on_first_error() {
         Address::from(chain[1]),
     ]);
 
-    let result = reconciler.converge(&delta, &mut dest_store);
+    let result = reconciler.converge(&delta, &mut dest_store).await;
 
     // Must return an error, and the process stops
     assert!(result.is_err());

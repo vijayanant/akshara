@@ -3,6 +3,7 @@ use crate::base::crypto::{Lockbox, SigningPublicKey};
 use crate::base::error::{SovereignError, StoreError};
 use crate::graph::{Block, Manifest};
 use crate::state::store::GraphStore;
+use async_trait::async_trait;
 use metrics::counter;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -24,8 +25,9 @@ impl InMemoryStore {
     }
 }
 
+#[async_trait]
 impl GraphStore for InMemoryStore {
-    fn put_block(&mut self, block: &Block) -> Result<(), SovereignError> {
+    async fn put_block(&mut self, block: &Block) -> Result<(), SovereignError> {
         let mut blocks = self.blocks.write().map_err(|_| StoreError::LockPoisoned)?;
         debug!(id = ?block.id(), "Storing block");
         blocks.insert(block.id(), block.clone());
@@ -33,7 +35,7 @@ impl GraphStore for InMemoryStore {
         Ok(())
     }
 
-    fn get_block(&self, id: &BlockId) -> Result<Option<Block>, SovereignError> {
+    async fn get_block(&self, id: &BlockId) -> Result<Option<Block>, SovereignError> {
         let blocks = self.blocks.read().map_err(|_| StoreError::LockPoisoned)?;
         let result = blocks.get(id).cloned();
         if result.is_some() {
@@ -45,7 +47,7 @@ impl GraphStore for InMemoryStore {
         Ok(result)
     }
 
-    fn put_manifest(&mut self, manifest: &Manifest) -> Result<(), SovereignError> {
+    async fn put_manifest(&mut self, manifest: &Manifest) -> Result<(), SovereignError> {
         debug!(id = ?manifest.id(), graph_id = ?manifest.graph_id(), "Storing manifest");
 
         // 1. Save content
@@ -75,7 +77,7 @@ impl GraphStore for InMemoryStore {
         Ok(())
     }
 
-    fn get_manifest(&self, id: &ManifestId) -> Result<Option<Manifest>, SovereignError> {
+    async fn get_manifest(&self, id: &ManifestId) -> Result<Option<Manifest>, SovereignError> {
         let manifests = self
             .manifests
             .read()
@@ -89,14 +91,14 @@ impl GraphStore for InMemoryStore {
         Ok(result)
     }
 
-    fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, SovereignError> {
+    async fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, SovereignError> {
         let heads_map = self.heads.read().map_err(|_| StoreError::LockPoisoned)?;
         let heads = heads_map.get(graph_id).cloned().unwrap_or_default();
         trace!(graph_id = ?graph_id, count = heads.len(), "Retrieved heads");
         Ok(heads)
     }
 
-    fn put_lockbox(
+    async fn put_lockbox(
         &mut self,
         graph_id: GraphId,
         recipient: &SigningPublicKey,
@@ -112,7 +114,7 @@ impl GraphStore for InMemoryStore {
         Ok(())
     }
 
-    fn get_lockboxes_for_recipient(
+    async fn get_lockboxes_for_recipient(
         &self,
         recipient: &SigningPublicKey,
     ) -> Result<Vec<(GraphId, Lockbox)>, SovereignError> {

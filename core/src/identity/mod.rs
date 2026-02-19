@@ -281,7 +281,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
     /// Verifies that a specific signing key was authorized and unrevoked
     /// at the moment of the provided Identity Anchor.
-    pub fn verify_authority(
+    pub async fn verify_authority(
         &self,
         signer: &SigningPublicKey,
         anchor: &ManifestId,
@@ -308,7 +308,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
             }
         } else {
             // 2. Load the Identity Manifest at the anchor
-            let manifest = self.store.get_manifest(anchor)?.ok_or_else(|| {
+            let manifest = self.store.get_manifest(anchor).await?.ok_or_else(|| {
                 SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
                     "Identity Anchor {}",
                     anchor
@@ -331,12 +331,14 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
                 .collect::<String>();
 
             let path = format!("devices/{}", signer_hex);
-            let resolution_result = walker.resolve_path(devices_root, &path, &identity_key);
+            let resolution_result = walker
+                .resolve_path(devices_root, &path, &identity_key)
+                .await;
 
             match resolution_result {
                 Ok(addr) => {
                     let block_id = BlockId::try_from(addr)?;
-                    let block = self.store.get_block(&block_id)?.ok_or_else(|| {
+                    let block = self.store.get_block(&block_id).await?.ok_or_else(|| {
                         SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
                             "Device Block {}",
                             block_id

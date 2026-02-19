@@ -25,11 +25,13 @@ cid = { version = "0.11.1", features = ["serde"] }
 multihash = "0.19.3"
 multihash-codetable = { version = "0.1.4", features = ["blake3", "sha2", "sha3"] }
 serde_cbor = "0.11.2"
+async-trait = "0.1.89"
 
 [dev-dependencies]
 criterion = "0.8.2"
 hex = "0.4.3"
 proptest = "1.10.0"
+tokio = { version = "1.49.0", features = ["full"] }
 tracing-subscriber = "0.3.18"
 
 [[bench]]

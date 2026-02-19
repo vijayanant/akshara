@@ -42,7 +42,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     ///
     /// 3. **Audited Traversal:** Every step of the walk is verified by the `Auditor` to ensure
     ///    that every block encountered meets the mathematical and social laws of the platform.
-    pub fn resolve_path(
+    pub async fn resolve_path(
         &self,
         root: BlockId,
         path: &str,
@@ -74,7 +74,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
 
             // 1. Fetch the current block
             let block_id = BlockId::try_from(current_addr)?;
-            let block = self.store.get_block(&block_id)?.ok_or_else(|| {
+            let block = self.store.get_block(&block_id).await?.ok_or_else(|| {
                 debug!(block_id = ?block_id, "Block not found during resolution");
                 SovereignError::Store(StoreError::NotFound(format!("Block {}", block_id)))
             })?;
@@ -115,7 +115,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         // 6. Final Satyātā Check (Existence and Integrity)
         // We verify that the final resolved Address actually exists in the local store.
         // We do not resolve "Ghost Pointers."
-        self.auditor.verify_existence(&current_addr)?;
+        self.auditor.verify_existence(&current_addr).await?;
 
         let elapsed = start_time.elapsed();
         histogram!("sovereign.walker.resolve_latency").record(elapsed);
@@ -125,7 +125,10 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     }
 
     /// BFS to find all ancestors of a manifest.
-    pub fn get_ancestors(&self, start: &ManifestId) -> Result<HashSet<ManifestId>, SovereignError> {
+    pub async fn get_ancestors(
+        &self,
+        start: &ManifestId,
+    ) -> Result<HashSet<ManifestId>, SovereignError> {
         let span = span!(Level::DEBUG, "get_ancestors", start = ?start);
         let _enter = span.enter();
 
@@ -133,9 +136,9 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         let mut queue = VecDeque::new();
         let mut visited = HashSet::new();
 
-        if let Some(manifest) = self.store.get_manifest(start)? {
+        if let Some(manifest) = self.store.get_manifest(start).await? {
             // Audit the starting manifest
-            self.auditor.audit_manifest(&manifest)?;
+            self.auditor.audit_manifest(&manifest).await?;
 
             for parent in manifest.parents() {
                 if !visited.contains(parent) {
@@ -147,9 +150,9 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         }
 
         while let Some(current_id) = queue.pop_front() {
-            if let Some(manifest) = self.store.get_manifest(&current_id)? {
+            if let Some(manifest) = self.store.get_manifest(&current_id).await? {
                 // Audit each ancestor we find
-                self.auditor.audit_manifest(&manifest)?;
+                self.auditor.audit_manifest(&manifest).await?;
 
                 for parent in manifest.parents() {
                     if !visited.contains(parent) {
@@ -166,7 +169,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     }
 
     /// Finds the Lowest Common Ancestor (LCA) of two Manifests.
-    pub fn find_lca(
+    pub async fn find_lca(
         &self,
         a: &ManifestId,
         b: &ManifestId,
@@ -178,7 +181,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
             return Ok(Some(*a));
         }
 
-        let mut ancestors_a = self.get_ancestors(a)?;
+        let mut ancestors_a = self.get_ancestors(a).await?;
         ancestors_a.insert(*a);
 
         let mut queue = VecDeque::new();
@@ -193,7 +196,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
                 return Ok(Some(current_id));
             }
 
-            if let Some(manifest) = self.store.get_manifest(&current_id)? {
+            if let Some(manifest) = self.store.get_manifest(&current_id).await? {
                 for parent in manifest.parents() {
                     if !visited.contains(parent) {
                         visited.insert(*parent);
@@ -217,7 +220,7 @@ impl<'a, S: GraphStore + ?Sized> BlockWalker<'a, S> {
         Self { store }
     }
 
-    pub fn is_ancestor(
+    pub async fn is_ancestor(
         &self,
         descendant: &BlockId,
         ancestor: &BlockId,
@@ -236,7 +239,7 @@ impl<'a, S: GraphStore + ?Sized> BlockWalker<'a, S> {
                 return Ok(true);
             }
 
-            if let Some(block) = self.store.get_block(&current_id)? {
+            if let Some(block) = self.store.get_block(&current_id).await? {
                 for parent in block.parents() {
                     if !visited.contains(parent) {
                         visited.insert(*parent);

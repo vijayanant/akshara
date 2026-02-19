@@ -8,8 +8,8 @@ use crate::traversal::walker::GraphWalker;
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 
-#[test]
-fn test_merkle_index_path_resolution() {
+#[tokio::test]
+async fn test_merkle_index_path_resolution() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -25,7 +25,7 @@ fn test_merkle_index_path_resolution() {
         &identity,
     )
     .unwrap();
-    store.put_block(&data_block).unwrap();
+    store.put_block(&data_block).await.unwrap();
 
     // 2. Create an index block pointing to it
     let mut index_map = BTreeMap::new();
@@ -38,19 +38,20 @@ fn test_merkle_index_path_resolution() {
         &identity,
     )
     .unwrap();
-    store.put_block(&index_block).unwrap();
+    store.put_block(&index_block).await.unwrap();
 
     // 3. Resolve path
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved_addr = walker
         .resolve_path(index_block.id(), "/title", &key)
+        .await
         .unwrap();
 
     assert_eq!(resolved_addr, Address::from(data_block.id()));
 }
 
-#[test]
-fn test_merkle_index_nested_resolution() {
+#[tokio::test]
+async fn test_merkle_index_nested_resolution() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -66,7 +67,7 @@ fn test_merkle_index_nested_resolution() {
         &identity,
     )
     .unwrap();
-    store.put_block(&data_block).unwrap();
+    store.put_block(&data_block).await.unwrap();
 
     // Nested Index
     let mut nested_map = BTreeMap::new();
@@ -79,7 +80,7 @@ fn test_merkle_index_nested_resolution() {
         &identity,
     )
     .unwrap();
-    store.put_block(&nested_index).unwrap();
+    store.put_block(&nested_index).await.unwrap();
 
     // Root Index
     let mut root_map = BTreeMap::new();
@@ -92,18 +93,19 @@ fn test_merkle_index_nested_resolution() {
         &identity,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved = walker
         .resolve_path(root_index.id(), "nested/file", &key)
+        .await
         .unwrap();
 
     assert_eq!(resolved, Address::from(data_block.id()));
 }
 
-#[test]
-fn test_merkle_index_path_normalization() {
+#[tokio::test]
+async fn test_merkle_index_path_normalization() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -118,7 +120,7 @@ fn test_merkle_index_path_normalization() {
         &identity,
     )
     .unwrap();
-    store.put_block(&data_block).unwrap();
+    store.put_block(&data_block).await.unwrap();
 
     let mut root_map = BTreeMap::new();
     root_map.insert("file".to_string(), Address::from(data_block.id()));
@@ -130,19 +132,22 @@ fn test_merkle_index_path_normalization() {
         &identity,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     // All these should resolve correctly
     for path in ["file", "/file", "file/", "//file///"] {
-        let resolved = walker.resolve_path(root_index.id(), path, &key).unwrap();
+        let resolved = walker
+            .resolve_path(root_index.id(), path, &key)
+            .await
+            .unwrap();
         assert_eq!(resolved, Address::from(data_block.id()));
     }
 }
 
-#[test]
-fn test_merkle_index_missing_path_failures() {
+#[tokio::test]
+async fn test_merkle_index_missing_path_failures() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -162,24 +167,26 @@ fn test_merkle_index_missing_path_failures() {
         &identity,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     assert!(
         walker
             .resolve_path(root_index.id(), "does_not_exist", &key)
+            .await
             .is_err()
     );
     assert!(
         walker
             .resolve_path(root_index.id(), "exists/but_im_not_a_folder", &key)
+            .await
             .is_err()
     );
 }
 
-#[test]
-fn test_merkle_index_wrong_key_failure() {
+#[tokio::test]
+async fn test_merkle_index_wrong_key_failure() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -189,18 +196,19 @@ fn test_merkle_index_wrong_key_failure() {
 
     let index_block =
         Block::new(vec![1, 2, 3], "index".to_string(), vec![], &key, &identity).unwrap();
-    store.put_block(&index_block).unwrap();
+    store.put_block(&index_block).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     assert!(
         walker
             .resolve_path(index_block.id(), "any", &wrong_key)
+            .await
             .is_err()
     );
 }
 
-#[test]
-fn test_merkle_index_malformed_cbor_failure() {
+#[tokio::test]
+async fn test_merkle_index_malformed_cbor_failure() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -216,7 +224,7 @@ fn test_merkle_index_malformed_cbor_failure() {
         &identity,
     )
     .unwrap();
-    store.put_block(&data_block).unwrap();
+    store.put_block(&data_block).await.unwrap();
 
     let mut root_map = BTreeMap::new();
     root_map.insert("not_a_folder".to_string(), Address::from(data_block.id()));
@@ -228,19 +236,20 @@ fn test_merkle_index_malformed_cbor_failure() {
         &identity,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     // Resolve first segment should work, but then it should fail to parse data_block as index
     assert!(
         walker
             .resolve_path(root_index.id(), "not_a_folder/something", &key)
+            .await
             .is_err()
     );
 }
 
-#[test]
-fn test_merkle_index_type_mismatch_failure() {
+#[tokio::test]
+async fn test_merkle_index_type_mismatch_failure() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -261,19 +270,20 @@ fn test_merkle_index_type_mismatch_failure() {
         &identity,
     )
     .unwrap();
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     // Should fail when trying to fetch "fake" as a BlockId
     assert!(
         walker
             .resolve_path(root_index.id(), "fake/any", &key)
+            .await
             .is_err()
     );
 }
 
-#[test]
-fn test_merkle_index_circular_reference_protection() {
+#[tokio::test]
+async fn test_merkle_index_circular_reference_protection() {
     let mut rng = OsRng;
     let mut store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
@@ -299,13 +309,13 @@ fn test_merkle_index_circular_reference_protection() {
         "index".to_string(),
         vec![],
     );
-    store.put_block(&root_index).unwrap();
+    store.put_block(&root_index).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     // This should now fetch the block, and the Auditor will immediately catch
     // that the content hash doesn't match the loop_id we forced.
-    let result = walker.resolve_path(loop_id, "loop/loop", &key);
+    let result = walker.resolve_path(loop_id, "loop/loop", &key).await;
 
     match result {
         Err(crate::SovereignError::Integrity(crate::IntegrityError::BlockIdMismatch(_))) => (),
