@@ -1,4 +1,4 @@
-use crate::base::address::{BlockId, ManifestId};
+use crate::base::address::{Address, BlockId, ManifestId};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -14,6 +14,9 @@ pub enum SovereignError {
 
     #[error("Storage operation failed: {0}")]
     Store(#[from] StoreError),
+
+    #[error("Protocol reconciliation failed: {0}")]
+    Protocol(#[from] ProtocolError),
 
     #[error("Internal system error: {0}")]
     InternalError(String),
@@ -39,14 +42,20 @@ pub enum IntegrityError {
     #[error("Identifier is malformed or has invalid length")]
     MalformedId,
 
+    #[error("Type mismatch: Address {0} is not a valid {1}")]
+    TypeMismatch(Address, &'static str),
+
     #[error("Block ID {0:?} does not match its content hash")]
     BlockIdMismatch(BlockId),
 
-    #[error("Manifest {0:?} Merkle Root does not match active blocks")]
-    ManifestMerkleMismatch(ManifestId),
-
     #[error("Manifest {0:?} ID does not match its metadata hash")]
     ManifestIdMismatch(ManifestId),
+
+    #[error("Traversal depth limit exceeded (max: {0})")]
+    DepthLimitExceeded(usize),
+
+    #[error("Cycle detected at address: {0}")]
+    CycleDetected(Address),
 }
 
 #[derive(Error, Debug)]
@@ -68,4 +77,16 @@ pub enum StoreError {
 
     #[error("IO Error: {0}")]
     IoError(String),
+}
+
+#[derive(Error, Debug)]
+pub enum ProtocolError {
+    #[error("Heads count exceeds limit (max: {0})")]
+    TooManyHeads(usize),
+
+    #[error("Delta size exceeds limit (max: {0})")]
+    DeltaTooLarge(usize),
+
+    #[error("Inconsistent graph: {0}")]
+    InconsistentGraph(String),
 }

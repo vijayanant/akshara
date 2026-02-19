@@ -1,105 +1,115 @@
-use crate::traversal::{create_dummy_anchor, create_dummy_key};
-use crate::{
-    Block, BlockId, GraphId, GraphStore, GraphWalker, InMemoryStore, Manifest, SecretIdentity,
-};
+use crate::base::address::{Address, BlockId, GraphId, ManifestId};
+use crate::base::crypto::GraphKey;
+use crate::graph::{Block, Manifest};
+use crate::identity::SecretIdentity;
+use crate::state::in_memory_store::InMemoryStore;
+use crate::state::store::GraphStore;
+use crate::traversal::walker::GraphWalker;
+use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 
 #[test]
 fn test_sovereign_blind_discovery_derivation() {
-    let mut rng = rand::thread_rng();
-    let id_a = SecretIdentity::generate(&mut rng);
-    let id_b = SecretIdentity::generate(&mut rng);
+    let mut rng = OsRng;
+    let identity = SecretIdentity::generate(&mut rng);
 
-    // Using the clean Sovereign API
-    let disco_a1 = id_a.derive_discovery_id();
-    let disco_a2 = id_a.derive_discovery_id();
-    let disco_b = id_b.derive_discovery_id();
+    // Derived ID for finding the Identity Graph on a Relay
+    let discovery_id = identity.derive_discovery_id().expect("Derivation failed");
 
-    assert_eq!(disco_a1, disco_a2, "Discovery ID must be deterministic");
-    assert_ne!(disco_a1, disco_b, "Discovery ID must be unique per user");
+    // Must be stable
+    let discovery_id_2 = identity.derive_discovery_id().expect("Derivation failed");
+    assert_eq!(discovery_id, discovery_id_2);
+
+    // Must be unique per identity
+    let identity_2 = SecretIdentity::generate(&mut rng);
+    assert_ne!(
+        discovery_id,
+        identity_2.derive_discovery_id().expect("Derivation failed")
+    );
 }
 
 #[test]
 fn test_sovereign_full_authority_chain_verification() {
+    let mut rng = OsRng;
     let mut store = InMemoryStore::new();
-    let mut rng = rand::thread_rng();
 
-    // 1. TIER 1: Master Root
+    // 1. Setup Master Identity
     let master = SecretIdentity::generate(&mut rng);
-    let master_key = create_dummy_key();
+    let graph_id = GraphId::new();
+    let key = GraphKey::generate(&mut rng);
 
-    // 2. TIER 2: Device Key (Delegated Active Signer)
-    let laptop = SecretIdentity::generate(&mut rng);
-    let laptop_pub_key = laptop.public().signing_key().clone();
-
-    // 3. Alice publishes her Identity Graph
+    // 2. Authorize a Device
+    let device = SecretIdentity::generate(&mut rng);
     let device_block = Block::new(
-        laptop_pub_key.as_bytes().to_vec(),
-        "key".to_string(),
+        device.public().signing_key().as_bytes().to_vec(),
+        "device_auth".to_string(),
         vec![],
-        &master_key,
+        &key,
         &master,
     )
     .unwrap();
     store.put_block(&device_block).unwrap();
 
     let mut devices_map = BTreeMap::new();
-    devices_map.insert("laptop".to_string(), *device_block.id().as_cid());
-
-    let devices_index = Block::new_index(devices_map, vec![], &master_key, &master).unwrap();
+    devices_map.insert("laptop".to_string(), Address::from(device_block.id()));
+    let devices_index = Block::new(
+        serde_cbor::to_vec(&devices_map).unwrap(),
+        "index".to_string(),
+        vec![],
+        &key,
+        &master,
+    )
+    .unwrap();
     store.put_block(&devices_index).unwrap();
 
     let mut root_map = BTreeMap::new();
-    root_map.insert("devices".to_string(), *devices_index.id().as_cid());
-    let root_index = Block::new_index(root_map, vec![], &master_key, &master).unwrap();
-    store.put_block(&root_index).unwrap();
-
-    let identity_manifest = Manifest::new(
-        GraphId::new(),
-        root_index.id(),
+    root_map.insert("devices".to_string(), Address::from(devices_index.id()));
+    let root_index = Block::new(
+        serde_cbor::to_vec(&root_map).unwrap(),
+        "index".to_string(),
         vec![],
-        create_dummy_anchor(),
+        &key,
         &master,
-    );
-    store.put_manifest(&identity_manifest).unwrap();
-
-    // 4. SCENARIO: The Laptop signs a contract
-    let contract_key = create_dummy_key();
-    let contract_block = Block::new(
-        b"I agree to terms".to_vec(),
-        "contract".to_string(),
-        vec![],
-        &contract_key,
-        &laptop,
     )
     .unwrap();
+    store.put_block(&root_index).unwrap();
 
-    // 5. THE VERTICAL PROOF: Bob verifies Alice's authority
-    let signer_key = contract_block.author();
+    let anchor = ManifestId::from_sha256(&[0u8; 32]);
+    let manifest = Manifest::new(graph_id, root_index.id(), vec![], anchor, &master);
+    store.put_manifest(&manifest).unwrap();
 
+    // 3. Device signs a document update
+    let doc_root = BlockId::from_sha256(&[0xAA; 32]);
+    let doc_manifest = Manifest::new(graph_id, doc_root, vec![], manifest.id(), &device);
+
+    // 4. VERIFY: Auditor walks the identity graph to check authorization
     let walker = GraphWalker::new(&store);
-    let resolved_cid = walker
-        .resolve_path(
-            identity_manifest.content_root(),
-            "devices/laptop",
-            &master_key,
-        )
-        .expect("Identity resolution failed");
-
-    let key_block = store
-        .get_block(&BlockId::from_cid(resolved_cid))
-        .unwrap()
+    let resolved_addr = walker
+        .resolve_path(root_index.id(), "/devices/laptop", &key)
         .unwrap();
-    let decrypted_key_bytes = key_block.content().decrypt(&master_key).unwrap();
 
+    let resolved_block_id = BlockId::try_from(resolved_addr).unwrap();
+    let block = store
+        .get_block(&resolved_block_id)
+        .unwrap()
+        .expect("Block not found");
+
+    // Verify the resolved key matches the device that signed the document
+    let authorized_key_bytes = block.content().decrypt(&key).unwrap();
     assert_eq!(
-        decrypted_key_bytes,
-        signer_key.as_bytes().to_vec(),
-        "Signer must match Identity Graph"
+        authorized_key_bytes,
+        device.public().signing_key().as_bytes()
     );
-    assert_eq!(
-        identity_manifest.author(),
-        master.public().signing_key(),
-        "Identity Graph must match Master"
-    );
+
+    // Final Proof: Reify the bytes into a real public key and verify the manifest signature
+    let mut pub_key_bytes = [0u8; 32];
+    pub_key_bytes.copy_from_slice(&authorized_key_bytes);
+    let authorized_pub_key = crate::base::crypto::SigningPublicKey::new(pub_key_bytes);
+
+    // Manifest::verify_integrity() internally uses the manifest's stored author key.
+    // Here we prove that the resolved_pub_key is the same one used in the manifest.
+    assert_eq!(authorized_pub_key, *doc_manifest.author());
+    doc_manifest
+        .verify_integrity()
+        .expect("Manifest integrity failed");
 }

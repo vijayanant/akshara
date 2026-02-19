@@ -1,17 +1,17 @@
-use crate::base::address::{BlockId, GraphId, ManifestId};
+use crate::base::address::{Address, GraphId, ManifestId};
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod engine;
-pub use engine::SyncEngine;
+pub use engine::Reconciler;
 
-/// A request to synchronize the graph state, containing the known heads.
+/// `Heads` represents the frontier of absolute cryptographic truth for a graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncRequest {
+pub struct Heads {
     pub(crate) graph_id: GraphId,
     pub(crate) heads: Vec<ManifestId>,
 }
 
-impl SyncRequest {
+impl Heads {
     pub fn new(graph_id: GraphId, heads: Vec<ManifestId>) -> Self {
         Self { graph_id, heads }
     }
@@ -25,27 +25,56 @@ impl SyncRequest {
     }
 }
 
-/// A response to a sync request
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncResponse {
-    pub(crate) missing_manifests: Vec<ManifestId>,
-    pub(crate) missing_blocks: Vec<BlockId>,
+/// `Delta` represents a specific state of absence.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Delta {
+    pub(crate) missing: Vec<Address>,
 }
 
-impl SyncResponse {
-    pub fn new(missing_manifests: Vec<ManifestId>, missing_blocks: Vec<BlockId>) -> Self {
-        Self {
-            missing_manifests,
-            missing_blocks,
-        }
+impl Delta {
+    pub fn new(missing: Vec<Address>) -> Self {
+        Self { missing }
     }
 
-    pub fn missing_manifests(&self) -> &[ManifestId] {
-        &self.missing_manifests
+    pub fn missing(&self) -> &[Address] {
+        &self.missing
     }
 
-    pub fn missing_blocks(&self) -> &[BlockId] {
-        &self.missing_blocks
+    pub fn is_empty(&self) -> bool {
+        self.missing.is_empty()
+    }
+}
+
+/// `Comparison` represents the bi-directional knowledge gap between two peers.
+///
+/// It identifies what each peer possesses that the other lacks, enabling
+/// total symmetric convergence in a single exchange.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Comparison {
+    /// Items present in the peer's frontier but absent locally (Needs download).
+    pub peer_surplus: Delta,
+    /// Items present locally but absent in the peer's frontier (Needs upload).
+    pub self_surplus: Delta,
+}
+
+/// `Portion` is the atomic unit of data delivered to fill a Delta.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Portion {
+    pub(crate) id: Address,
+    pub(crate) data: Vec<u8>,
+}
+
+impl Portion {
+    pub fn new(id: Address, data: Vec<u8>) -> Self {
+        Self { id, data }
+    }
+
+    pub fn id(&self) -> &Address {
+        &self.id
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 }
 

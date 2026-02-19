@@ -1,10 +1,10 @@
 use rand::rngs::OsRng;
 
 use crate::{
-    BlockId, GraphId, ManifestId,
+    Address, BlockId, GraphId, ManifestId,
     graph::Manifest,
     identity::SecretIdentity,
-    protocol::{SyncEngine, SyncRequest},
+    protocol::{Heads, Reconciler},
     state::{GraphStore, in_memory_store::InMemoryStore},
 };
 
@@ -42,30 +42,75 @@ pub fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId>
 }
 
 #[test]
-fn sync_engine_identifies_missing_manifests() {
+fn reconciler_identifies_peer_surplus() {
     let mut store = InMemoryStore::new();
     let chain = create_chain(3, &mut store); // A -> B -> C
 
-    let root = chain[0]; // A
-    let local_heads = vec![chain[2]]; // C
     let graph_id = GraphId::new();
 
-    // Remote peer says: "I have A"
-    let request = SyncRequest::new(graph_id, vec![root]);
-    let engine = SyncEngine::new(&store);
+    // Scenario: PEER has the full chain [A, B, C]. SELF only has [A].
+    let peer_heads = Heads::new(graph_id, vec![chain[2]]); // Peer is at C
+    let self_heads = vec![chain[0]]; // Self is at A
 
-    let response = engine
-        .calculate_response(&request, &local_heads)
-        .expect("Diff calculation failed");
+    let reconciler = Reconciler::new(&store);
+    let comparison = reconciler
+        .reconcile(&peer_heads, &self_heads)
+        .expect("Reconciliation failed");
 
-    let missing = response.missing_manifests();
-    assert_eq!(missing.len(), 2);
-    assert!(missing.contains(&chain[1])); // B
-    assert!(missing.contains(&chain[2])); // C
+    // I (Self) need B and C from the Peer.
+    assert!(
+        comparison
+            .peer_surplus
+            .missing()
+            .contains(&Address::from(chain[1]))
+    );
+    assert!(
+        comparison
+            .peer_surplus
+            .missing()
+            .contains(&Address::from(chain[2]))
+    );
+
+    // Peer needs nothing from me (I have no surplus knowledge).
+    assert!(comparison.self_surplus.is_empty());
 }
 
 #[test]
-fn sync_engine_handles_forks() {
+fn reconciler_identifies_self_surplus() {
+    let mut store = InMemoryStore::new();
+    let chain = create_chain(3, &mut store); // A -> B -> C
+
+    let graph_id = GraphId::new();
+
+    // Scenario: SELF has the full chain [A, B, C]. PEER only has [A].
+    let peer_heads = Heads::new(graph_id, vec![chain[0]]); // Peer is at A
+    let self_heads = vec![chain[2]]; // Self is at C
+
+    let reconciler = Reconciler::new(&store);
+    let comparison = reconciler
+        .reconcile(&peer_heads, &self_heads)
+        .expect("Reconciliation failed");
+
+    // I (Self) need nothing from the Peer.
+    assert!(comparison.peer_surplus.is_empty());
+
+    // The Peer needs B and C from me.
+    assert!(
+        comparison
+            .self_surplus
+            .missing()
+            .contains(&Address::from(chain[1]))
+    );
+    assert!(
+        comparison
+            .self_surplus
+            .missing()
+            .contains(&Address::from(chain[2]))
+    );
+}
+
+#[test]
+fn reconciler_handles_symmetric_forks() {
     let mut store = InMemoryStore::new();
     let chain = create_chain(1, &mut store); // A
     let m_a_id = chain[0];
@@ -79,55 +124,47 @@ fn sync_engine_handles_forks() {
     let root_c = BlockId::from_sha256(&[0xC1; 32]);
 
     // 2. Branch B (Child of A)
-    let m_b: crate::graph::Manifest =
-        Manifest::new(graph_id, root_b, vec![m_a_id], anchor, &identity);
+    let m_b = Manifest::new(graph_id, root_b, vec![m_a_id], anchor, &identity);
     store.put_manifest(&m_b).unwrap();
 
-    // 3. Branch C (Child of A) - The Fork
+    // 3. Branch C (Child of A)
     let m_c = Manifest::new(graph_id, root_c, vec![m_a_id], anchor, &identity);
     store.put_manifest(&m_c).unwrap();
 
-    // Setup: Server has [B, C]. Client has [C].
-    let local_heads = vec![m_b.id(), m_c.id()];
-    let request = SyncRequest::new(graph_id, vec![m_c.id()]);
+    // Scenario: SELF has Branch [C]. PEER has Branch [B].
+    let self_heads = vec![m_c.id()];
+    let peer_heads = Heads::new(graph_id, vec![m_b.id()]);
 
-    let engine = SyncEngine::new(&store);
-    let response = engine.calculate_response(&request, &local_heads).unwrap();
+    let reconciler = Reconciler::new(&store);
+    let comparison = reconciler.reconcile(&peer_heads, &self_heads).unwrap();
 
-    let missing = response.missing_manifests();
-    assert_eq!(missing.len(), 1);
-    assert!(missing.contains(&m_b.id())); // Client needs B
-    assert!(!missing.contains(&m_c.id())); // Client has C
+    // I need B from you.
+    assert!(
+        comparison
+            .peer_surplus
+            .missing()
+            .contains(&Address::from(m_b.id()))
+    );
+    // You need C from me.
+    assert!(
+        comparison
+            .self_surplus
+            .missing()
+            .contains(&Address::from(m_c.id()))
+    );
 }
 
 #[test]
-fn sync_engine_returns_empty_if_already_synced() {
+fn reconciler_returns_empty_if_identical() {
     let mut store = InMemoryStore::new();
     let chain = create_chain(2, &mut store); // A -> B
-    let local_heads = vec![chain[1]]; // B
+    let self_heads = vec![chain[1]]; // B
     let graph_id = GraphId::new();
-    let request = SyncRequest::new(graph_id, vec![chain[1]]); // B
+    let peer_heads = Heads::new(graph_id, vec![chain[1]]); // B
 
-    let engine = SyncEngine::new(&store);
-    let response = engine.calculate_response(&request, &local_heads).unwrap();
+    let reconciler = Reconciler::new(&store);
+    let comparison = reconciler.reconcile(&peer_heads, &self_heads).unwrap();
 
-    assert!(response.missing_manifests().is_empty());
-}
-
-#[test]
-fn sync_engine_ignores_unknown_remote_heads() {
-    let mut store = InMemoryStore::new();
-    let chain = create_chain(1, &mut store); // A
-    let local_heads = vec![chain[0]]; // A
-    let graph_id = GraphId::new();
-
-    // Remote sends Z (unknown)
-    let unknown_head = ManifestId::from_sha256(&[0xFF; 32]);
-    let request = SyncRequest::new(graph_id, vec![unknown_head]);
-
-    let engine = SyncEngine::new(&store);
-    let response = engine.calculate_response(&request, &local_heads).unwrap();
-
-    assert_eq!(response.missing_manifests().len(), 1);
-    assert_eq!(response.missing_manifests()[0], chain[0]);
+    assert!(comparison.peer_surplus.is_empty());
+    assert!(comparison.self_surplus.is_empty());
 }

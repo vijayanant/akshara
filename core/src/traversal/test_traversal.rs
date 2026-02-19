@@ -1,5 +1,6 @@
 use crate::{
     BlockId, GraphId, ManifestId,
+    base::crypto::SovereignSigner,
     graph::Manifest,
     state::{GraphStore, in_memory_store::InMemoryStore},
     traversal::{
@@ -93,4 +94,40 @@ fn walker_respects_graph_boundaries() {
     assert!(ancestors2.contains(&chain2[0]));
     assert!(!ancestors2.contains(&chain1[0]));
     assert!(!ancestors2.contains(&chain1[1]));
+}
+
+#[test]
+fn walker_handles_manifest_cycles_gracefully() {
+    let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let graph_id = GraphId::new();
+    let anchor = create_dummy_anchor();
+    let root = create_dummy_root();
+
+    // To test cycles in ancestors, we must use from_raw_parts to force a self-pointer
+    let cycle_id = ManifestId::from_sha256(&[0x99; 32]);
+    let header = crate::graph::ManifestHeader {
+        graph_id,
+        content_root: root,
+        parents: vec![cycle_id], // Point to self!
+        identity_anchor: anchor,
+        created_at: 12345,
+    };
+
+    let signature = identity.sign(cycle_id.as_ref());
+    let malicious_manifest = crate::graph::Manifest::from_raw_parts(
+        cycle_id,
+        header,
+        identity.public().signing_key().clone(),
+        signature,
+    );
+
+    store.put_manifest(&malicious_manifest).unwrap();
+
+    let walker = GraphWalker::new(&store);
+    // Should complete without infinite loop
+    let ancestors = walker.get_ancestors(&cycle_id).unwrap();
+
+    // It found itself as a parent, but the visited set should stop it.
+    assert!(ancestors.contains(&cycle_id));
 }

@@ -182,12 +182,14 @@ impl SecretIdentity {
     /// This allows a user to "blindly" find their data on a relay without
     /// the relay knowing their public identity.
     #[allow(dead_code)] // Public-Crate API: Used by sibling crates for blind discovery.
-    pub(crate) fn derive_discovery_id(&self) -> GraphId {
+    pub(crate) fn derive_discovery_id(&self) -> Result<GraphId, SovereignError> {
         let span = span!(Level::DEBUG, "derive_discovery_id");
         let _enter = span.enter();
 
-        let mut hmac = Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes())
-            .expect("HMAC must accept 32-byte Ed25519 key");
+        let mut hmac =
+            Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes()).map_err(|e| {
+                SovereignError::InternalError(format!("HMAC initialization failed: {}", e))
+            })?;
         hmac.update(b"sovereign.v1.discovery");
 
         let output = hmac.finalize().into_bytes();
@@ -196,19 +198,21 @@ impl SecretIdentity {
 
         let id = GraphId::from_bytes(uuid_bytes);
         trace!(discovery_id = ?id, "Stable discovery identifier derived");
-        id
+        Ok(id)
     }
 
     /// Derives a deterministic 32-byte GraphKey for a specific graph.
     ///
     /// By binding the `graph_id` into the key derivation, we ensure that
     /// compromise of one document key does not compromise others (Key Isolation).
-    pub fn derive_graph_key(&self, graph_id: &GraphId) -> GraphKey {
+    pub fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey, SovereignError> {
         let span = span!(Level::DEBUG, "derive_graph_key", graph_id = ?graph_id);
         let _enter = span.enter();
 
-        let mut hmac = Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes())
-            .expect("HMAC must accept 32-byte Ed25519 key");
+        let mut hmac =
+            Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes()).map_err(|e| {
+                SovereignError::InternalError(format!("HMAC initialization failed: {}", e))
+            })?;
 
         hmac.update(b"sovereign.v1.graph_key");
         hmac.update(graph_id.as_bytes());
@@ -218,7 +222,7 @@ impl SecretIdentity {
         key_bytes.copy_from_slice(&output[0..32]);
 
         counter!("sovereign.identity.graph_key_derived").increment(1);
-        GraphKey::from(key_bytes)
+        Ok(GraphKey::from(key_bytes))
     }
 
     pub fn signing_key(&self) -> &SigningSecretKey {
@@ -254,3 +258,6 @@ mod test_identity_graph;
 
 #[cfg(test)]
 mod test_identity_protocol;
+
+#[cfg(test)]
+mod test_temporal_forgery;

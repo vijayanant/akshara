@@ -1,140 +1,103 @@
+use crate::base::address::{
+    Address, BlockId, CODEC_SOVEREIGN_BLOCK, CODEC_SOVEREIGN_MANIFEST, ManifestId,
+};
 use std::str::FromStr;
-
-use crate::{BlockId, IntegrityError, ManifestId, SovereignError};
 
 #[test]
 fn test_cid_creation_from_sha256() {
     let digest = [0u8; 32];
     let cid = BlockId::from_sha256(&digest);
 
-    assert_eq!(cid.version(), 1);
-    assert_eq!(cid.codec(), 0x50);
-    assert_eq!(cid.hash_type(), 0x12);
+    assert_eq!(cid.codec(), CODEC_SOVEREIGN_BLOCK);
+    assert_eq!(cid.to_bytes().len(), 36); // 1 (version) + 1 (codec) + 1 (hash) + 1 (len) + 32 (digest)
 }
 
 #[test]
-fn test_cid_string_roundtrip() {
-    let digest = [0xABu8; 32];
-    let cid = BlockId::from_sha256(&digest);
+fn test_cid_codec_enforcement() {
+    let digest = [0u8; 32];
+    let block_id = BlockId::from_sha256(&digest);
+    let manifest_id = ManifestId::from_sha256(&digest);
 
-    let cid_str = cid.to_string();
-    assert!(cid_str.starts_with('b'));
-
-    let restored = BlockId::from_str(&cid_str).expect("Failed to parse CID string");
-    assert_eq!(cid, restored);
-}
-
-#[test]
-fn test_cid_fails_on_malformed_string() {
-    let bad_cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3jha637iehcq89y";
-    let mut corrupted = bad_cid.to_string();
-    corrupted.pop();
-    assert!(BlockId::from_str(&corrupted).is_err());
-}
-
-#[test]
-fn test_cid_strict_from_bytes() {
-    use cid::Cid;
-    use multihash_codetable::{Code, MultihashDigest};
-
-    let hash = Code::Sha2_256.digest(b"hello");
-    let cid = Cid::new_v1(0x50, hash);
-    let mut bytes = cid.to_bytes();
-
-    // Valid parse
-    assert!(BlockId::try_from(bytes.as_slice()).is_ok());
-
-    // Add junk data
-    bytes.extend_from_slice(b"junk");
-
-    // Must fail due to trailing bytes
-    assert!(BlockId::try_from(bytes.as_slice()).is_err());
+    assert_eq!(block_id.codec(), CODEC_SOVEREIGN_BLOCK);
+    assert_eq!(manifest_id.codec(), CODEC_SOVEREIGN_MANIFEST);
 }
 
 #[test]
 fn test_cid_type_confusion_protection() {
     let digest = [0u8; 32];
     let block_id = BlockId::from_sha256(&digest);
-    let bytes = block_id.to_bytes();
+    let addr = Address::from(block_id);
 
-    // Attempt to parse BlockId bytes as a ManifestId
-    // This MUST fail because the multicodec (0x50 vs 0x51) is different.
-    let result = ManifestId::try_from(bytes.as_slice());
+    // Should succeed
+    assert!(BlockId::try_from(addr).is_ok());
 
-    assert!(
-        result.is_err(),
-        "ManifestId should reject CID with Block codec"
-    );
+    // Should fail (codec mismatch)
+    assert!(ManifestId::try_from(addr).is_err());
 }
 
 #[test]
-fn test_cid_serde_json_representation() {
-    let digest = [0xCCu8; 32];
+fn test_cid_string_roundtrip() {
+    let digest = [0u8; 32];
     let cid = BlockId::from_sha256(&digest);
+    let s = cid.to_string();
 
-    let json = serde_json::to_string(&cid).expect("Failed to serialize");
-
-    // Ensure it's a JSON string
-    assert!(json.starts_with('\"'));
-
-    let restored: BlockId = serde_json::from_str(&json).expect("Failed to deserialize");
+    let restored = BlockId::from_str(&s).unwrap();
     assert_eq!(cid, restored);
 }
 
 #[test]
-fn test_cid_codec_enforcement() {
-    use cid::Cid;
-    use multihash_codetable::{Code, MultihashDigest};
+fn test_cid_strict_from_bytes() {
+    let digest = [0u8; 32];
+    let cid = BlockId::from_sha256(&digest);
+    let bytes = cid.to_bytes();
 
-    // 1. Create a valid CID but with the WRONG codec (e.g. Git = 0x71)
-    let hash = Code::Sha2_256.digest(b"not_a_sovereign_block");
-    let git_cid = Cid::new_v1(0x71, hash);
-    let git_cid_str = git_cid.to_string();
+    // 1. Success case
+    assert!(BlockId::try_from(&bytes[..]).is_ok());
 
-    // 2. Attempt to parse this into a BlockId
-    // This MUST fail because BlockId only accepts 0x50
-    let result = BlockId::from_str(&git_cid_str);
-
-    assert!(
-        result.is_err(),
-        "BlockId must reject CIDs with non-Sovereign codecs"
-    );
-
-    if let Err(SovereignError::Integrity(IntegrityError::MalformedId)) = result {
-        // Success: Correct error returned
-    } else {
-        panic!("Expected MalformedId error, got {:?}", result);
-    }
+    // 2. Trailing junk should fail (The Fortress Rule)
+    let mut bad_bytes = bytes.clone();
+    bad_bytes.push(0xFF);
+    assert!(BlockId::try_from(&bad_bytes[..]).is_err());
 }
 
-#[cfg(test)]
-mod properties {
+#[test]
+fn test_cid_fails_on_malformed_string() {
+    assert!(BlockId::from_str("not-a-cid").is_err());
+    assert!(
+        BlockId::from_str("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi").is_err()
+    ); // Valid CID, wrong codec
+}
+
+#[test]
+fn test_cid_serde_json_representation() {
+    let digest = [0u8; 32];
+    let cid = BlockId::from_sha256(&digest);
+    let json = serde_json::to_string(&cid).unwrap();
+
+    // Should be represented as a string in JSON
+    assert!(json.starts_with("\"baf"));
+
+    let restored: BlockId = serde_json::from_str(&json).unwrap();
+    assert_eq!(cid, restored);
+}
+
+pub mod properties {
     use super::*;
     use proptest::prelude::*;
 
     proptest! {
-        /// Property: Parsing random bytes must never panic and must only
-        /// succeed if the bytes represent a valid Sovereign CID.
         #[test]
-        fn p_cid_parsing_robustness(ref bytes in any::<Vec<u8>>()) {
-            let _ = BlockId::try_from(bytes.as_slice());
+        fn p_cid_roundtrip_integrity(digest in prop::collection::vec(0u8..255, 32)) {
+            let cid = BlockId::from_sha256(&digest);
+            let bytes = cid.to_bytes();
+            let restored = BlockId::try_from(&bytes[..]).unwrap();
+            prop_assert_eq!(cid, restored);
         }
 
-        /// Property: A CID created from a valid digest must always round-trip
-        /// through string and byte representations.
         #[test]
-        fn p_cid_roundtrip_integrity(ref digest in any::<[u8; 32]>()) {
-            let original = BlockId::from_sha256(digest);
-
-            // Byte roundtrip
-            let bytes = original.to_bytes();
-            let restored_bytes = BlockId::try_from(bytes.as_slice()).expect("Byte roundtrip failed");
-            prop_assert_eq!(&original, &restored_bytes);
-
-            // String roundtrip
-            let s = original.to_string();
-            let restored_str = BlockId::from_str(&s).expect("String roundtrip failed");
-            prop_assert_eq!(&original, &restored_str);
+        fn p_cid_parsing_robustness(data in prop::collection::vec(0u8..255, 0..100)) {
+            // Parser must never panic, regardless of input
+            let _ = BlockId::try_from(&data[..]);
         }
     }
 }
