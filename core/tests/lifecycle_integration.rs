@@ -65,10 +65,10 @@ fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     for portion_res in reconciler.fulfill(&comparison.peer_surplus) {
         let portion = portion_res.unwrap();
         if portion.id().codec() == CODEC_SOVEREIGN_MANIFEST {
-            let m: Manifest = serde_json::from_slice(portion.data()).unwrap();
+            let m: Manifest = serde_cbor::from_slice(portion.data()).unwrap();
             alice_restored_store.put_manifest(&m).unwrap();
         } else {
-            let b: Block = serde_json::from_slice(portion.data()).unwrap();
+            let b: Block = serde_cbor::from_slice(portion.data()).unwrap();
             alice_restored_store.put_block(&b).unwrap();
         }
     }
@@ -97,7 +97,7 @@ fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     let plan_delta = sovereign_core::Delta::new(vec![*plan_addr]);
     for portion_res in reconciler.fulfill(&plan_delta) {
         let portion = portion_res.unwrap();
-        let b: Block = serde_json::from_slice(portion.data()).unwrap();
+        let b: Block = serde_cbor::from_slice(portion.data()).unwrap();
         alice_restored_store.put_block(&b).unwrap();
     }
 

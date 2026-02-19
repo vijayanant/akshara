@@ -19,7 +19,7 @@ fn test_identity_graph_device_resolution() {
     // 1. Create a Device Block
     let device_identity = SecretIdentity::generate(&mut rng);
     let device_block = Block::new(
-        serde_json::to_vec("my-iphone").unwrap(),
+        serde_cbor::to_vec(&"my-iphone".to_string()).unwrap(),
         "device".to_string(),
         vec![],
         &key,
@@ -72,7 +72,7 @@ fn test_identity_graph_device_resolution() {
         .unwrap()
         .expect("Block not found");
 
-    let name: String = serde_json::from_slice(&block.content().decrypt(&key).unwrap()).unwrap();
+    let name: String = serde_cbor::from_slice(&block.content().decrypt(&key).unwrap()).unwrap();
     assert_eq!(name, "my-iphone");
 }
 

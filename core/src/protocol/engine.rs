@@ -142,7 +142,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
                             id
                         )))
                     })?;
-                    let data = serde_json::to_vec(&manifest).map_err(|e| {
+                    let data = serde_cbor::to_vec(&manifest).map_err(|e| {
                         SovereignError::InternalError(format!(
                             "Manifest serialization failed: {}",
                             e
@@ -159,7 +159,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
                             id
                         )))
                     })?;
-                    let data = serde_json::to_vec(&block).map_err(|e| {
+                    let data = serde_cbor::to_vec(&block).map_err(|e| {
                         SovereignError::InternalError(format!("Block serialization failed: {}", e))
                     })?;
                     Ok(Portion::new(*addr, data))
