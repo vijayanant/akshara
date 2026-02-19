@@ -21,7 +21,7 @@ fn bench_fulfillment(c: &mut Criterion) {
     }
 
     let delta = Delta::new(addresses);
-    let reconciler = Reconciler::new(&store);
+    let reconciler = Reconciler::new(&store, identity.public().signing_key().clone());
 
     let mut group = c.benchmark_group("protocol");
     group.throughput(Throughput::Elements(1000));

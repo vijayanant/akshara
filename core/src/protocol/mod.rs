@@ -57,6 +57,17 @@ pub struct Comparison {
     pub self_surplus: Delta,
 }
 
+/// `ConvergenceReport` provides telemetry for a completed synchronization turn.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConvergenceReport {
+    /// Total number of manifests successfully ingested.
+    pub manifests_synced: usize,
+    /// Total number of data blocks successfully ingested.
+    pub blocks_synced: usize,
+    /// Total size of all data payloads transferred in bytes.
+    pub total_bytes: usize,
+}
+
 /// `Portion` is the atomic unit of data delivered to fill a Delta.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Portion {

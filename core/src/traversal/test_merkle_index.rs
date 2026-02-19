@@ -41,7 +41,7 @@ fn test_merkle_index_path_resolution() {
     store.put_block(&index_block).unwrap();
 
     // 3. Resolve path
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved_addr = walker
         .resolve_path(index_block.id(), "/title", &key)
         .unwrap();
@@ -94,7 +94,7 @@ fn test_merkle_index_nested_resolution() {
     .unwrap();
     store.put_block(&root_index).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved = walker
         .resolve_path(root_index.id(), "nested/file", &key)
         .unwrap();
@@ -132,7 +132,7 @@ fn test_merkle_index_path_normalization() {
     .unwrap();
     store.put_block(&root_index).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     // All these should resolve correctly
     for path in ["file", "/file", "file/", "//file///"] {
@@ -164,7 +164,7 @@ fn test_merkle_index_missing_path_failures() {
     .unwrap();
     store.put_block(&root_index).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     assert!(
         walker
@@ -191,7 +191,7 @@ fn test_merkle_index_wrong_key_failure() {
         Block::new(vec![1, 2, 3], "index".to_string(), vec![], &key, &identity).unwrap();
     store.put_block(&index_block).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     assert!(
         walker
             .resolve_path(index_block.id(), "any", &wrong_key)
@@ -230,7 +230,7 @@ fn test_merkle_index_malformed_cbor_failure() {
     .unwrap();
     store.put_block(&root_index).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     // Resolve first segment should work, but then it should fail to parse data_block as index
     assert!(
         walker
@@ -263,7 +263,7 @@ fn test_merkle_index_type_mismatch_failure() {
     .unwrap();
     store.put_block(&root_index).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     // Should fail when trying to fetch "fake" as a BlockId
     assert!(
         walker
@@ -301,7 +301,7 @@ fn test_merkle_index_circular_reference_protection() {
     );
     store.put_block(&root_index).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     // This should now fetch the block, and the Auditor will immediately catch
     // that the content hash doesn't match the loop_id we forced.

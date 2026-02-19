@@ -83,7 +83,7 @@ fn test_sovereign_full_authority_chain_verification() {
     let doc_manifest = Manifest::new(graph_id, doc_root, vec![], manifest.id(), &device);
 
     // 4. VERIFY: Auditor walks the identity graph to check authorization
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, master.public().signing_key().clone());
     let resolved_addr = walker
         .resolve_path(root_index.id(), "/devices/laptop", &key)
         .unwrap();

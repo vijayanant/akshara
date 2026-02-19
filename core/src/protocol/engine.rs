@@ -1,7 +1,7 @@
 use crate::base::address::{Address, BlockId, ManifestId};
 use crate::base::crypto::SigningPublicKey;
 use crate::base::error::{ProtocolError, SovereignError};
-use crate::protocol::{Comparison, Delta, Heads, Portion};
+use crate::protocol::{Comparison, ConvergenceReport, Delta, Heads, Portion};
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
 use metrics::counter;
@@ -110,16 +110,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
             if let Some(block) = self.store.get_block(&current_block_id)? {
                 // If it's an index block, we need to find its children
                 if block.block_type() == "index" {
-                    // Note: We'd need the GraphKey to decrypt and find children.
-                    // BUT: The Relay is BLIND. It cannot decrypt.
-
-                    // ARCHITECTURAL REALIZATION:
-                    // In the blind model, the Relay CANNOT recursively expand the delta
-                    // because it cannot see the CIDs inside the encrypted index blocks.
-
-                    // Therefore, the protocol must be ITERATIVE.
-                    // 1. Peer sends Manifests + Root.
-                    // 2. SDK decrypts Root, finds children, and asks for them in the NEXT turn.
+                    // Note: In the blind model, the Relay CANNOT recursively expand.
                 }
 
                 // Add parents (for linear block history if applicable)
@@ -177,33 +168,44 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
 
     /// High-level utility to ingest data from a peer into a local store.
     ///
-    /// This method simplifies the synchronization loop by automatically
+    /// This method simplifies the synchronization turn by automatically
     /// fulfilling a delta and storing the resulting portions.
     pub fn converge<Dest: GraphStore + ?Sized>(
         &self,
         delta: &Delta,
         dest: &mut Dest,
-    ) -> Result<usize, SovereignError> {
-        let mut count = 0;
+    ) -> Result<ConvergenceReport, SovereignError> {
+        let mut report = ConvergenceReport::default();
+
         for portion_res in self.fulfill(delta) {
             let portion = portion_res?;
             let addr = portion.id();
+            let data = portion.data();
+
+            report.total_bytes += data.len();
 
             if addr.codec() == crate::base::address::CODEC_SOVEREIGN_MANIFEST {
-                let m: crate::graph::Manifest =
-                    serde_cbor::from_slice(portion.data()).map_err(|e| {
-                        SovereignError::InternalError(format!("Convergence failure: {}", e))
-                    })?;
+                let m: crate::graph::Manifest = serde_cbor::from_slice(data).map_err(|e| {
+                    SovereignError::InternalError(format!("Convergence failure: {}", e))
+                })?;
                 dest.put_manifest(&m)?;
+                report.manifests_synced += 1;
             } else {
-                let b: crate::graph::Block =
-                    serde_cbor::from_slice(portion.data()).map_err(|e| {
-                        SovereignError::InternalError(format!("Convergence failure: {}", e))
-                    })?;
+                let b: crate::graph::Block = serde_cbor::from_slice(data).map_err(|e| {
+                    SovereignError::InternalError(format!("Convergence failure: {}", e))
+                })?;
                 dest.put_block(&b)?;
+                report.blocks_synced += 1;
             }
-            count += 1;
         }
-        Ok(count)
+
+        debug!(
+            manifests = report.manifests_synced,
+            blocks = report.blocks_synced,
+            bytes = report.total_bytes,
+            "Convergence turn complete"
+        );
+
+        Ok(report)
     }
 }

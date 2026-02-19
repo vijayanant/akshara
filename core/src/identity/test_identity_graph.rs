@@ -61,7 +61,7 @@ fn test_identity_graph_device_resolution() {
     store.put_manifest(&manifest).unwrap();
 
     // 5. Walk the Identity Graph
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved_addr = walker
         .resolve_path(root_index.id(), "/devices/laptop_1", &key)
         .unwrap();
@@ -108,7 +108,7 @@ fn test_identity_graph_missing_device_failure() {
     .unwrap();
     store.put_block(&root_index).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let result = walker.resolve_path(root_index.id(), "/devices/stolen_laptop", &key);
 
     assert!(result.is_err());
@@ -118,10 +118,11 @@ fn test_identity_graph_missing_device_failure() {
 fn test_identity_graph_unauthorized_traversal_failure() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
+    let identity = SecretIdentity::generate(&mut rng);
     let _graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let fake_root = BlockId::from_sha256(&[0xFF; 32]);
 
     // Should fail because the block doesn't exist in store
@@ -179,7 +180,7 @@ fn test_identity_graph_revocation() {
     let manifest = Manifest::new(graph_id, root_index.id(), vec![], anchor, &master);
     store.put_manifest(&manifest).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, master.public().signing_key().clone());
     let result = walker.resolve_path(root_index.id(), "/phone", &key);
 
     // Must fail because the device is no longer in the graph

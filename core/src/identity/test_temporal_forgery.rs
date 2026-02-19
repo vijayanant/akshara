@@ -75,7 +75,7 @@ fn test_identity_temporal_forgery_rejection() {
         Block::new(malicious_data, "post".into(), vec![], &key, &device_a).unwrap();
 
     // 4. VERIFY: Auditor checks authority against the CURRENT frontier
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, master.public().signing_key().clone());
 
     // The Auditor stands upon manifest_v2 (The current truth)
     let current_root = manifest_v2.content_root();

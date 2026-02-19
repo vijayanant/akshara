@@ -119,10 +119,10 @@ fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     let comparison = reconciler.reconcile(&remote_heads, &[]).unwrap();
 
     // Process Turn 1 using the high-level converge utility
-    reconciler
+    let report = reconciler
         .converge(&comparison.peer_surplus, &mut alice_restored_store)
         .unwrap();
-
+    assert!(report.manifests_synced > 0);
     // --- Phase 5: Turning the Wheel (Turn 2: Filling Gaps) ---
     let restored_manifest = alice_restored_store
         .get_manifest(&manifest.id())
@@ -139,7 +139,7 @@ fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     let plan_addr = index.get("plan.txt").unwrap();
 
     let plan_delta = sovereign_core::Delta::new(vec![*plan_addr]);
-    reconciler
+    let _report = reconciler
         .converge(&plan_delta, &mut alice_restored_store)
         .unwrap();
 
