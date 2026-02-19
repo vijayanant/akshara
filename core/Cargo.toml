@@ -27,6 +27,11 @@ multihash-codetable = { version = "0.1.4", features = ["blake3", "sha2", "sha3"]
 serde_cbor = "0.11.2"
 
 [dev-dependencies]
+criterion = "0.8.2"
 hex = "0.4.3"
 proptest = "1.10.0"
 tracing-subscriber = "0.3.18"
+
+[[bench]]
+name = "sync_bench"
+harness = false

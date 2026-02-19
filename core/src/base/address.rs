@@ -10,15 +10,28 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::base::error::{IntegrityError, SovereignError};
 
-/// Multicodec for Sovereign Blocks (L0 Node)
+/// The universal Multicodec for a Sovereign Data Block (Encrypted).
+///
+/// Ref: https://github.com/multiformats/multicodec/blob/master/table.csv
+/// We utilize 0x50 (identity) as a base, but semantically this represents
+/// a Sovereign-formatted Dag-CBOR block containing encrypted application data.
 pub const CODEC_SOVEREIGN_BLOCK: u64 = 0x50;
-/// Multicodec for Sovereign Manifests (Snapshots)
+
+/// The universal Multicodec for a Sovereign Manifest (Unencrypted Metadata).
+///
+/// Ref: https://github.com/multiformats/multicodec/blob/master/table.csv
+/// We utilize 0x51 (dag-pb) as a base, but semantically this represents
+/// a Sovereign-formatted Manifest containing signed graph snapshots.
 pub const CODEC_SOVEREIGN_MANIFEST: u64 = 0x51;
 
-/// `Address` is the unified, opaque identifier for any piece of data in the Sovereign Web.
+/// `Address` is the opaque, universal pointer of the Sovereign Web.
 ///
-/// It wraps the underlying library types to ensure that "Library Physics" do not
-/// leak into the platform's public API.
+/// It wraps a `Cid` (Content Identifier) to provide location-independent,
+/// cryptographically verifiable addressing for any piece of data.
+///
+/// By using `Address` instead of raw library types, we ensure that the
+/// core logic remains "Blind" to the underlying hashing and transport physics,
+/// adhering to the Principle of Maximum Information Hiding.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Address(Cid);
 
@@ -87,7 +100,9 @@ impl<'de> Deserialize<'de> for Address {
     }
 }
 
-/// `BlockId` is a cryptographically bound identifier for a Sovereign data block.
+/// `BlockId` is a semantic refinement of an `Address` representing a Data Block.
+///
+/// It is guaranteed to possess a Multicodec of `CODEC_SOVEREIGN_BLOCK` (0x50).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct BlockId(Address);
 
@@ -159,7 +174,9 @@ impl TryFrom<&[u8]> for BlockId {
     }
 }
 
-/// `ManifestId` identifies a signed snapshot of a graph.
+/// `ManifestId` is a semantic refinement of an `Address` representing a Manifest.
+///
+/// It is guaranteed to possess a Multicodec of `CODEC_SOVEREIGN_MANIFEST` (0x51).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct ManifestId(Address);
 

@@ -167,4 +167,36 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
             }
         })
     }
+
+    /// High-level utility to ingest data from a peer into a local store.
+    ///
+    /// This method simplifies the synchronization loop by automatically
+    /// fulfilling a delta and storing the resulting portions.
+    pub fn converge<Dest: GraphStore + ?Sized>(
+        &self,
+        delta: &Delta,
+        dest: &mut Dest,
+    ) -> Result<usize, SovereignError> {
+        let mut count = 0;
+        for portion_res in self.fulfill(delta) {
+            let portion = portion_res?;
+            let addr = portion.id();
+
+            if addr.codec() == crate::base::address::CODEC_SOVEREIGN_MANIFEST {
+                let m: crate::graph::Manifest =
+                    serde_cbor::from_slice(portion.data()).map_err(|e| {
+                        SovereignError::InternalError(format!("Convergence failure: {}", e))
+                    })?;
+                dest.put_manifest(&m)?;
+            } else {
+                let b: crate::graph::Block =
+                    serde_cbor::from_slice(portion.data()).map_err(|e| {
+                        SovereignError::InternalError(format!("Convergence failure: {}", e))
+                    })?;
+                dest.put_block(&b)?;
+            }
+            count += 1;
+        }
+        Ok(count)
+    }
 }

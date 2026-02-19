@@ -1,6 +1,6 @@
 use sovereign_core::{
-    Address, Block, BlockId, CODEC_SOVEREIGN_MANIFEST, GraphId, GraphStore, Heads, InMemoryStore,
-    Manifest, ManifestId, Reconciler, SecretIdentity,
+    Address, Block, BlockId, GraphId, GraphStore, Heads, InMemoryStore, Manifest, ManifestId,
+    Reconciler, SecretIdentity,
 };
 use std::collections::BTreeMap;
 
@@ -61,17 +61,10 @@ fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     let comparison = reconciler.reconcile(&remote_heads, &[]).unwrap();
 
-    // Process Turn 1
-    for portion_res in reconciler.fulfill(&comparison.peer_surplus) {
-        let portion = portion_res.unwrap();
-        if portion.id().codec() == CODEC_SOVEREIGN_MANIFEST {
-            let m: Manifest = serde_cbor::from_slice(portion.data()).unwrap();
-            alice_restored_store.put_manifest(&m).unwrap();
-        } else {
-            let b: Block = serde_cbor::from_slice(portion.data()).unwrap();
-            alice_restored_store.put_block(&b).unwrap();
-        }
-    }
+    // Process Turn 1 using the high-level converge utility
+    reconciler
+        .converge(&comparison.peer_surplus, &mut alice_restored_store)
+        .unwrap();
 
     // --- Phase 5: Turning the Wheel (Turn 2: Filling Gaps) ---
     // Now Alice can open the Index, and she realizes she is missing "plan.txt"
@@ -95,11 +88,9 @@ fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     // In our Blind Pipe model, we can just fulfill a Delta containing the missing address
     let plan_delta = sovereign_core::Delta::new(vec![*plan_addr]);
-    for portion_res in reconciler.fulfill(&plan_delta) {
-        let portion = portion_res.unwrap();
-        let b: Block = serde_cbor::from_slice(portion.data()).unwrap();
-        alice_restored_store.put_block(&b).unwrap();
-    }
+    reconciler
+        .converge(&plan_delta, &mut alice_restored_store)
+        .unwrap();
 
     // --- Phase 6: Final Verification ---
     let restored_key = alice_new_phone.derive_graph_key(&graph_id).unwrap();
