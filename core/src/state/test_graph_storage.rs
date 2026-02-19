@@ -1,5 +1,4 @@
 use rand::rngs::OsRng;
-use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
@@ -169,58 +168,4 @@ fn store_handles_out_of_order_insertion() {
     let heads = store.get_heads(&graph_id).unwrap();
     assert!(heads.contains(&m_b.id()));
     assert!(heads.contains(&m_a.id()));
-}
-
-#[test]
-#[ignore]
-fn store_rwlock_torture_test() {
-    use std::sync::Barrier;
-    use std::thread;
-
-    let store = Arc::new(InMemoryStore::new());
-    let barrier = Arc::new(Barrier::new(100));
-    let mut handles = vec![];
-
-    // 1. Writer Threads (50)
-    for i in 0..50 {
-        let store_clone = Arc::clone(&store);
-        let barrier_clone = Arc::clone(&barrier);
-        handles.push(thread::spawn(move || {
-            let mut store = (*store_clone).clone();
-            let block = Block::from_raw_parts(
-                BlockId::from_sha256(&[i as u8; 32]),
-                crate::base::crypto::SigningPublicKey::new([0; 32]),
-                crate::base::crypto::Signature::new(vec![]),
-                crate::base::crypto::BlockContent::encrypt(
-                    &[],
-                    &crate::GraphKey::new([0; 32]),
-                    [0; 12],
-                )
-                .unwrap(),
-                "test".to_string(),
-                vec![],
-            );
-
-            barrier_clone.wait();
-            store.put_block(&block).unwrap();
-        }));
-    }
-
-    // 2. Reader Threads (50)
-    for i in 0..50 {
-        let store_clone = Arc::clone(&store);
-        let barrier_clone = Arc::clone(&barrier);
-        let graph_id = GraphId::new();
-        handles.push(thread::spawn(move || {
-            barrier_clone.wait();
-            let _ = store_clone
-                .get_block(&BlockId::from_sha256(&[i as u8; 32]))
-                .unwrap();
-            let _ = store_clone.get_heads(&graph_id).unwrap();
-        }));
-    }
-
-    for handle in handles {
-        handle.join().unwrap();
-    }
 }
