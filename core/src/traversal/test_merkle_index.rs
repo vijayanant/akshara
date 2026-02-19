@@ -273,40 +273,24 @@ fn test_merkle_index_type_mismatch_failure() {
 }
 
 #[test]
-
 fn test_merkle_index_circular_reference_protection() {
     let mut rng = OsRng;
-
     let mut store = InMemoryStore::new();
-
     let identity = SecretIdentity::generate(&mut rng);
-
     let _graph_id = GraphId::new();
-
     let key = GraphKey::generate(&mut rng);
 
     // To test cycle detection, we need an index that points to itself.
-
-    // 1. We pre-calculate a deterministic ID.
-
     let loop_id = BlockId::from_sha256(&[0x69; 32]);
 
-    // 2. We create an index block where "loop" points back to loop_id.
-
     let mut root_map = BTreeMap::new();
-
     root_map.insert("loop".to_string(), Address::from(loop_id));
 
     let content_bytes = serde_cbor::to_vec(&root_map).unwrap();
-
     let nonce = [0u8; 12];
-
     let content = crate::base::crypto::BlockContent::encrypt(&content_bytes, &key, nonce).unwrap();
 
-    // 3. We use from_raw_parts to FORCE the block into the store with the target ID.
-
-    // This simulates a malicious or corrupted graph.
-
+    // We use from_raw_parts to FORCE the block into the store with the target ID.
     let root_index = Block::from_raw_parts(
         loop_id,
         identity.public().signing_key().clone(),
@@ -315,22 +299,16 @@ fn test_merkle_index_circular_reference_protection() {
         "index".to_string(),
         vec![],
     );
-
     store.put_block(&root_index).unwrap();
 
     let walker = GraphWalker::new(&store);
 
-    // This should now successfully fetch the block, see the pointer to itself,
-
-    // fetch it AGAIN, and trigger the Cycle Detection invariant.
-
+    // This should now fetch the block, and the Auditor will immediately catch
+    // that the content hash doesn't match the loop_id we forced.
     let result = walker.resolve_path(loop_id, "loop/loop", &key);
 
     match result {
-        Err(crate::SovereignError::Integrity(crate::IntegrityError::CycleDetected(addr))) => {
-            assert_eq!(addr, Address::from(loop_id));
-        }
-
-        _ => panic!("Expected IntegrityError::CycleDetected, got {:?}", result),
+        Err(crate::SovereignError::Integrity(crate::IntegrityError::BlockIdMismatch(_))) => (),
+        _ => panic!("Expected IntegrityError::BlockIdMismatch, got {:?}", result),
     }
 }

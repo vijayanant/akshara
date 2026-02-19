@@ -2,6 +2,7 @@ use crate::base::address::{Address, BlockId, ManifestId};
 use crate::base::crypto::GraphKey;
 use crate::base::error::{IntegrityError, SovereignError, StoreError};
 use crate::state::store::GraphStore;
+use crate::traversal::auditor::Auditor;
 use metrics::{counter, histogram};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use tracing::{Level, debug, span, trace};
@@ -12,11 +13,15 @@ pub const MANIFEST_DEPTH_LIMIT: usize = 256;
 /// `GraphWalker` provides high-level navigation across the Sovereign Merkle Index.
 pub struct GraphWalker<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
+    pub(crate) auditor: Auditor<'a, S>,
 }
 
 impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     pub fn new(store: &'a S) -> Self {
-        Self { store }
+        Self {
+            store,
+            auditor: Auditor::new(store),
+        }
     }
 
     /// Resolves a human-readable path sequence into an Address.
@@ -31,10 +36,11 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     ///    malicious or malformed, and resolution fails immediately.
     ///
     /// 2. **Depth Limit (256):** We cap resolution at `MANIFEST_DEPTH_LIMIT`. This is a "Defense
-    ///    in Depth" measure to prevent stack overflow or CPU exhaustion attacks.
+    ///    in Depth" measure to prevent stack overflow or CPU exhaustion attacks from excessively
+    ///    deep trees.
     ///
-    /// 3. **Satyata Check (Existence):** We verify that the final resolved Address actually
-    ///    exists in the local store. We do not resolve "Ghost Pointers."
+    /// 3. **Audited Traversal:** Every step of the walk is verified by the `Auditor` to ensure
+    ///    that every block encountered meets the mathematical and social laws of the platform.
     pub fn resolve_path(
         &self,
         root: BlockId,
@@ -72,7 +78,10 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
                 SovereignError::Store(StoreError::NotFound(format!("Block {}", block_id)))
             })?;
 
-            // 2. Decrypt and parse as Index
+            // 2. Audit the block before looking inside
+            self.auditor.audit_block(&block)?;
+
+            // 3. Decrypt and parse as Index
             let plaintext = block.content().decrypt(key)?;
             let index: BTreeMap<String, Address> =
                 serde_cbor::from_slice(&plaintext).map_err(|e| {
@@ -83,7 +92,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
                     ))
                 })?;
 
-            // 3. Find the next segment
+            // 4. Find the next segment
             current_addr = index.get(segment).cloned().ok_or_else(|| {
                 trace!(segment = %segment, "Segment not found in index");
                 SovereignError::Store(StoreError::NotFound(format!(
@@ -92,7 +101,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
                 )))
             })?;
 
-            // 4. CYCLE DETECTION: Prevents infinite resolution loops.
+            // 5. CYCLE DETECTION: Prevents infinite resolution loops.
             if !visited.insert(current_addr) {
                 debug!(addr = ?current_addr, "Cycle detected in graph traversal");
                 counter!("sovereign.walker.error", "reason" => "cycle_detected").increment(1);
@@ -102,25 +111,10 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
             }
         }
 
-        // 5. SATYATA CHECK: Ensure the target actually exists
-        let exists = if current_addr.codec() == crate::base::address::CODEC_SOVEREIGN_MANIFEST {
-            self.store
-                .get_manifest(&ManifestId::try_from(current_addr)?)
-                .is_ok()
-        } else {
-            self.store
-                .get_block(&BlockId::try_from(current_addr)?)
-                .is_ok()
-        };
-
-        if !exists {
-            debug!(final_addr = ?current_addr, "Resolved leaf missing from store");
-            counter!("sovereign.walker.error", "reason" => "ghost_leaf").increment(1);
-            return Err(SovereignError::Store(StoreError::NotFound(format!(
-                "Resolved leaf address {} missing from store",
-                current_addr
-            ))));
-        }
+        // 6. Final Satyātā Check (Existence and Integrity)
+        // We verify that the final resolved Address actually exists in the local store.
+        // We do not resolve "Ghost Pointers."
+        self.auditor.verify_existence(&current_addr)?;
 
         let elapsed = start_time.elapsed();
         histogram!("sovereign.walker.resolve_latency").record(elapsed);
@@ -139,6 +133,9 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         let mut visited = HashSet::new();
 
         if let Some(manifest) = self.store.get_manifest(start)? {
+            // Audit the starting manifest
+            self.auditor.audit_manifest(&manifest)?;
+
             for parent in manifest.parents() {
                 if !visited.contains(parent) {
                     visited.insert(*parent);
@@ -150,6 +147,9 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
 
         while let Some(current_id) = queue.pop_front() {
             if let Some(manifest) = self.store.get_manifest(&current_id)? {
+                // Audit each ancestor we find
+                self.auditor.audit_manifest(&manifest)?;
+
                 for parent in manifest.parents() {
                     if !visited.contains(parent) {
                         visited.insert(*parent);

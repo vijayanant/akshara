@@ -125,9 +125,11 @@ fn walker_handles_manifest_cycles_gracefully() {
     store.put_manifest(&malicious_manifest).unwrap();
 
     let walker = GraphWalker::new(&store);
-    // Should complete without infinite loop
-    let ancestors = walker.get_ancestors(&cycle_id).unwrap();
 
-    // It found itself as a parent, but the visited set should stop it.
-    assert!(ancestors.contains(&cycle_id));
+    // Should fail integrity check before it even finishes the walk
+    let result = walker.get_ancestors(&cycle_id);
+    match result {
+        Err(crate::SovereignError::Integrity(crate::IntegrityError::ManifestIdMismatch(_))) => (),
+        _ => panic!("Expected ManifestIdMismatch, got {:?}", result),
+    }
 }

@@ -1,5 +1,7 @@
+pub mod auditor;
 pub mod walker;
 
+pub use auditor::Auditor;
 pub use walker::{BlockWalker, GraphWalker};
 
 #[cfg(test)]

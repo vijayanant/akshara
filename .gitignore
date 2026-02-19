@@ -1,6 +1,6 @@
-/target
+target/
+**/target/
 Cargo.lock
-/docs
 cobertura.xml
-tarpaulin-report.html**/target
-**/*.rs.bk
+tarpaulin-report.html
+.DS_Store
