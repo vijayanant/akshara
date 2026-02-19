@@ -91,7 +91,7 @@ fn test_byzantine_walker_robustness() {
         }
 
         {
-            let walker = GraphWalker::new(&store);
+            let walker = GraphWalker::new(&store, master.public().signing_key().clone());
             let _ = walker.resolve_path(root_block.id(), "file", &key);
         }
     }

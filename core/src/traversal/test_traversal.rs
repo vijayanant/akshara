@@ -4,16 +4,16 @@ use crate::{
     graph::Manifest,
     state::{GraphStore, in_memory_store::InMemoryStore},
     traversal::{
-        create_chain, create_dummy_anchor, create_dummy_root, create_identity, walker::GraphWalker,
+        create_chain, create_dummy_root, create_identity, create_valid_anchor, walker::GraphWalker,
     },
 };
 
 #[test]
 fn can_find_ancestors_in_chain() {
     let mut store = InMemoryStore::new();
-    let chain = create_chain(3, &mut store); // A -> B -> C
+    let (chain, master_key) = create_chain(3, &mut store); // A -> B -> C
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, master_key);
     let ancestors = walker.get_ancestors(&chain[2]).unwrap();
 
     assert_eq!(ancestors.len(), 2);
@@ -27,7 +27,7 @@ fn walker_handles_diamond_graph() {
     let identity = create_identity();
     let graph_id = GraphId::new();
     let root = create_dummy_root();
-    let anchor = create_dummy_anchor();
+    let anchor = create_valid_anchor(&mut store, &identity);
 
     // 1. Root A
     let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity);
@@ -47,7 +47,7 @@ fn walker_handles_diamond_graph() {
     let m_d = Manifest::new(graph_id, root, vec![m_b.id(), m_c.id()], anchor, &identity);
     store.put_manifest(&m_d).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let ancestors = walker.get_ancestors(&m_d.id()).unwrap();
 
     // Should find A, B, and C
@@ -63,14 +63,14 @@ fn walker_handles_missing_parent() {
     let identity = create_identity();
     let graph_id = GraphId::new();
     let root = create_dummy_root();
-    let anchor = create_dummy_anchor();
+    let anchor = create_valid_anchor(&mut store, &identity);
 
     // Manifest B pointing to A, but A is not in store
     let a_id = ManifestId::from_sha256(&[0xEE; 32]);
     let m_b = Manifest::new(graph_id, root, vec![a_id], anchor, &identity);
     store.put_manifest(&m_b).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let ancestors = walker.get_ancestors(&m_b.id()).unwrap();
 
     assert_eq!(ancestors.len(), 1);
@@ -82,13 +82,13 @@ fn walker_respects_graph_boundaries() {
     let mut store = InMemoryStore::new();
 
     // Chain 1: A -> B
-    let chain1 = create_chain(2, &mut store);
+    let (chain1, _master1) = create_chain(2, &mut store);
 
     // Chain 2: X -> Y
-    let chain2 = create_chain(2, &mut store);
+    let (chain2, master2) = create_chain(2, &mut store);
     let head2 = chain2[1];
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, master2);
     let ancestors2 = walker.get_ancestors(&head2).unwrap();
 
     assert!(ancestors2.contains(&chain2[0]));
@@ -101,7 +101,7 @@ fn walker_handles_manifest_cycles_gracefully() {
     let mut store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_dummy_anchor();
+    let anchor = create_valid_anchor(&mut store, &identity);
     let root = create_dummy_root();
 
     // To test cycles in ancestors, we must use from_raw_parts to force a self-pointer
@@ -124,7 +124,7 @@ fn walker_handles_manifest_cycles_gracefully() {
 
     store.put_manifest(&malicious_manifest).unwrap();
 
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     // Should fail integrity check before it even finishes the walk
     let result = walker.get_ancestors(&cycle_id);

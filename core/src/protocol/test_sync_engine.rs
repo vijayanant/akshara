@@ -6,6 +6,7 @@ use crate::{
     identity::SecretIdentity,
     protocol::{Heads, Reconciler},
     state::{GraphStore, in_memory_store::InMemoryStore},
+    traversal::{create_dummy_root, create_valid_anchor},
 };
 
 // Helper functions
@@ -14,20 +15,16 @@ pub fn create_identity() -> SecretIdentity {
     SecretIdentity::generate(&mut OsRng)
 }
 
-pub fn create_dummy_anchor() -> ManifestId {
-    ManifestId::from_sha256(&[0u8; 32])
-}
-
-pub fn create_dummy_root() -> BlockId {
-    BlockId::from_sha256(&[0xFFu8; 32])
-}
-
-pub fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId> {
+pub fn create_chain(
+    length: usize,
+    store: &mut InMemoryStore,
+) -> (Vec<ManifestId>, crate::base::crypto::SigningPublicKey) {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
-    let anchor = create_dummy_anchor();
     let root = create_dummy_root();
+
+    let anchor = create_valid_anchor(store, &identity);
 
     let mut parents = vec![];
     let mut ids = vec![];
@@ -38,13 +35,13 @@ pub fn create_chain(length: usize, store: &mut InMemoryStore) -> Vec<ManifestId>
         parents = vec![manifest.id()];
         ids.push(manifest.id());
     }
-    ids
+    (ids, identity.public().signing_key().clone())
 }
 
 #[test]
 fn reconciler_identifies_peer_surplus() {
     let mut store = InMemoryStore::new();
-    let chain = create_chain(3, &mut store); // A -> B -> C
+    let (chain, master_key) = create_chain(3, &mut store); // A -> B -> C
 
     let graph_id = GraphId::new();
 
@@ -52,7 +49,7 @@ fn reconciler_identifies_peer_surplus() {
     let peer_heads = Heads::new(graph_id, vec![chain[2]]); // Peer is at C
     let self_heads = vec![chain[0]]; // Self is at A
 
-    let reconciler = Reconciler::new(&store);
+    let reconciler = Reconciler::new(&store, master_key);
     let comparison = reconciler
         .reconcile(&peer_heads, &self_heads)
         .expect("Reconciliation failed");
@@ -78,7 +75,7 @@ fn reconciler_identifies_peer_surplus() {
 #[test]
 fn reconciler_identifies_self_surplus() {
     let mut store = InMemoryStore::new();
-    let chain = create_chain(3, &mut store); // A -> B -> C
+    let (chain, master_key) = create_chain(3, &mut store); // A -> B -> C
 
     let graph_id = GraphId::new();
 
@@ -86,7 +83,7 @@ fn reconciler_identifies_self_surplus() {
     let peer_heads = Heads::new(graph_id, vec![chain[0]]); // Peer is at A
     let self_heads = vec![chain[2]]; // Self is at C
 
-    let reconciler = Reconciler::new(&store);
+    let reconciler = Reconciler::new(&store, master_key);
     let comparison = reconciler
         .reconcile(&peer_heads, &self_heads)
         .expect("Reconciliation failed");
@@ -112,12 +109,12 @@ fn reconciler_identifies_self_surplus() {
 #[test]
 fn reconciler_handles_symmetric_forks() {
     let mut store = InMemoryStore::new();
-    let chain = create_chain(1, &mut store); // A
+    let (chain, master_key) = create_chain(1, &mut store); // A
     let m_a_id = chain[0];
 
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_dummy_anchor();
+    let anchor = create_valid_anchor(&mut store, &identity);
 
     // Create two DIFFERENT content roots to force different CIDs
     let root_b = BlockId::from_sha256(&[0xB1; 32]);
@@ -135,7 +132,7 @@ fn reconciler_handles_symmetric_forks() {
     let self_heads = vec![m_c.id()];
     let peer_heads = Heads::new(graph_id, vec![m_b.id()]);
 
-    let reconciler = Reconciler::new(&store);
+    let reconciler = Reconciler::new(&store, master_key);
     let comparison = reconciler.reconcile(&peer_heads, &self_heads).unwrap();
 
     // I need B from you.
@@ -157,12 +154,12 @@ fn reconciler_handles_symmetric_forks() {
 #[test]
 fn reconciler_returns_empty_if_identical() {
     let mut store = InMemoryStore::new();
-    let chain = create_chain(2, &mut store); // A -> B
+    let (chain, master_key) = create_chain(2, &mut store); // A -> B
     let self_heads = vec![chain[1]]; // B
     let graph_id = GraphId::new();
     let peer_heads = Heads::new(graph_id, vec![chain[1]]); // B
 
-    let reconciler = Reconciler::new(&store);
+    let reconciler = Reconciler::new(&store, master_key);
     let comparison = reconciler.reconcile(&peer_heads, &self_heads).unwrap();
 
     assert!(comparison.peer_surplus.is_empty());

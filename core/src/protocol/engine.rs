@@ -1,4 +1,5 @@
 use crate::base::address::{Address, BlockId, ManifestId};
+use crate::base::crypto::SigningPublicKey;
 use crate::base::error::{ProtocolError, SovereignError};
 use crate::protocol::{Comparison, Delta, Heads, Portion};
 use crate::state::store::GraphStore;
@@ -10,11 +11,17 @@ use tracing::{Level, debug, span};
 /// `Reconciler` implements the pure mathematical logic of graph convergence.
 pub struct Reconciler<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
+    /// The immutable Master Public Key that serves as the root of trust for this reconciliation.
+    pub(crate) expected_root_key: SigningPublicKey,
 }
 
 impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
-    pub fn new(store: &'a S) -> Self {
-        Self { store }
+    /// Creates a new Reconciler bound to a specific root of trust.
+    pub fn new(store: &'a S, expected_root_key: SigningPublicKey) -> Self {
+        Self {
+            store,
+            expected_root_key,
+        }
     }
 
     /// Determines the bi-directional knowledge gap between two frontiers.
@@ -31,7 +38,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
             return Err(SovereignError::Protocol(ProtocolError::TooManyHeads(1024)));
         }
 
-        let walker = GraphWalker::new(self.store);
+        let walker = GraphWalker::new(self.store, self.expected_root_key.clone());
 
         // 2. Calculate Local Known Set (My full manifest reality)
         let mut self_known = HashSet::new();

@@ -1,25 +1,17 @@
 use rand::rngs::OsRng;
 
 use crate::{
-    BlockId, GraphId, ManifestId,
+    BlockId, GraphId,
     graph::Manifest,
     identity::SecretIdentity,
     state::{GraphStore, in_memory_store::InMemoryStore},
-    traversal::walker::GraphWalker,
+    traversal::{create_dummy_root, create_valid_anchor, walker::GraphWalker},
 };
 
-// Heper function
+// Helper function
 
 pub fn create_identity() -> SecretIdentity {
     SecretIdentity::generate(&mut OsRng)
-}
-
-pub fn create_dummy_anchor() -> ManifestId {
-    ManifestId::from_sha256(&[0u8; 32])
-}
-
-pub fn create_dummy_root() -> BlockId {
-    BlockId::from_sha256(&[0xFFu8; 32])
 }
 
 #[test]
@@ -28,7 +20,7 @@ fn can_find_manifest_lca() {
     let identity = create_identity();
     let graph_id = GraphId::new();
     let root = create_dummy_root();
-    let anchor = create_dummy_anchor();
+    let anchor = create_valid_anchor(&mut store, &identity);
 
     // 1. Root A
     let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity);
@@ -45,7 +37,7 @@ fn can_find_manifest_lca() {
     store.put_manifest(&m_c).unwrap();
 
     // 4. Find LCA of B and C
-    let walker = GraphWalker::new(&store);
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let lca = walker.find_lca(&m_b.id(), &m_c.id()).unwrap();
 
     assert_eq!(lca, Some(m_a.id()));
@@ -56,7 +48,7 @@ fn can_diff_forked_manifests() {
     let mut store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_dummy_anchor();
+    let anchor = create_valid_anchor(&mut store, &identity);
 
     // Common Ancestor A
     let m_a = Manifest::new(graph_id, create_dummy_root(), vec![], anchor, &identity);
@@ -71,8 +63,4 @@ fn can_diff_forked_manifests() {
     let b2 = BlockId::from_sha256(&[2u8; 32]);
     let m_c = Manifest::new(graph_id, b2, vec![m_a.id()], anchor, &identity);
     store.put_manifest(&m_c).unwrap();
-
-    // Note: Diff logic in L0 currently doesn't support recursive Merkle diffing.
-    // That is an L1 (SDK) responsibility.
-    // For now, we just ensure the tests compile.
 }

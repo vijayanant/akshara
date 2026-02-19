@@ -24,26 +24,92 @@ pub(crate) fn create_dummy_key() -> crate::base::crypto::GraphKey {
 }
 
 #[cfg(test)]
-pub(crate) fn create_dummy_anchor() -> crate::base::address::ManifestId {
-    crate::base::address::ManifestId::from_sha256(&[0u8; 32])
+pub(crate) fn create_dummy_root() -> crate::base::address::BlockId {
+    crate::base::address::BlockId::from_sha256(&[0xFFu8; 32])
 }
 
 #[cfg(test)]
-pub(crate) fn create_dummy_root() -> crate::base::address::BlockId {
-    crate::base::address::BlockId::from_sha256(&[0xFFu8; 32])
+pub(crate) fn create_valid_anchor(
+    store: &mut crate::state::in_memory_store::InMemoryStore,
+    identity: &crate::identity::SecretIdentity,
+) -> crate::base::address::ManifestId {
+    use crate::state::store::GraphStore;
+    use std::collections::BTreeMap;
+
+    let identity_key = crate::base::crypto::GraphKey::new([0u8; 32]);
+    let mut devices_map = BTreeMap::new();
+    let signer_hex = identity
+        .public()
+        .signing_key()
+        .as_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+
+    let auth_block =
+        crate::graph::Block::new(vec![], "auth".to_string(), vec![], &identity_key, identity)
+            .unwrap();
+    store.put_block(&auth_block).unwrap();
+
+    devices_map.insert(
+        signer_hex,
+        crate::base::address::Address::from(auth_block.id()),
+    );
+
+    let mut root_map = BTreeMap::new();
+    let devices_index = crate::graph::Block::new(
+        serde_cbor::to_vec(&devices_map).unwrap(),
+        "index".to_string(),
+        vec![],
+        &identity_key,
+        identity,
+    )
+    .unwrap();
+    store.put_block(&devices_index).unwrap();
+
+    root_map.insert(
+        "devices".to_string(),
+        crate::base::address::Address::from(devices_index.id()),
+    );
+
+    let genesis_index = crate::graph::Block::new(
+        serde_cbor::to_vec(&root_map).unwrap(),
+        "index".to_string(),
+        vec![],
+        &identity_key,
+        identity,
+    )
+    .unwrap();
+    store.put_block(&genesis_index).unwrap();
+
+    let null_id = crate::base::address::ManifestId::from_sha256(&[0x00; 32]);
+    let genesis_manifest = crate::graph::Manifest::new(
+        crate::base::address::GraphId::new(),
+        genesis_index.id(),
+        vec![],
+        null_id,
+        identity,
+    );
+
+    store.put_manifest(&genesis_manifest).unwrap();
+    genesis_manifest.id()
 }
 
 #[cfg(test)]
 pub(crate) fn create_chain(
     length: usize,
     store: &mut crate::state::in_memory_store::InMemoryStore,
-) -> Vec<crate::base::address::ManifestId> {
+) -> (
+    Vec<crate::base::address::ManifestId>,
+    crate::base::crypto::SigningPublicKey,
+) {
     use crate::state::store::GraphStore;
     let mut rng = rand::rngs::OsRng;
     let identity = crate::identity::SecretIdentity::generate(&mut rng);
     let graph_id = crate::base::address::GraphId::new();
-    let anchor = create_dummy_anchor();
     let root = create_dummy_root();
+
+    let anchor = create_valid_anchor(store, &identity);
 
     let mut parents = vec![];
     let mut ids = vec![];
@@ -55,5 +121,5 @@ pub(crate) fn create_chain(
         parents = vec![manifest.id()];
         ids.push(manifest.id());
     }
-    ids
+    (ids, identity.public().signing_key().clone())
 }

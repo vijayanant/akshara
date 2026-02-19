@@ -1,5 +1,5 @@
 use crate::base::address::{Address, BlockId, ManifestId};
-use crate::base::crypto::GraphKey;
+use crate::base::crypto::{GraphKey, SigningPublicKey};
 use crate::base::error::{IntegrityError, SovereignError, StoreError};
 use crate::state::store::GraphStore;
 use crate::traversal::auditor::Auditor;
@@ -17,10 +17,11 @@ pub struct GraphWalker<'a, S: GraphStore + ?Sized> {
 }
 
 impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
-    pub fn new(store: &'a S) -> Self {
+    /// Creates a new GraphWalker bound to a specific root of trust.
+    pub fn new(store: &'a S, expected_root_key: SigningPublicKey) -> Self {
         Self {
             store,
-            auditor: Auditor::new(store),
+            auditor: Auditor::new(store, expected_root_key),
         }
     }
 

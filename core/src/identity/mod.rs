@@ -1,9 +1,11 @@
-use crate::base::address::GraphId;
+use crate::base::address::{BlockId, GraphId, ManifestId};
 use crate::base::crypto::{
     EncryptionPublicKey, EncryptionSecretKey, GraphKey, Signature, SigningPublicKey,
     SigningSecretKey, SovereignSigner,
 };
-use crate::base::error::{IdentityError, SovereignError};
+use crate::base::error::{IdentityError, IntegrityError, SovereignError};
+use crate::state::store::GraphStore;
+use crate::traversal::walker::GraphWalker;
 use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signer, SigningKey};
 use hmac::{Hmac, Mac};
@@ -262,6 +264,9 @@ mod test_identity_protocol;
 #[cfg(test)]
 mod test_temporal_forgery;
 
+#[cfg(test)]
+mod test_authority_edge_cases;
+
 /// `IdentityGraph` provides the logic for traversing and verifying a user's
 /// social authority timeline.
 pub struct IdentityGraph<'a, S: crate::state::store::GraphStore + ?Sized> {
@@ -269,7 +274,7 @@ pub struct IdentityGraph<'a, S: crate::state::store::GraphStore + ?Sized> {
     pub(crate) store: &'a S,
 }
 
-impl<'a, S: crate::state::store::GraphStore + ?Sized> IdentityGraph<'a, S> {
+impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
     pub fn new(store: &'a S) -> Self {
         Self { store }
     }
@@ -279,47 +284,82 @@ impl<'a, S: crate::state::store::GraphStore + ?Sized> IdentityGraph<'a, S> {
     pub fn verify_authority(
         &self,
         signer: &SigningPublicKey,
-        anchor: &crate::base::address::ManifestId,
+        anchor: &ManifestId,
+        expected_root_key: &SigningPublicKey,
     ) -> Result<(), SovereignError> {
-        // To verify authority, we resolve the device associated with this signer
-        // starting from the state of the graph at 'anchor'.
-        let device = self.resolve_device_at(signer, anchor)?;
+        let span = span!(Level::DEBUG, "verify_authority", signer = ?signer, anchor = ?anchor);
+        let _enter = span.enter();
 
-        if device.is_revoked() {
-            return Err(SovereignError::Integrity(
-                crate::base::error::IntegrityError::UnauthorizedSigner(
-                    "Signer has been revoked".to_string(),
-                ),
-            ));
+        // 1. GENESIS PROTECTION: The Null Anchor represents the root of all trust.
+        // A Genesis manifest is only valid if signed by the Expected Master Root Key.
+        if anchor.as_ref() == [0u8; 32] {
+            if signer == expected_root_key {
+                debug!("Identity Genesis reached and verified by Master Key");
+                Ok(())
+            } else {
+                error!(
+                    "Genesis Hijack detected! Manifest claims genesis but is not signed by Master Key"
+                );
+                Err(SovereignError::Integrity(
+                    IntegrityError::UnauthorizedSigner(
+                        "Genesis manifest must be signed by the Master Root Key".to_string(),
+                    ),
+                ))
+            }
+        } else {
+            // 2. Load the Identity Manifest at the anchor
+            let manifest = self.store.get_manifest(anchor)?.ok_or_else(|| {
+                SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
+                    "Identity Anchor {}",
+                    anchor
+                )))
+            })?;
+
+            // 3. Walk the graph to find the device registration
+            let walker = GraphWalker::new(self.store, expected_root_key.clone());
+
+            // Use a default identity key for now (in production, this is derived from the master seed)
+            let identity_key = GraphKey::new([0u8; 32]);
+
+            let devices_root = manifest.content_root();
+
+            // Manual hex encoding to avoid production dependency on 'hex' crate.
+            let signer_hex = signer
+                .as_bytes()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
+
+            let path = format!("devices/{}", signer_hex);
+            let resolution_result = walker.resolve_path(devices_root, &path, &identity_key);
+
+            match resolution_result {
+                Ok(addr) => {
+                    let block_id = BlockId::try_from(addr)?;
+                    let block = self.store.get_block(&block_id)?.ok_or_else(|| {
+                        SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
+                            "Device Block {}",
+                            block_id
+                        )))
+                    })?;
+
+                    if block.block_type() == "revocation" {
+                        return Err(SovereignError::Integrity(
+                            IntegrityError::UnauthorizedSigner(
+                                "Signer has been revoked".to_string(),
+                            ),
+                        ));
+                    }
+
+                    debug!("Signer authority verified via identity graph walk");
+                    Ok(())
+                }
+                Err(_) => Err(SovereignError::Integrity(
+                    IntegrityError::UnauthorizedSigner(
+                        "Signer not found in authorized devices list".to_string(),
+                    ),
+                )),
+            }
         }
-
-        Ok(())
-    }
-
-    fn resolve_device_at(
-        &self,
-        _signer: &SigningPublicKey,
-        _anchor: &crate::base::address::ManifestId,
-    ) -> Result<Device, SovereignError> {
-        // Placeholder: Full implementation would walk ancestors from anchor
-        // to find the device registration block.
-        Ok(Device {
-            id: uuid::Uuid::new_v4(),
-            revoked: false,
-        })
-    }
-}
-
-/// Represents a registered device within an Identity Graph.
-#[derive(Debug, Clone)]
-pub struct Device {
-    #[allow(dead_code)]
-    pub id: uuid::Uuid,
-    pub revoked: bool,
-}
-
-impl Device {
-    pub fn is_revoked(&self) -> bool {
-        self.revoked
     }
 }

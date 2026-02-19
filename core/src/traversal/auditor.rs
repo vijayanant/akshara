@@ -1,4 +1,5 @@
 use crate::base::address::{Address, BlockId, ManifestId};
+use crate::base::crypto::SigningPublicKey;
 use crate::base::error::SovereignError;
 use crate::graph::{Block, Manifest};
 use crate::identity::IdentityGraph;
@@ -6,13 +7,22 @@ use crate::state::store::GraphStore;
 use tracing::{Level, debug, span};
 
 /// `Auditor` is the platform's Trust Gatekeeper.
+///
+/// It is responsible for verifying that every piece of data encountered
+/// during traversal meets the mathematical and social laws of the Sovereign Web.
 pub struct Auditor<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
+    /// The immutable Master Public Key that serves as the root of trust for this audit.
+    pub(crate) expected_root_key: SigningPublicKey,
 }
 
 impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
-    pub fn new(store: &'a S) -> Self {
-        Self { store }
+    /// Creates a new Auditor bound to a specific Master Root Key.
+    pub fn new(store: &'a S, expected_root_key: SigningPublicKey) -> Self {
+        Self {
+            store,
+            expected_root_key,
+        }
     }
 
     /// Performs a full audit of a Manifest, including mathematical and social integrity.
@@ -24,12 +34,16 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         manifest.verify_integrity()?;
 
         // Tier 2: Social Authority (Causality)
-        // We verify that the signer is authorized in the Identity Graph at the claimed anchor.
         let identity_graph = IdentityGraph::new(self.store);
 
         // Proving the Right to Rule:
-        // Is this signer's public key present and unrevoked in the graph reached via identity_anchor?
-        identity_graph.verify_authority(manifest.author(), &manifest.identity_anchor())?;
+        // Is this signer's public key present and unrevoked in the graph
+        // that ultimately anchors to our expected_root_key?
+        identity_graph.verify_authority(
+            manifest.author(),
+            &manifest.identity_anchor(),
+            &self.expected_root_key,
+        )?;
 
         debug!("Manifest fully audited (Integrity + Authority)");
         Ok(())
