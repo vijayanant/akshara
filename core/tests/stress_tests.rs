@@ -1,9 +1,8 @@
-use sovereign_core::{
-    Address, Block, GraphStore, GraphWalker, 
-    InMemoryStore, SecretIdentity, GraphKey
-};
-use rand::rngs::OsRng;
 use rand::Rng;
+use rand::rngs::OsRng;
+use sovereign_core::{
+    Address, Block, GraphKey, GraphStore, GraphWalker, InMemoryStore, SecretIdentity,
+};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -25,13 +24,36 @@ fn test_byzantine_bit_flip_fuzzer() {
         fuzzed_bytes[bit_to_flip] ^= 0x01;
 
         let res: Result<Block, _> = serde_cbor::from_slice(&fuzzed_bytes);
-        
-        match res {
-            Ok(fuzzed_block) => {
-                let audit_res = fuzzed_block.verify_integrity();
-                assert!(audit_res.is_err());
-            },
-            Err(_) => ()
+
+        if let Ok(fuzzed_block) = res {
+            let audit_res = fuzzed_block.verify_integrity();
+            assert!(audit_res.is_err());
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn test_byzantine_manifest_corruption() {
+    let mut rng = OsRng;
+    let master = SecretIdentity::generate(&mut rng);
+    let graph_id = sovereign_core::GraphId::new();
+    let root = sovereign_core::BlockId::from_sha256(&[0xFF; 32]);
+    let anchor = sovereign_core::ManifestId::from_sha256(&[0u8; 32]);
+
+    let manifest = sovereign_core::Manifest::new(graph_id, root, vec![], anchor, &master);
+    let manifest_bytes = serde_cbor::to_vec(&manifest).unwrap();
+
+    for _ in 0..100 {
+        let mut fuzzed_bytes = manifest_bytes.clone();
+        let bit_to_flip = rng.gen_range(0..fuzzed_bytes.len());
+        fuzzed_bytes[bit_to_flip] ^= 0x01;
+
+        let res: Result<sovereign_core::Manifest, _> = serde_cbor::from_slice(&fuzzed_bytes);
+
+        if let Ok(fuzzed_manifest) = res {
+            let audit_res = fuzzed_manifest.verify_integrity();
+            assert!(audit_res.is_err());
         }
     }
 }
@@ -49,16 +71,23 @@ fn test_byzantine_walker_robustness() {
 
     let mut root_map = BTreeMap::new();
     root_map.insert("file".to_string(), Address::from(leaf.id()));
-    let root_block = Block::new(serde_cbor::to_vec(&root_map).unwrap(), "index".into(), vec![], &key, &master).unwrap();
+    let root_block = Block::new(
+        serde_cbor::to_vec(&root_map).unwrap(),
+        "index".into(),
+        vec![],
+        &key,
+        &master,
+    )
+    .unwrap();
     store.put_block(&root_block).unwrap();
 
     for _ in 0..50 {
         let mut corrupt_bytes = serde_cbor::to_vec(&leaf).unwrap();
         let pos = rng.gen_range(0..corrupt_bytes.len());
         corrupt_bytes[pos] ^= 0xFF;
-        
+
         if let Ok(corrupt_block) = serde_cbor::from_slice::<Block>(&corrupt_bytes) {
-             store.put_block(&corrupt_block).unwrap();
+            store.put_block(&corrupt_block).unwrap();
         }
 
         {
@@ -74,7 +103,6 @@ fn store_rwlock_torture_test() {
     let store = Arc::new(Mutex::new(InMemoryStore::new()));
     let mut threads = vec![];
 
-    // Spawning 10 threads to hammer the store with concurrent reads and writes
     for i in 0..10 {
         let store_ref = Arc::clone(&store);
         let t = thread::spawn(move || {
@@ -84,16 +112,15 @@ fn store_rwlock_torture_test() {
 
             for j in 0..100 {
                 let data = format!("thread-{}-entry-{}", i, j);
-                let block = Block::new(data.into_bytes(), "test".into(), vec![], &key, &identity).unwrap();
+                let block =
+                    Block::new(data.into_bytes(), "test".into(), vec![], &key, &identity).unwrap();
                 let id = block.id();
-                
-                // Concurrent Write (Wrapped in Mutex for this test)
+
                 {
                     let mut lock = store_ref.lock().unwrap();
                     lock.put_block(&block).unwrap();
                 }
-                
-                // Concurrent Read
+
                 {
                     let lock = store_ref.lock().unwrap();
                     let retrieved = lock.get_block(&id).unwrap().unwrap();

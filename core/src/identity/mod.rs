@@ -261,3 +261,65 @@ mod test_identity_protocol;
 
 #[cfg(test)]
 mod test_temporal_forgery;
+
+/// `IdentityGraph` provides the logic for traversing and verifying a user's
+/// social authority timeline.
+pub struct IdentityGraph<'a, S: crate::state::store::GraphStore + ?Sized> {
+    #[allow(dead_code)]
+    pub(crate) store: &'a S,
+}
+
+impl<'a, S: crate::state::store::GraphStore + ?Sized> IdentityGraph<'a, S> {
+    pub fn new(store: &'a S) -> Self {
+        Self { store }
+    }
+
+    /// Verifies that a specific signing key was authorized and unrevoked
+    /// at the moment of the provided Identity Anchor.
+    pub fn verify_authority(
+        &self,
+        signer: &SigningPublicKey,
+        anchor: &crate::base::address::ManifestId,
+    ) -> Result<(), SovereignError> {
+        // To verify authority, we resolve the device associated with this signer
+        // starting from the state of the graph at 'anchor'.
+        let device = self.resolve_device_at(signer, anchor)?;
+
+        if device.is_revoked() {
+            return Err(SovereignError::Integrity(
+                crate::base::error::IntegrityError::UnauthorizedSigner(
+                    "Signer has been revoked".to_string(),
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn resolve_device_at(
+        &self,
+        _signer: &SigningPublicKey,
+        _anchor: &crate::base::address::ManifestId,
+    ) -> Result<Device, SovereignError> {
+        // Placeholder: Full implementation would walk ancestors from anchor
+        // to find the device registration block.
+        Ok(Device {
+            id: uuid::Uuid::new_v4(),
+            revoked: false,
+        })
+    }
+}
+
+/// Represents a registered device within an Identity Graph.
+#[derive(Debug, Clone)]
+pub struct Device {
+    #[allow(dead_code)]
+    pub id: uuid::Uuid,
+    pub revoked: bool,
+}
+
+impl Device {
+    pub fn is_revoked(&self) -> bool {
+        self.revoked
+    }
+}

@@ -56,6 +56,9 @@ pub enum IntegrityError {
 
     #[error("Cycle detected at address: {0}")]
     CycleDetected(Address),
+
+    #[error("Unauthorized signer: {0}")]
+    UnauthorizedSigner(String),
 }
 
 #[derive(Error, Debug)]

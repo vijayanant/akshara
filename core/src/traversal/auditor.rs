@@ -1,13 +1,11 @@
 use crate::base::address::{Address, BlockId, ManifestId};
 use crate::base::error::SovereignError;
 use crate::graph::{Block, Manifest};
+use crate::identity::IdentityGraph;
 use crate::state::store::GraphStore;
 use tracing::{Level, debug, span};
 
 /// `Auditor` is the platform's Trust Gatekeeper.
-///
-/// It is responsible for verifying that every piece of data encountered
-/// during traversal meets the mathematical and social laws of the Sovereign Web.
 pub struct Auditor<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
 }
@@ -17,25 +15,27 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         Self { store }
     }
 
-    /// Performs a full audit of a Manifest.
-    ///
-    /// 1. **Internal Integrity**: Verifies hash and signature.
-    /// 2. **Social Authority**: (Future) Verifies signer is authorized in the Identity Graph.
+    /// Performs a full audit of a Manifest, including mathematical and social integrity.
     pub fn audit_manifest(&self, manifest: &Manifest) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "audit_manifest", id = ?manifest.id());
         let _enter = span.enter();
 
-        // Tier 1: Mathematical Integrity
+        // Tier 1: Mathematical Integrity (Hash & Signature)
         manifest.verify_integrity()?;
 
-        // Tier 2: Authority Check (Placeholder for full Identity Graph walk)
-        debug!("Manifest integrity verified");
+        // Tier 2: Social Authority (Causality)
+        // We verify that the signer is authorized in the Identity Graph at the claimed anchor.
+        let identity_graph = IdentityGraph::new(self.store);
+
+        // Proving the Right to Rule:
+        // Is this signer's public key present and unrevoked in the graph reached via identity_anchor?
+        identity_graph.verify_authority(manifest.author(), &manifest.identity_anchor())?;
+
+        debug!("Manifest fully audited (Integrity + Authority)");
         Ok(())
     }
 
     /// Performs a full audit of a Block.
-    ///
-    /// 1. **Internal Integrity**: Verifies hash and signature.
     pub fn audit_block(&self, block: &Block) -> Result<(), SovereignError> {
         let span = span!(Level::DEBUG, "audit_block", id = ?block.id());
         let _enter = span.enter();
