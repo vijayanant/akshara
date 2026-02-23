@@ -1,4 +1,4 @@
-use sovereign_core::{
+use akshara_aadhaara::{
     Address, Block, BlockId, GraphId, GraphKey, GraphStore, Heads, InMemoryStore, Manifest,
     ManifestId, Reconciler, SecretIdentity,
 };
@@ -147,7 +147,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     let index: BTreeMap<String, Address> = serde_cbor::from_slice(&plaintext).unwrap();
     let plan_addr = index.get("plan.txt").unwrap();
 
-    let plan_delta = sovereign_core::Delta::new(vec![*plan_addr]);
+    let plan_delta = akshara_aadhaara::Delta::new(vec![*plan_addr]);
     let _report = reconciler
         .converge(&plan_delta, &mut alice_restored_store)
         .await
@@ -155,7 +155,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     // --- Phase 6: Final Verification ---
     let restored_key = alice_new_phone.derive_graph_key(&graph_id).unwrap();
-    let walker = sovereign_core::GraphWalker::new(
+    let walker = akshara_aadhaara::GraphWalker::new(
         &alice_restored_store,
         alice_new_phone.public().signing_key().clone(),
     );
