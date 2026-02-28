@@ -36,3 +36,8 @@ pub fn format_akshara_path(branch: u32, index: u32) -> String {
         PURPOSE_AKSHARA, COIN_TYPE_AKSHARA, branch, index
     )
 }
+
+/// Formats the BIP-32 path for the Keyring Secret (Branch 4).
+pub fn format_keyring_path(version: u32) -> String {
+    format_akshara_path(BRANCH_KEYRING, version)
+}

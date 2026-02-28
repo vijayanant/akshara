@@ -65,7 +65,7 @@ impl SigningSecretKey {
         Self(bytes)
     }
 
-    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+    pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
@@ -93,7 +93,7 @@ impl EncryptionSecretKey {
         Self(bytes)
     }
 
-    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+    pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
@@ -119,7 +119,7 @@ impl GraphKey {
         Self(bytes)
     }
 
-    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+    pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }

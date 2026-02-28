@@ -67,12 +67,29 @@ impl MasterIdentity {
             path.to_string(),
         ))
     }
+
+    /// Derives a 32-byte shared vault secret for the Internal Keyring (Branch 4).
+    pub fn derive_keyring_secret(&self, version: u32) -> Result<[u8; 32], SovereignError> {
+        let path = crate::identity::paths::format_keyring_path(version);
+        let signing_key = derivation::derive_slip0010_key(&self.seed, &path)?;
+        Ok(signing_key.to_bytes())
+    }
 }
 
 impl SecretIdentity {
     pub fn generate(_rng: &mut (impl CryptoRng + RngCore)) -> Self {
         let mnemonic = mnemonic::generate_mnemonic().unwrap();
         Self::from_mnemonic(mnemonic.as_str(), "").unwrap()
+    }
+
+    /// Derives a shared vault secret from a mnemonic and version.
+    pub fn derive_keyring_secret(
+        phrase: &str,
+        passphrase: &str,
+        version: u32,
+    ) -> Result<[u8; 32], SovereignError> {
+        let master = MasterIdentity::from_mnemonic(phrase, passphrase)?;
+        master.derive_keyring_secret(version)
     }
 
     pub fn generate_mnemonic() -> Result<String, SovereignError> {

@@ -11,7 +11,8 @@ pub use base::address::{
     Address, BlockId, CODEC_SOVEREIGN_BLOCK, CODEC_SOVEREIGN_MANIFEST, GraphId, ManifestId,
 };
 pub use base::crypto::{
-    EncryptionPublicKey, GraphKey, Lockbox, Signature, SigningPublicKey, SovereignSigner,
+    BlockContent, EncryptionPublicKey, GraphKey, Lockbox, Signature, SigningPublicKey,
+    SovereignSigner,
 };
 pub use base::error::{IntegrityError, SovereignError};
 
@@ -19,4 +20,4 @@ pub use graph::{Block, Manifest, ManifestHeader};
 pub use identity::SecretIdentity;
 pub use protocol::{Comparison, Delta, Heads, Portion, Reconciler};
 pub use state::{GraphStore, InMemoryStore};
-pub use traversal::{Auditor, BlockWalker, GraphWalker};
+pub use traversal::{Auditor, BlockWalker, GraphWalker, IndexBuilder};

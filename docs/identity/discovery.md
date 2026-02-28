@@ -30,9 +30,9 @@ Each entry in the index points to a **Graph Descriptor Block** containing:
 ## 3. Resource Registration Workflow
 When a new graph is created or a shared invitation is accepted, the client MUST update the Identity Graph to ensure the resource remains recoverable.
 
-1.  **Entry Creation:** The client generates a Resource Descriptor Block.
-2.  **Graph Update:** The block is inserted into the Identity Graph at `/resources/<owned|shared>/<graph_id_hex>`.
-3.  **Audit:** The update is signed by an authorized Executive Key (Tier 3), following the delegation rules defined in the Authority Specification.
+1.  **Descriptor Creation:** The client generates a Graph Descriptor Block.
+2.  **Index Construction:** The client utilizes the **`IndexBuilder`** to insert the descriptor's CID into the Identity Graph at path `/resources/<owned|shared>/<graph_id_hex>`.
+3.  **Manifest Update:** The new Root Index CID is anchored in a new Identity Manifest.
 
 ## 4. State Recovery Algorithm
 State Recovery is the procedure for reconstructing the resource list on a fresh device.

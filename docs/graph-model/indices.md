@@ -38,5 +38,22 @@ To ensure system stability, the resolution algorithm MUST enforce the following 
 *   **Visited Tracking:** The walker MUST maintain a set of all `Address` objects encountered during a single resolution. If an address is repeated, a **Cycle Detected** error must be returned.
 *   **Segment Limit:** Resolution MUST be terminated if the number of path segments exceeds **256**.
 
-## 5. Metadata Separation
-The Merkle-Index only facilitates **Navigation**. It does not contain authority or ownership information. All social laws are enforced at the **Manifest** layer, which anchors the root of the index tree.
+## 5. Path Mutation Algorithm (Bottom-Up Hashing)
+To insert or update a resource at a nested path (e.g., `/a/b/c`), the system MUST perform a recursive bottom-up reconstruction of the index tree.
+
+1.  **Leaf Creation:** Create the target data block and obtain its CID ($C_{target}$).
+2.  **Leaf Index Update:** Fetch or initialize the index block for path `/a/b/`. Insert the mapping `c -> C_{target}` and obtain the new CID for this index ($C_{leaf}$).
+3.  **Recursive Propagation:** Repeat Step 2 for each parent segment (e.g., `/a/`), updating the mapping to point to the new CID of the child index until the Root Index is reached.
+4.  **Manifest Anchor:** Update the Manifest's `content_root` to the CID of the new Root Index.
+
+## 6. The IndexBuilder Primitive
+To simplify the mutation ritual, the foundation provides an **`IndexBuilder`** component.
+
+*   **Responsibility:** It abstracts the complexity of nested BTreeMap creation and recursive hashing.
+*   **API:**
+    *   `insert(path: &str, address: Address)`: Adds a resource pointer to the virtual tree.
+    *   `build(store: &impl GraphStore, signer: &impl SovereignSigner, key: &GraphKey)`: Physically constructs the Merkle-DAG by persisting the required index blocks to storage.
+
+## 7. Metadata Separation
+The Merkle-Index only facilitates **Navigation**.
+ It does not contain authority or ownership information. All social laws are enforced at the **Manifest** layer, which anchors the root of the index tree.

@@ -181,3 +181,107 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     assert_eq!(final_content, b"The Master Plan");
 }
+
+#[tokio::test]
+async fn test_collaborative_recovery_symphony() {
+    use akshara_aadhaara::{
+        Address, Block, BlockId, GraphId, GraphKey, GraphStore, GraphWalker, InMemoryStore,
+        IndexBuilder, Manifest, ManifestId, SecretIdentity, SovereignSigner,
+    };
+
+    let mut relay_store = InMemoryStore::new();
+    let alice_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+
+    // --- Phase 1: The Laptop (Genesis) ---
+    let alice_laptop = SecretIdentity::from_mnemonic(&alice_mnemonic, "salt").unwrap();
+
+    // Bob gives Alice a random project key (Collaborative Key)
+    let bob_project_id = GraphId::new();
+    let bob_project_key = GraphKey::generate(&mut rand::rngs::OsRng);
+
+    // Alice's Laptop derive the keyring secret to 'Vault' Bob's key
+    let keyring_secret = SecretIdentity::derive_keyring_secret(&alice_mnemonic, "salt", 0).unwrap();
+    let keyring_key = GraphKey::new(keyring_secret);
+
+    // 1. Create the Descriptor Block (The Leaf)
+    // The key is encrypted by the keyring_key during block creation
+    let descriptor = Block::new(
+        bob_project_key.as_bytes().to_vec(),
+        "akshara.resource.v1".into(),
+        vec![],
+        &keyring_key,
+        &alice_laptop,
+    )
+    .unwrap();
+    relay_store.put_block(&descriptor).await.unwrap();
+
+    // 2. Use IndexBuilder to construct the Identity Graph hierarchy
+    let mut builder = IndexBuilder::new();
+    builder
+        .insert(
+            &format!("shared/{}", bob_project_id),
+            Address::from(descriptor.id()),
+        )
+        .unwrap();
+
+    let root_index_id = builder
+        .build(&mut relay_store, &alice_laptop, &keyring_key)
+        .await
+        .unwrap();
+
+    // Laptop pushes Identity Manifest to Relay
+    let alice_id_graph = GraphId::new();
+    let identity_manifest = Manifest::new(
+        alice_id_graph,
+        root_index_id,
+        vec![],
+        ManifestId::from_sha256(&[0u8; 32]),
+        &alice_laptop,
+    );
+    relay_store.put_manifest(&identity_manifest).await.unwrap();
+
+    // --- Phase 2: The Rebirth (New Phone) ---
+    // Laptop is gone. Alice has only her words.
+    let alice_phone = SecretIdentity::from_mnemonic(&alice_mnemonic, "salt").unwrap();
+
+    // Phone reconstructs the Keyring Secret
+    let recovered_keyring_secret =
+        SecretIdentity::derive_keyring_secret(&alice_mnemonic, "salt", 0).unwrap();
+    let recovered_keyring_key = GraphKey::new(recovered_keyring_secret);
+
+    // Phone finds the Identity Manifest on Relay
+    let heads = relay_store.get_heads(&alice_id_graph).await.unwrap();
+    let latest_id_manifest = relay_store.get_manifest(&heads[0]).await.unwrap().unwrap();
+
+    // Phone walks the graph to find the shared project
+    let walker = GraphWalker::new(&relay_store, alice_phone.public_key());
+    let res_addr = walker
+        .resolve_path(
+            latest_id_manifest.content_root(),
+            &format!("shared/{}", bob_project_id),
+            &recovered_keyring_key,
+        )
+        .await
+        .unwrap();
+
+    let descriptor_id = BlockId::try_from(res_addr).unwrap();
+    let descriptor_block = relay_store
+        .get_block(&descriptor_id)
+        .await
+        .unwrap()
+        .expect("Descriptor block not found");
+
+    // Phone decrypts the vault to recover Bob's random key!
+    let decrypted_bytes = descriptor_block
+        .content()
+        .decrypt(&recovered_keyring_key)
+        .unwrap();
+    let recovered_project_key_bytes: [u8; 32] = decrypted_bytes.try_into().unwrap();
+    let recovered_project_key = GraphKey::new(recovered_project_key_bytes);
+
+    // --- Final Assertion ---
+    assert_eq!(
+        bob_project_key, recovered_project_key,
+        "Alice must recover Bob's random key using only her words"
+    );
+}

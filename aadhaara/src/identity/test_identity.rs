@@ -218,3 +218,31 @@ fn test_hierarchical_path_isolation() {
         "Legislator and Executive keys must be mathematically isolated"
     );
 }
+
+#[test]
+fn test_keyring_secret_synchronization() {
+    // Both devices start with the same mnemonic
+    let version = 0;
+
+    // Device A (Laptop) derives the keyring secret
+    let laptop_secret = SecretIdentity::derive_keyring_secret(MNEMONIC_1, "", version)
+        .expect("Failed to derive laptop secret");
+
+    // Device B (Phone) derives the same keyring secret
+    let phone_secret = SecretIdentity::derive_keyring_secret(MNEMONIC_1, "", version)
+        .expect("Failed to derive phone secret");
+
+    // 1. MUST be identical across devices
+    assert_eq!(
+        laptop_secret, phone_secret,
+        "Keyring secrets must be deterministic and shared"
+    );
+
+    // 2. MUST change with version (for rotation/forward secrecy)
+    let rotated_secret =
+        SecretIdentity::derive_keyring_secret(MNEMONIC_1, "", version + 1).unwrap();
+    assert_ne!(
+        laptop_secret, rotated_secret,
+        "Rotated keyring secrets must be distinct"
+    );
+}

@@ -1,7 +1,9 @@
 pub mod auditor;
+pub mod index_builder;
 pub mod walker;
 
 pub use auditor::Auditor;
+pub use index_builder::IndexBuilder;
 pub use walker::{BlockWalker, GraphWalker};
 
 #[cfg(test)]
