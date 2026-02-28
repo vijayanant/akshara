@@ -1,5 +1,5 @@
 [package]
-name = "sovereign-relay"
+name = "akshara-relay"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,7 +8,7 @@ name = "sovereign_relay"
 path = "src/lib.rs"
 
 [[bin]]
-name = "sovereign-relay"
+name = "akshara-relay"
 path = "src/bin/server.rs"
 
 [dependencies]

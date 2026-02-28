@@ -5,13 +5,15 @@ The imperishable mathematical and cryptographic foundation of the Sovereign Web.
 ## Architecture
 
 The foundation is built on three sacred pillars:
-1.  **Sovereignty:** Authority is derived from personal cryptographic seeds (BIP-39).
-2.  **Permanence:** Data is bit-identical across architectures (DAG-CBOR).
-3.  **Integrity:** All state transitions are audited for causality (IdentityGraph).
+
+1. **Sovereignty:** Authority is derived from personal cryptographic seeds (BIP-39).
+2. **Permanence:** Data is bit-identical across architectures (DAG-CBOR).
+3. **Integrity:** All state transitions are audited for causality (IdentityGraph).
 
 ## Usage Story
 
 ### 1. Initialize Identity
+
 Everything starts with your 24-word recovery phrase.
 
 ```rust
@@ -22,6 +24,7 @@ let alice = SecretIdentity::from_mnemonic(&mnemonic, "passphrase")?;
 ```
 
 ### 2. Create a Document Graph
+
 Derive an isolated key for your project and create your first block.
 
 ```rust
@@ -38,6 +41,7 @@ let block = Block::new(
 ```
 
 ### 3. Snapshot with a Manifest
+
 Bind your content to your identity history using an anchor.
 
 ```rust
@@ -51,6 +55,7 @@ let manifest = Manifest::new(
 ```
 
 ### 4. Symmetric Synchronization
+
 Meet a peer and converge your realities in a single turn.
 
 ```rust
