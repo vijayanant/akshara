@@ -23,13 +23,20 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
 
-    let auth_block = Block::new(vec![], "auth".to_string(), vec![], &identity_key, &alice).unwrap();
+    let auth_block = Block::new(
+        vec![],
+        "akshara.auth.v1".to_string(),
+        vec![],
+        &identity_key,
+        &alice,
+    )
+    .unwrap();
     alice_store.put_block(&auth_block).await.unwrap();
     devices_map.insert(signer_hex, Address::from(auth_block.id()));
 
     let devices_index = Block::new(
         serde_cbor::to_vec(&devices_map).unwrap(),
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
         &identity_key,
         &alice,
@@ -38,10 +45,10 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     alice_store.put_block(&devices_index).await.unwrap();
 
     let mut root_map = BTreeMap::new();
-    root_map.insert("devices".to_string(), Address::from(devices_index.id()));
+    root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let genesis_index = Block::new(
         serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
         &identity_key,
         &alice,
@@ -79,7 +86,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     project_root_map.insert("plan.txt".to_string(), Address::from(data_block.id()));
     let project_index_block = Block::new(
         serde_cbor::to_vec(&project_root_map).unwrap(),
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
         &graph_key,
         &alice,

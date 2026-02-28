@@ -33,7 +33,20 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         // Tier 1: Mathematical Integrity (Hash & Signature)
         manifest.verify_integrity()?;
 
-        // Tier 2: Social Authority (Causality)
+        // Tier 2: Path-Aware Purpose Enforcement
+        // Genesis manifests (administrative) MUST be signed by a Legislator (m/0')
+        if manifest.identity_anchor().as_ref() == [0u8; 32]
+            && !manifest.signer_path().contains("/0'/0'")
+        {
+            return Err(crate::base::error::SovereignError::Integrity(
+                crate::base::error::IntegrityError::UnauthorizedSigner(format!(
+                    "Administrative action requires Legislator branch, but signed by {}",
+                    manifest.signer_path()
+                )),
+            ));
+        }
+
+        // Tier 3: Social Authority (Causality)
         let identity_graph = IdentityGraph::new(self.store);
 
         // Proving the Right to Rule:

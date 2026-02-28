@@ -20,7 +20,7 @@ async fn test_identity_graph_device_resolution() {
     let device_identity = SecretIdentity::generate(&mut rng);
     let device_block = Block::new(
         serde_cbor::to_vec(&"my-iphone".to_string()).unwrap(),
-        "device".to_string(),
+        "akshara.data.v1".to_string(),
         vec![],
         &key,
         &device_identity,
@@ -33,7 +33,7 @@ async fn test_identity_graph_device_resolution() {
     devices_map.insert("laptop_1".to_string(), Address::from(device_block.id()));
     let devices_index = Block::new(
         serde_cbor::to_vec(&devices_map).unwrap(),
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -43,10 +43,10 @@ async fn test_identity_graph_device_resolution() {
 
     // 3. Create Root Index
     let mut root_map = BTreeMap::new();
-    root_map.insert("devices".to_string(), Address::from(devices_index.id()));
+    root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
         serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -63,7 +63,7 @@ async fn test_identity_graph_device_resolution() {
     // 5. Walk the Identity Graph
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved_addr = walker
-        .resolve_path(root_index.id(), "/devices/laptop_1", &key)
+        .resolve_path(root_index.id(), "/credentials/laptop_1", &key)
         .await
         .unwrap();
 
@@ -90,7 +90,7 @@ async fn test_identity_graph_missing_device_failure() {
     let devices_map: BTreeMap<String, Address> = BTreeMap::new();
     let devices_index = Block::new(
         serde_cbor::to_vec(&devices_map).unwrap(),
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -99,10 +99,10 @@ async fn test_identity_graph_missing_device_failure() {
     store.put_block(&devices_index).await.unwrap();
 
     let mut root_map = BTreeMap::new();
-    root_map.insert("devices".to_string(), Address::from(devices_index.id()));
+    root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
         serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -112,7 +112,7 @@ async fn test_identity_graph_missing_device_failure() {
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let result = walker
-        .resolve_path(root_index.id(), "/devices/stolen_laptop", &key)
+        .resolve_path(root_index.id(), "/credentials/stolen_laptop", &key)
         .await;
 
     assert!(result.is_err());
@@ -131,7 +131,7 @@ async fn test_identity_graph_unauthorized_traversal_failure() {
 
     // Should fail because the block doesn't exist in store
     let result = walker
-        .resolve_path(fake_root, "/devices/laptop", &key)
+        .resolve_path(fake_root, "/credentials/laptop", &key)
         .await;
     assert!(result.is_err());
 }
@@ -153,7 +153,7 @@ async fn test_identity_graph_revocation() {
         Address::from(
             Block::new(
                 device_a.public().signing_key().as_bytes().to_vec(),
-                "auth".into(),
+                "akshara.auth.v1".into(),
                 vec![],
                 &key,
                 &master,
@@ -175,7 +175,7 @@ async fn test_identity_graph_revocation() {
 
     let root_index = Block::new(
         serde_cbor::to_vec(&revoked_map).unwrap(),
-        "index".into(),
+        "akshara.index.v1".into(),
         vec![],
         &key,
         &master,

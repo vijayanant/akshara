@@ -15,7 +15,8 @@ mod test_merkle_index;
 
 #[cfg(test)]
 pub(crate) fn create_identity() -> crate::identity::SecretIdentity {
-    crate::identity::SecretIdentity::generate(&mut rand::rngs::OsRng)
+    let mut rng = rand::rngs::OsRng;
+    crate::identity::SecretIdentity::generate(&mut rng)
 }
 
 #[cfg(test)]
@@ -37,7 +38,7 @@ pub(crate) async fn create_valid_anchor(
     use std::collections::BTreeMap;
 
     let identity_key = crate::base::crypto::GraphKey::new([0u8; 32]);
-    let mut devices_map = BTreeMap::new();
+    let mut credentials_map = BTreeMap::new();
     let signer_hex = identity
         .public()
         .signing_key()
@@ -46,35 +47,42 @@ pub(crate) async fn create_valid_anchor(
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
 
-    let auth_block =
-        crate::graph::Block::new(vec![], "auth".to_string(), vec![], &identity_key, identity)
-            .unwrap();
-    store.put_block(&auth_block).await.unwrap();
-
-    devices_map.insert(
-        signer_hex,
-        crate::base::address::Address::from(auth_block.id()),
-    );
-
-    let mut root_map = BTreeMap::new();
-    let devices_index = crate::graph::Block::new(
-        serde_cbor::to_vec(&devices_map).unwrap(),
-        "index".to_string(),
+    // Create an authorization block for the identity itself (Genesis authorization)
+    let auth_block = crate::graph::Block::new(
+        vec![],
+        "akshara.auth.v1".to_string(),
         vec![],
         &identity_key,
         identity,
     )
     .unwrap();
-    store.put_block(&devices_index).await.unwrap();
+    store.put_block(&auth_block).await.unwrap();
+
+    // Put it in the /credentials/ path as per SPEC
+    credentials_map.insert(
+        signer_hex,
+        crate::base::address::Address::from(auth_block.id()),
+    );
+
+    let mut root_map = BTreeMap::new();
+    let credentials_index = crate::graph::Block::new(
+        serde_cbor::to_vec(&credentials_map).unwrap(),
+        "akshara.index.v1".to_string(),
+        vec![],
+        &identity_key,
+        identity,
+    )
+    .unwrap();
+    store.put_block(&credentials_index).await.unwrap();
 
     root_map.insert(
-        "devices".to_string(),
-        crate::base::address::Address::from(devices_index.id()),
+        "credentials".to_string(),
+        crate::base::address::Address::from(credentials_index.id()),
     );
 
     let genesis_index = crate::graph::Block::new(
         serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
         &identity_key,
         identity,

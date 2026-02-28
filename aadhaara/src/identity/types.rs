@@ -1,0 +1,176 @@
+use crate::base::address::GraphId;
+use crate::base::crypto::{
+    EncryptionPublicKey, EncryptionSecretKey, GraphKey, Signature, SigningPublicKey,
+    SigningSecretKey, SovereignSigner,
+};
+use crate::base::error::SovereignError;
+use crate::identity::{derivation, mnemonic};
+use ed25519_dalek::{Signer, SigningKey};
+use hmac::{Hmac, Mac};
+use rand::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
+use sha2::Sha512;
+use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
+use zeroize::Zeroizing;
+
+/// `Identity` represents the public profile of an Akshara user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Identity {
+    pub(crate) signing_key: SigningPublicKey,
+    pub(crate) encryption_key: EncryptionPublicKey,
+}
+
+impl Identity {
+    pub fn new(signing_key: SigningPublicKey, encryption_key: EncryptionPublicKey) -> Self {
+        Self {
+            signing_key,
+            encryption_key,
+        }
+    }
+
+    pub fn signing_key(&self) -> &SigningPublicKey {
+        &self.signing_key
+    }
+
+    pub fn encryption_key(&self) -> &EncryptionPublicKey {
+        &self.encryption_key
+    }
+
+    pub fn verify(&self, message: &[u8], signature: &Signature) -> bool {
+        self.signing_key.verify(message, signature).is_ok()
+    }
+}
+
+/// `SecretIdentity` is a functional credential derived for a specific path.
+pub struct SecretIdentity {
+    pub(crate) signing_key: SigningSecretKey,
+    pub(crate) encryption_key: EncryptionSecretKey,
+    pub(crate) public: Identity,
+    pub(crate) derivation_path: String,
+}
+
+/// `MasterIdentity` is a transient container for the root entropy.
+pub struct MasterIdentity {
+    pub(crate) seed: Zeroizing<[u8; 64]>,
+}
+
+impl MasterIdentity {
+    pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, SovereignError> {
+        let seed = mnemonic::mnemonic_to_seed(phrase, passphrase)?;
+        Ok(Self { seed })
+    }
+
+    pub fn derive_child(&self, path: &str) -> Result<SecretIdentity, SovereignError> {
+        let signing_key = derivation::derive_slip0010_key(&self.seed, path)?;
+        Ok(SecretIdentity::from_signing_key_at_path(
+            signing_key,
+            path.to_string(),
+        ))
+    }
+}
+
+impl SecretIdentity {
+    pub fn generate(_rng: &mut (impl CryptoRng + RngCore)) -> Self {
+        let mnemonic = mnemonic::generate_mnemonic().unwrap();
+        Self::from_mnemonic(mnemonic.as_str(), "").unwrap()
+    }
+
+    pub fn generate_mnemonic() -> Result<String, SovereignError> {
+        mnemonic::generate_mnemonic()
+    }
+
+    pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, SovereignError> {
+        Self::from_mnemonic_at_path(phrase, passphrase, "m/44'/999'/0'/0'/0'")
+    }
+
+    pub fn from_mnemonic_at_path(
+        phrase: &str,
+        passphrase: &str,
+        path: &str,
+    ) -> Result<Self, SovereignError> {
+        let master = MasterIdentity::from_mnemonic(phrase, passphrase)?;
+        master.derive_child(path)
+    }
+
+    pub(crate) fn from_signing_key_at_path(signing_key: SigningKey, path: String) -> Self {
+        let signing_public = signing_key.verifying_key();
+        let encryption_secret = StaticSecret::from(signing_key.to_bytes());
+        let encryption_public = XPublicKey::from(&encryption_secret);
+
+        let public_id = Identity::new(
+            SigningPublicKey::new(signing_public.to_bytes()),
+            EncryptionPublicKey::new(*encryption_public.as_bytes()),
+        );
+
+        Self {
+            signing_key: SigningSecretKey::new(signing_key.to_bytes()),
+            encryption_key: EncryptionSecretKey::new(encryption_secret.to_bytes()),
+            public: public_id,
+            derivation_path: path,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_signing_key(signing_key: SigningKey) -> Self {
+        Self::from_signing_key_at_path(signing_key, "unknown".to_string())
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn derive_discovery_id(&self) -> Result<GraphId, SovereignError> {
+        let mut hmac =
+            Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes()).map_err(|e| {
+                SovereignError::InternalError(format!("HMAC initialization failed: {}", e))
+            })?;
+        hmac.update(b"akshara.v1.discovery");
+
+        let output = hmac.finalize().into_bytes();
+        let mut uuid_bytes = [0u8; 16];
+        uuid_bytes.copy_from_slice(&output[..16]);
+
+        Ok(GraphId::from_bytes(uuid_bytes))
+    }
+
+    pub fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey, SovereignError> {
+        let mut hmac =
+            Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes()).map_err(|e| {
+                SovereignError::InternalError(format!("HMAC initialization failed: {}", e))
+            })?;
+
+        hmac.update(b"akshara.v1.graph_key");
+        hmac.update(graph_id.as_bytes());
+
+        let output = hmac.finalize().into_bytes();
+        let mut key_bytes = [0u8; 32];
+        key_bytes.copy_from_slice(&output[0..32]);
+
+        Ok(GraphKey::from(key_bytes))
+    }
+
+    pub fn signing_key(&self) -> &SigningSecretKey {
+        &self.signing_key
+    }
+
+    pub fn public(&self) -> &Identity {
+        &self.public
+    }
+
+    pub fn encryption_key(&self) -> &EncryptionSecretKey {
+        &self.encryption_key
+    }
+}
+
+impl SovereignSigner for SecretIdentity {
+    fn sign(&self, message: &[u8]) -> Signature {
+        let key = SigningKey::from_bytes(self.signing_key.as_bytes());
+        let sig = key.sign(message);
+        Signature::new(sig.to_vec())
+    }
+
+    fn public_key(&self) -> SigningPublicKey {
+        self.public.signing_key().clone()
+    }
+
+    fn derivation_path(&self) -> &str {
+        &self.derivation_path
+    }
+}

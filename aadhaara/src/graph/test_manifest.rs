@@ -118,6 +118,7 @@ fn manifest_restores_from_raw_parts() {
         content_root: original.content_root(),
         parents: original.parents().to_vec(),
         identity_anchor: original.identity_anchor(),
+        signer_path: original.signer_path().to_string(),
         created_at: original.created_at(),
     };
 

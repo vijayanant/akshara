@@ -111,6 +111,7 @@ async fn walker_handles_manifest_cycles_gracefully() {
         content_root: root,
         parents: vec![cycle_id], // Point to self!
         identity_anchor: anchor,
+        signer_path: identity.derivation_path().to_string(),
         created_at: 12345,
     };
 

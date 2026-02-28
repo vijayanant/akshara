@@ -14,6 +14,7 @@ pub struct ManifestHeader {
     pub(crate) content_root: BlockId,
     pub(crate) parents: Vec<ManifestId>,
     pub(crate) identity_anchor: ManifestId,
+    pub(crate) signer_path: String,
     pub(crate) created_at: i64,
 }
 
@@ -47,6 +48,7 @@ impl Manifest {
             content_root,
             parents,
             identity_anchor,
+            signer_path: signer.derivation_path().to_string(),
             created_at,
         };
 
@@ -96,6 +98,10 @@ impl Manifest {
         self.header.created_at
     }
 
+    pub fn signer_path(&self) -> &str {
+        &self.header.signer_path
+    }
+
     /// Public-Crate API: Used by sibling crates for wire mapping.
     #[allow(dead_code)]
     pub(crate) fn from_raw_parts(
@@ -140,6 +146,7 @@ impl Manifest {
         }
         hasher.update(header.identity_anchor.as_ref());
         hasher.update(author.as_bytes());
+        hasher.update(header.signer_path.as_bytes());
         hasher.update(header.created_at.to_le_bytes());
 
         ManifestId::from_sha256(&hasher.finalize())

@@ -146,6 +146,7 @@ impl Signature {
 pub trait SovereignSigner {
     fn sign(&self, message: &[u8]) -> Signature;
     fn public_key(&self) -> SigningPublicKey;
+    fn derivation_path(&self) -> &str;
 }
 
 /// `BlockContent` holds the encrypted ciphertext and the nonce of a data block.

@@ -198,3 +198,23 @@ fn identity_derivation_avalanche_effect() {
 
     assert_ne!(id1.public(), id2.public());
 }
+
+#[test]
+fn test_hierarchical_path_isolation() {
+    // Both identities use the same mnemonic but different functional paths
+    let legislator_path = "m/44'/999'/0'/0'";
+    let executive_path = "m/44'/999'/0'/1'/0'";
+
+    let id_legislator = SecretIdentity::from_mnemonic_at_path(MNEMONIC_1, "", legislator_path)
+        .expect("Failed to derive legislator");
+
+    let id_executive = SecretIdentity::from_mnemonic_at_path(MNEMONIC_1, "", executive_path)
+        .expect("Failed to derive executive");
+
+    // CRITICAL INVARIANT: Different paths must yield different keys
+    assert_ne!(
+        id_legislator.public().signing_key(),
+        id_executive.public().signing_key(),
+        "Legislator and Executive keys must be mathematically isolated"
+    );
+}
