@@ -38,13 +38,11 @@ pub(crate) async fn create_valid_anchor(
 ) -> crate::base::address::ManifestId {
     use crate::graph::BlockType;
     use crate::state::store::GraphStore;
-    use std::collections::BTreeMap;
 
     let identity_key = crate::base::crypto::GraphKey::new([0u8; 32]);
-    let mut credentials_map = BTreeMap::new();
     let signer_hex = identity.public().signing_key().to_hex();
 
-    // Create an authorization block for the identity itself (Genesis authorization)
+    // 1. Create the authorization block (The Leaf)
     let auth_block = crate::graph::Block::new(
         vec![],
         BlockType::AksharaAuthV1,
@@ -55,52 +53,28 @@ pub(crate) async fn create_valid_anchor(
     .unwrap();
     store.put_block(&auth_block).await.unwrap();
 
-    // Put it in the /credentials/ path as per SPEC
-    credentials_map.insert(
-        signer_hex,
-        crate::base::address::Address::from(auth_block.id()),
-    );
+    // 2. Use IndexBuilder to construct the hierarchical path: credentials/<pubkey>
+    let mut builder = IndexBuilder::new();
+    builder
+        .insert(
+            &format!("credentials/{}", signer_hex),
+            crate::base::address::Address::from(auth_block.id()),
+        )
+        .unwrap();
 
-    let mut root_map = BTreeMap::new();
-    let credentials_bytes = crate::base::encoding::to_canonical_bytes(&credentials_map).unwrap();
+    let root_index_id = builder.build(store, identity, &identity_key).await.unwrap();
 
-    let credentials_index = crate::graph::Block::new(
-        credentials_bytes,
-        BlockType::AksharaIndexV1,
-        vec![],
-        &identity_key,
-        identity,
-    )
-    .unwrap();
-    store.put_block(&credentials_index).await.unwrap();
-
-    root_map.insert(
-        "credentials".to_string(),
-        crate::base::address::Address::from(credentials_index.id()),
-    );
-
-    let root_bytes = crate::base::encoding::to_canonical_bytes(&root_map).unwrap();
-
-    let genesis_index = crate::graph::Block::new(
-        root_bytes,
-        BlockType::AksharaIndexV1,
-        vec![],
-        &identity_key,
-        identity,
-    )
-    .unwrap();
-    store.put_block(&genesis_index).await.unwrap();
-
-    let null_id = crate::base::address::ManifestId::from_sha256(&[0x00; 32]);
+    // 3. Create the Genesis Manifest
     let genesis_manifest = crate::graph::Manifest::new(
         crate::base::address::GraphId::new(),
-        genesis_index.id(),
+        root_index_id,
         vec![],
-        null_id,
+        crate::base::address::ManifestId::null(),
         identity,
     );
 
     store.put_manifest(&genesis_manifest).await.unwrap();
+
     genesis_manifest.id()
 }
 

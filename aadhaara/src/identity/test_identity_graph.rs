@@ -6,7 +6,6 @@ use crate::state::in_memory_store::InMemoryStore;
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
 use rand::rngs::OsRng;
-use std::collections::BTreeMap;
 
 #[tokio::test]
 async fn test_identity_graph_device_resolution() {
@@ -28,42 +27,22 @@ async fn test_identity_graph_device_resolution() {
     .unwrap();
     store.put_block(&device_block).await.unwrap();
 
-    // 2. Create Devices Index
-    let mut devices_map = BTreeMap::new();
-    devices_map.insert("laptop_1".to_string(), Address::from(device_block.id()));
-    let devices_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
-        BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&devices_index).await.unwrap();
-
-    // 3. Create Root Index
-    let mut root_map = BTreeMap::new();
-    root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    // 2. Use IndexBuilder to construct the Identity Graph hierarchy
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("credentials/laptop_1", Address::from(device_block.id()))
+        .unwrap();
+    let root_index_id = builder.build(&mut store, &identity, &key).await.unwrap();
 
     // 4. Create Identity Manifest
-    let anchor = ManifestId::from_sha256(&[0u8; 32]);
-    let manifest =
-        crate::graph::Manifest::new(graph_id, root_index.id(), vec![], anchor, &identity);
+    let anchor = ManifestId::null();
+    let manifest = crate::graph::Manifest::new(graph_id, root_index_id, vec![], anchor, &identity);
     store.put_manifest(&manifest).await.unwrap();
 
     // 5. Walk the Identity Graph
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved_addr = walker
-        .resolve_path(root_index.id(), "/credentials/laptop_1", &key)
+        .resolve_path(root_index_id, "/credentials/laptop_1", &key)
         .await
         .unwrap();
 
@@ -88,33 +67,19 @@ async fn test_identity_graph_missing_device_failure() {
     let _graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
-    // Create Root Index with empty devices
-    let devices_map: BTreeMap<String, Address> = BTreeMap::new();
-    let devices_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
-        BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&devices_index).await.unwrap();
-
-    let mut root_map = BTreeMap::new();
-    root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    // Use IndexBuilder to construct an index with a different path
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert(
+            "credentials/other_device",
+            Address::from(BlockId::from_sha256(&[1u8; 32])),
+        )
+        .unwrap();
+    let root_index_id = builder.build(&mut store, &identity, &key).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let result = walker
-        .resolve_path(root_index.id(), "/credentials/stolen_laptop", &key)
+        .resolve_path(root_index_id, "/credentials/stolen_laptop", &key)
         .await;
 
     assert!(result.is_err());
@@ -145,44 +110,51 @@ async fn test_identity_graph_revocation() {
     let master = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
-    let anchor = ManifestId::from_sha256(&[0u8; 32]);
+    let anchor = ManifestId::null();
 
     // 1. Initial State: Device A is authorized
     let device_a = SecretIdentity::generate(&mut rng);
-    let mut devices_map = BTreeMap::new();
-    devices_map.insert(
-        "phone".to_string(),
-        Address::from(
-            Block::new(
-                device_a.public().signing_key().as_bytes().to_vec(),
-                "akshara.auth.v1".into(),
-                vec![],
-                &key,
-                &master,
-            )
-            .unwrap()
-            .id(),
-        ),
-    );
-
-    let revoked_map: BTreeMap<String, Address> = BTreeMap::new();
-
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&revoked_map).unwrap(),
-        "akshara.index.v1".into(),
+    let device_a_block = Block::new(
+        device_a.public().signing_key().as_bytes().to_vec(),
+        "akshara.auth.v1".into(),
         vec![],
         &key,
         &master,
     )
     .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    store.put_block(&device_a_block).await.unwrap();
 
-    let manifest = Manifest::new(graph_id, root_index.id(), vec![], anchor, &master);
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("phone", Address::from(device_a_block.id()))
+        .unwrap();
+
+    let root_index_id = builder.build(&mut store, &master, &key).await.unwrap();
+
+    let manifest = Manifest::new(graph_id, root_index_id, vec![], anchor, &master);
     store.put_manifest(&manifest).await.unwrap();
 
-    let walker = GraphWalker::new(&store, master.public().signing_key().clone());
-    let result = walker.resolve_path(root_index.id(), "/phone", &key).await;
+    {
+        let walker = GraphWalker::new(&store, master.public().signing_key().clone());
+        let result = walker.resolve_path(root_index_id, "/phone", &key).await;
 
-    // Must fail because the device is no longer in the graph
-    assert!(result.is_err());
+        // Initially must succeed
+        assert!(
+            result.is_ok(),
+            "Initial resolution failed: {:?}",
+            result.err()
+        );
+    }
+
+    // 2. Revocation: phone is removed from the index
+    let builder_v2 = crate::traversal::IndexBuilder::new();
+    let root_index_v2 = builder_v2.build(&mut store, &master, &key).await.unwrap();
+
+    {
+        let walker = GraphWalker::new(&store, master.public().signing_key().clone());
+        let result_v2 = walker.resolve_path(root_index_v2, "/phone", &key).await;
+
+        // Must fail because the device is no longer in the graph
+        assert!(result_v2.is_err());
+    }
 }

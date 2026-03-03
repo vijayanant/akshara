@@ -27,25 +27,16 @@ async fn test_merkle_index_path_resolution() {
     .unwrap();
     store.put_block(&data_block).await.unwrap();
 
-    // 2. Create an index block pointing to it
-    let mut index_map = BTreeMap::new();
-    index_map.insert("title".to_string(), Address::from(data_block.id()));
-    let index_block = Block::new(
-        crate::base::encoding::to_canonical_bytes(&index_map).unwrap(),
-        crate::graph::BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&index_block).await.unwrap();
+    // 2. Use IndexBuilder to construct an index block pointing to it
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("/title", Address::from(data_block.id()))
+        .unwrap();
+    let index_id = builder.build(&mut store, &identity, &key).await.unwrap();
 
     // 3. Resolve path
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
-    let resolved_addr = walker
-        .resolve_path(index_block.id(), "/title", &key)
-        .await
-        .unwrap();
+    let resolved_addr = walker.resolve_path(index_id, "/title", &key).await.unwrap();
 
     assert_eq!(resolved_addr, Address::from(data_block.id()));
 }
@@ -69,35 +60,16 @@ async fn test_merkle_index_nested_resolution() {
     .unwrap();
     store.put_block(&data_block).await.unwrap();
 
-    // Nested Index
-    let mut nested_map = BTreeMap::new();
-    nested_map.insert("file".to_string(), Address::from(data_block.id()));
-    let nested_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&nested_map).unwrap(),
-        crate::graph::BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&nested_index).await.unwrap();
-
-    // Root Index
-    let mut root_map = BTreeMap::new();
-    root_map.insert("nested".to_string(), Address::from(nested_index.id()));
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        crate::graph::BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    // Nested Hierarchy
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("nested/file", Address::from(data_block.id()))
+        .unwrap();
+    let root_index_id = builder.build(&mut store, &identity, &key).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     let resolved = walker
-        .resolve_path(root_index.id(), "nested/file", &key)
+        .resolve_path(root_index_id, "nested/file", &key)
         .await
         .unwrap();
 
@@ -122,24 +94,18 @@ async fn test_merkle_index_path_normalization() {
     .unwrap();
     store.put_block(&data_block).await.unwrap();
 
-    let mut root_map = BTreeMap::new();
-    root_map.insert("file".to_string(), Address::from(data_block.id()));
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        crate::graph::BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("file", Address::from(data_block.id()))
+        .unwrap();
+    let root_index_id = builder.build(&mut store, &identity, &key).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     // All these should resolve correctly
     for path in ["file", "/file", "file/", "//file///"] {
         let resolved = walker
-            .resolve_path(root_index.id(), path, &key)
+            .resolve_path(root_index_id, path, &key)
             .await
             .unwrap();
         assert_eq!(resolved, Address::from(data_block.id()));
@@ -154,32 +120,23 @@ async fn test_merkle_index_missing_path_failures() {
     let _graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
-    let mut root_map = BTreeMap::new();
-    root_map.insert(
-        "exists".to_string(),
-        Address::from(BlockId::from_sha256(&[1u8; 32])),
-    );
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        crate::graph::BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("exists", Address::from(BlockId::from_sha256(&[1u8; 32])))
+        .unwrap();
+    let root_index_id = builder.build(&mut store, &identity, &key).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
 
     assert!(
         walker
-            .resolve_path(root_index.id(), "does_not_exist", &key)
+            .resolve_path(root_index_id, "does_not_exist", &key)
             .await
             .is_err()
     );
     assert!(
         walker
-            .resolve_path(root_index.id(), "exists/but_im_not_a_folder", &key)
+            .resolve_path(root_index_id, "exists/but_im_not_a_folder", &key)
             .await
             .is_err()
     );
@@ -232,23 +189,17 @@ async fn test_merkle_index_malformed_cbor_failure() {
     .unwrap();
     store.put_block(&data_block).await.unwrap();
 
-    let mut root_map = BTreeMap::new();
-    root_map.insert("not_a_folder".to_string(), Address::from(data_block.id()));
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        crate::graph::BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("not_a_folder", Address::from(data_block.id()))
+        .unwrap();
+    let root_index_id = builder.build(&mut store, &identity, &key).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     // Resolve first segment should work, but then it should fail to parse data_block as index
     assert!(
         walker
-            .resolve_path(root_index.id(), "not_a_folder/something", &key)
+            .resolve_path(root_index_id, "not_a_folder/something", &key)
             .await
             .is_err()
     );
@@ -263,26 +214,20 @@ async fn test_merkle_index_type_mismatch_failure() {
     let key = GraphKey::generate(&mut rng);
 
     // We promise a block but give it a manifest-formatted address (manual creation for test)
-    let mut root_map = BTreeMap::new();
-    root_map.insert(
-        "fake".to_string(),
-        Address::from(crate::ManifestId::from_sha256(&[1u8; 32])),
-    );
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        crate::graph::BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &identity,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert(
+            "fake",
+            Address::from(crate::ManifestId::from_sha256(&[1u8; 32])),
+        )
+        .unwrap();
+    let root_index_id = builder.build(&mut store, &identity, &key).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
     // Should fail when trying to fetch "fake" as a BlockId
     assert!(
         walker
-            .resolve_path(root_index.id(), "fake/any", &key)
+            .resolve_path(root_index_id, "fake/any", &key)
             .await
             .is_err()
     );
@@ -299,10 +244,13 @@ async fn test_merkle_index_circular_reference_protection() {
     // To test cycle detection, we need an index that points to itself.
     let loop_id = BlockId::from_sha256(&[0x69; 32]);
 
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder.insert("loop", Address::from(loop_id)).unwrap();
+
     let mut root_map = BTreeMap::new();
     root_map.insert("loop".to_string(), Address::from(loop_id));
 
-    let content_bytes = serde_ipld_dagcbor::to_vec(&root_map).unwrap();
+    let content_bytes = crate::base::encoding::to_canonical_bytes(&root_map).unwrap();
     let nonce = [0u8; 12];
     let content = crate::base::crypto::BlockContent::encrypt(&content_bytes, &key, nonce).unwrap();
 
