@@ -29,6 +29,10 @@ pub const BRANCH_HANDSHAKE: u32 = 3;
 /// Used for shared access across authorized devices.
 pub const BRANCH_KEYRING: u32 = 4;
 
+/// Branch 5: Discovery (Anonymous Metadata)
+/// Used for deriving isolated identifiers for Relay-side discovery.
+pub const BRANCH_DISCOVERY: u32 = 5;
+
 /// Formats a full BIP-32 path for a specific branch and index.
 pub fn format_akshara_path(branch: u32, index: u32) -> String {
     format!(

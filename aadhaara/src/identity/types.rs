@@ -74,6 +74,35 @@ impl MasterIdentity {
         let signing_key = derivation::derive_slip0010_key(&self.seed, &path)?;
         Ok(signing_key.to_bytes())
     }
+
+    /// Derives an isolated, anonymous Discovery ID for a specific graph.
+    ///
+    /// Matches Spec v0.1.0-alpha (Hardened):
+    /// 1. Derive DiscoveryMasterKey from Branch 5 (m/44'/999'/0'/5'/0').
+    /// 2. DiscoveryId = HMAC-SHA256(DiscoveryMasterKey, "akshara.v1.discovery" + GraphId).
+    pub fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<GraphId, SovereignError> {
+        // 1. Derive the stable Branch 5 Discovery Key
+        let path = crate::identity::paths::format_akshara_path(
+            crate::identity::paths::BRANCH_DISCOVERY,
+            0,
+        );
+        let discovery_master_key = derivation::derive_slip0010_key(&self.seed, &path)?;
+
+        // 2. Derive the isolated Discovery ID via HMAC-SHA256
+        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(&discovery_master_key.to_bytes())
+            .map_err(|e| {
+                SovereignError::InternalError(format!("HMAC initialization failed: {}", e))
+            })?;
+
+        hmac.update(b"akshara.v1.discovery");
+        hmac.update(graph_id.as_bytes());
+
+        let result = hmac.finalize().into_bytes();
+        let mut uuid_bytes = [0u8; 16];
+        uuid_bytes.copy_from_slice(&result[..16]);
+
+        Ok(GraphId::from_bytes(uuid_bytes))
+    }
 }
 
 impl SecretIdentity {
@@ -130,21 +159,6 @@ impl SecretIdentity {
     #[allow(dead_code)]
     pub(crate) fn from_signing_key(signing_key: SigningKey) -> Self {
         Self::from_signing_key_at_path(signing_key, "unknown".to_string())
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn derive_discovery_id(&self) -> Result<GraphId, SovereignError> {
-        let mut hmac =
-            Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes()).map_err(|e| {
-                SovereignError::InternalError(format!("HMAC initialization failed: {}", e))
-            })?;
-        hmac.update(b"akshara.v1.discovery");
-
-        let output = hmac.finalize().into_bytes();
-        let mut uuid_bytes = [0u8; 16];
-        uuid_bytes.copy_from_slice(&output[..16]);
-
-        Ok(GraphId::from_bytes(uuid_bytes))
     }
 
     pub fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey, SovereignError> {
