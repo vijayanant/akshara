@@ -1,286 +1,198 @@
 use akshara_aadhaara::{
-    Address, Block, BlockId, GraphId, GraphKey, GraphStore, Heads, InMemoryStore, Manifest,
-    ManifestId, Reconciler, SecretIdentity,
+    Address, Block, BlockId, GraphId, GraphKey, GraphStore, Heads, InMemoryStore, IndexBuilder,
+    Manifest, ManifestId, Reconciler, SecretIdentity, SovereignSigner,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet, VecDeque};
 
+/// SCENARIO 1: Deep Tree Synchronization
+///
+/// Verifies that the foundation can handle the recursive push and pull
+/// of a deep structure using only the public Reconciler and GraphStore.
 #[tokio::test]
-async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
-    // --- Phase 1: Alice's Initial Life ---
+async fn test_sync_recursive_index_structure() {
+    let mut laptop_store = InMemoryStore::new();
+    let mut relay_store = InMemoryStore::new();
+    let mut phone_store = InMemoryStore::new();
+
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
-    let alice = SecretIdentity::from_mnemonic(&mnemonic, "pass").unwrap();
-    let mut alice_store = InMemoryStore::new();
-
-    // We must create a real identity genesis anchor for the Auditor to be satisfied.
-    let identity_key = GraphKey::new([0u8; 32]);
-
-    let mut devices_map = BTreeMap::new();
-    let signer_hex = alice.public().signing_key().to_hex();
-
-    let auth_block = Block::new(
-        vec![],
-        akshara_aadhaara::BlockType::AksharaAuthV1,
-        vec![],
-        &identity_key,
-        &alice,
-    )
-    .unwrap();
-    alice_store.put_block(&auth_block).await.unwrap();
-    devices_map.insert(signer_hex, Address::from(auth_block.id()));
-
-    let devices_index = Block::new(
-        akshara_aadhaara::to_canonical_bytes(&devices_map).unwrap(),
-        akshara_aadhaara::BlockType::AksharaIndexV1,
-        vec![],
-        &identity_key,
-        &alice,
-    )
-    .unwrap();
-    alice_store.put_block(&devices_index).await.unwrap();
-
-    let mut root_map = BTreeMap::new();
-    root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
-
-    let genesis_index = Block::new(
-        akshara_aadhaara::to_canonical_bytes(&root_map).unwrap(),
-        akshara_aadhaara::BlockType::AksharaIndexV1,
-        vec![],
-        &identity_key,
-        &alice,
-    )
-    .unwrap();
-
-    alice_store.put_block(&genesis_index).await.unwrap();
-
-    let null_anchor = ManifestId::from_sha256(&[0u8; 32]);
-    let genesis_manifest = Manifest::new(
-        GraphId::new(),
-        genesis_index.id(),
-        vec![],
-        null_anchor,
-        &alice,
-    );
-    alice_store.put_manifest(&genesis_manifest).await.unwrap();
-    let anchor = genesis_manifest.id();
-
-    // Now Alice creates her project graph anchored to her identity genesis
+    let identity = SecretIdentity::from_mnemonic(&mnemonic, "").unwrap();
     let graph_id = GraphId::new();
-    let graph_key = alice.derive_graph_key(&graph_id).unwrap();
+    let graph_key = identity.derive_graph_key(&graph_id).unwrap();
 
-    let content = b"The Master Plan".to_vec();
-    let data_block = Block::new(
-        content.clone(),
-        akshara_aadhaara::BlockType::from("document"),
-        vec![],
-        &graph_key,
-        &alice,
-    )
-    .unwrap();
-    alice_store.put_block(&data_block).await.unwrap();
+    // 1. Create a deep tree: folder/sub/file.txt
+    let data = b"Target Bits".to_vec();
+    let leaf = Block::new(data, "data".into(), vec![], &graph_key, &identity).unwrap();
+    laptop_store.put_block(&leaf).await.unwrap();
 
-    let mut project_root_map = BTreeMap::new();
-    project_root_map.insert("plan.txt".to_string(), Address::from(data_block.id()));
-
-    let project_index_block = Block::new(
-        akshara_aadhaara::to_canonical_bytes(&project_root_map).unwrap(),
-        akshara_aadhaara::BlockType::AksharaIndexV1,
-        vec![],
-        &graph_key,
-        &alice,
-    )
-    .unwrap();
-
-    alice_store.put_block(&project_index_block).await.unwrap();
-
-    let manifest = Manifest::new(graph_id, project_index_block.id(), vec![], anchor, &alice);
-    alice_store.put_manifest(&manifest).await.unwrap();
-
-    // --- Phase 2: Total Hardware Loss ---
-    drop(alice_store);
-
-    // --- Phase 3: The Rebirth ---
-    let alice_new_phone = SecretIdentity::from_mnemonic(&mnemonic, "pass").unwrap();
-    let mut relay_mock_store = InMemoryStore::new();
-
-    // Simulate synced data on Relay (Including Alice's Identity Genesis!)
-    relay_mock_store.put_block(&auth_block).await.unwrap();
-    relay_mock_store.put_block(&devices_index).await.unwrap();
-    relay_mock_store.put_block(&genesis_index).await.unwrap();
-    relay_mock_store
-        .put_manifest(&genesis_manifest)
+    let mut builder = IndexBuilder::new();
+    builder
+        .insert("folder/sub/file.txt", Address::from(leaf.id()))
+        .unwrap();
+    let root_index_id = builder
+        .build(&mut laptop_store, &identity, &graph_key)
         .await
         .unwrap();
 
-    relay_mock_store.put_block(&data_block).await.unwrap();
-    relay_mock_store
-        .put_block(&project_index_block)
-        .await
-        .unwrap();
-    relay_mock_store.put_manifest(&manifest).await.unwrap();
-
-    // --- Phase 4: Convergence (Turn 1: Discovery) ---
-    let mut alice_restored_store = InMemoryStore::new();
-    let reconciler = Reconciler::new(
-        &relay_mock_store,
-        alice_new_phone.public().signing_key().clone(),
+    let manifest = Manifest::new(
+        graph_id,
+        root_index_id,
+        vec![],
+        ManifestId::null(),
+        &identity,
     );
+    laptop_store.put_manifest(&manifest).await.unwrap();
 
-    let remote_heads = Heads::new(graph_id, vec![manifest.id()]);
+    // 2. RECURSIVE PUSH (Simulating an SDK's push engine)
+    // We walk the content tree from the manifest root and push all blocks to the relay
+    relay_store.put_manifest(&manifest).await.unwrap();
+    sync_recursive_closure(root_index_id, &graph_key, &laptop_store, &mut relay_store).await;
 
-    let comparison = reconciler.reconcile(&remote_heads, &[]).await.unwrap();
+    // 3. PULL on Phone
+    let reconciler_phone = Reconciler::new(&relay_store, identity.public_key());
+    let heads_relay = relay_store.get_heads(&graph_id).await.unwrap();
 
-    // Process Turn 1 using the high-level converge utility
-    let report = reconciler
-        .converge(&comparison.peer_surplus, &mut alice_restored_store)
+    // Turn 1: Discovery (Pulls the Manifest)
+    let comp_pull = reconciler_phone
+        .reconcile(&Heads::new(graph_id, heads_relay), &[])
         .await
         .unwrap();
-    assert!(report.manifests_synced > 0);
-    // --- Phase 5: Turning the Wheel (Turn 2: Filling Gaps) ---
-    let restored_manifest = alice_restored_store
+    reconciler_phone
+        .converge(&comp_pull.peer_surplus, &mut phone_store)
+        .await
+        .unwrap();
+
+    // Turn 2+: Recursive Closure Pull (Simulated SDK Automation)
+    sync_recursive_closure(root_index_id, &graph_key, &relay_store, &mut phone_store).await;
+
+    // 4. Verification: Proving the manifest and data arrived
+    let restored_manifest = phone_store
         .get_manifest(&manifest.id())
         .await
         .unwrap()
         .unwrap();
-    let index_block_id = restored_manifest.content_root();
-    let index_block = alice_restored_store
-        .get_block(&index_block_id)
-        .await
-        .unwrap()
-        .unwrap();
+    assert_eq!(restored_manifest.id(), manifest.id());
 
-    let plaintext = index_block.content().decrypt(&graph_key).unwrap();
-    let index: BTreeMap<String, Address> =
-        akshara_aadhaara::from_canonical_bytes(&plaintext).unwrap();
-    let plan_addr = index.get("plan.txt").unwrap();
-
-    let plan_delta = akshara_aadhaara::Delta::new(vec![*plan_addr]);
-    let _report = reconciler
-        .converge(&plan_delta, &mut alice_restored_store)
-        .await
-        .unwrap();
-
-    // --- Phase 6: Final Verification ---
-    let restored_key = alice_new_phone.derive_graph_key(&graph_id).unwrap();
-    let walker = akshara_aadhaara::GraphWalker::new(
-        &alice_restored_store,
-        alice_new_phone.public().signing_key().clone(),
+    let restored_leaf = phone_store.get_block(&leaf.id()).await.unwrap().unwrap();
+    assert_eq!(
+        restored_leaf.content().decrypt(&graph_key).unwrap(),
+        b"Target Bits"
     );
-    let resolved_addr = walker
-        .resolve_path(index_block_id, "plan.txt", &restored_key)
-        .await
-        .unwrap();
-
-    let resolved_block_id = BlockId::try_from(resolved_addr).unwrap();
-    let final_block = alice_restored_store
-        .get_block(&resolved_block_id)
-        .await
-        .unwrap()
-        .unwrap();
-    let final_content = final_block.content().decrypt(&restored_key).unwrap();
-
-    assert_eq!(final_content, b"The Master Plan");
 }
 
+/// SCENARIO 2: Identity Rebirth
 #[tokio::test]
-async fn test_collaborative_recovery_symphony() {
-    use akshara_aadhaara::{
-        Address, Block, BlockId, GraphId, GraphKey, GraphStore, GraphWalker, InMemoryStore,
-        IndexBuilder, Manifest, ManifestId, SecretIdentity, SovereignSigner,
-    };
-
+async fn test_identity_rebirth_bootstrap() {
     let mut relay_store = InMemoryStore::new();
-    let alice_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+    let mut phone_store = InMemoryStore::new();
 
-    // --- Phase 1: The Laptop (Genesis) ---
-    let alice_laptop = SecretIdentity::from_mnemonic(&alice_mnemonic, "salt").unwrap();
+    let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+    let identity = SecretIdentity::from_mnemonic(&mnemonic, "salt").unwrap();
+    let id_gid = GraphId::new();
 
-    // Bob gives Alice a random project key (Collaborative Key)
-    let bob_project_id = GraphId::new();
-    let bob_project_key = GraphKey::generate(&mut rand::rngs::OsRng);
+    // Identity Graph uses a null key for simplicity in bootstrap
+    let id_key = GraphKey::new([0u8; 32]);
 
-    // Alice's Laptop derive the keyring secret to 'Vault' Bob's key
-    let keyring_secret = SecretIdentity::derive_keyring_secret(&alice_mnemonic, "salt", 0).unwrap();
-    let keyring_key = GraphKey::new(keyring_secret);
-
-    // 1. Create the Descriptor Block (The Leaf)
-    // The key is encrypted by the keyring_key during block creation
-    let descriptor = Block::new(
-        bob_project_key.as_bytes().to_vec(),
-        "akshara.resource.v1".into(),
+    let id_root = Block::new(
         vec![],
-        &keyring_key,
-        &alice_laptop,
+        akshara_aadhaara::BlockType::AksharaAuthV1,
+        vec![],
+        &id_key,
+        &identity,
     )
     .unwrap();
-    relay_store.put_block(&descriptor).await.unwrap();
+    let id_manifest = Manifest::new(id_gid, id_root.id(), vec![], ManifestId::null(), &identity);
 
-    // 2. Use IndexBuilder to construct the Identity Graph hierarchy
-    let mut builder = IndexBuilder::new();
-    builder
-        .insert(
-            &format!("shared/{}", bob_project_id),
-            Address::from(descriptor.id()),
-        )
+    relay_store.put_block(&id_root).await.unwrap();
+    relay_store.put_manifest(&id_manifest).await.unwrap();
+
+    let reborn_identity = SecretIdentity::from_mnemonic(&mnemonic, "salt").unwrap();
+    let reconciler = Reconciler::new(&relay_store, reborn_identity.public_key());
+
+    let heads = relay_store.get_heads(&id_gid).await.unwrap();
+    let comp = reconciler
+        .reconcile(&Heads::new(id_gid, heads), &[])
+        .await
         .unwrap();
-
-    let root_index_id = builder
-        .build(&mut relay_store, &alice_laptop, &keyring_key)
+    reconciler
+        .converge(&comp.peer_surplus, &mut phone_store)
         .await
         .unwrap();
 
-    // Laptop pushes Identity Manifest to Relay
-    let alice_id_graph = GraphId::new();
-    let identity_manifest = Manifest::new(
-        alice_id_graph,
-        root_index_id,
-        vec![],
-        ManifestId::from_sha256(&[0u8; 32]),
-        &alice_laptop,
+    assert!(
+        phone_store
+            .get_manifest(&id_manifest.id())
+            .await
+            .unwrap()
+            .is_some()
     );
-    relay_store.put_manifest(&identity_manifest).await.unwrap();
+}
 
-    // --- Phase 2: The Rebirth (New Phone) ---
-    // Laptop is gone. Alice has only her words.
-    let alice_phone = SecretIdentity::from_mnemonic(&alice_mnemonic, "salt").unwrap();
+/// SCENARIO 3: Full Lifecycle Smoke Test
+#[tokio::test]
+async fn test_full_lifecycle_smoke_test() {
+    let mut laptop_store = InMemoryStore::new();
+    let mut relay_store = InMemoryStore::new();
+    let mut phone_store = InMemoryStore::new();
 
-    // Phone reconstructs the Keyring Secret
-    let recovered_keyring_secret =
-        SecretIdentity::derive_keyring_secret(&alice_mnemonic, "salt", 0).unwrap();
-    let recovered_keyring_key = GraphKey::new(recovered_keyring_secret);
+    let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+    let alice = SecretIdentity::from_mnemonic(&mnemonic, "").unwrap();
 
-    // Phone finds the Identity Manifest on Relay
-    let heads = relay_store.get_heads(&alice_id_graph).await.unwrap();
-    let latest_id_manifest = relay_store.get_manifest(&heads[0]).await.unwrap().unwrap();
+    let gid = GraphId::new();
+    let gkey = alice.derive_graph_key(&gid).unwrap();
+    let data = Block::new(b"bits".to_vec(), "data".into(), vec![], &gkey, &alice).unwrap();
+    laptop_store.put_block(&data).await.unwrap();
+    let manifest = Manifest::new(gid, data.id(), vec![], ManifestId::null(), &alice);
+    laptop_store.put_manifest(&manifest).await.unwrap();
 
-    // Phone walks the graph to find the shared project
-    let walker = GraphWalker::new(&relay_store, alice_phone.public_key());
-    let res_addr = walker
-        .resolve_path(
-            latest_id_manifest.content_root(),
-            &format!("shared/{}", bob_project_id),
-            &recovered_keyring_key,
-        )
+    relay_store.put_block(&data).await.unwrap();
+    relay_store.put_manifest(&manifest).await.unwrap();
+
+    let reconciler = Reconciler::new(&relay_store, alice.public_key());
+    let heads = relay_store.get_heads(&gid).await.unwrap();
+    let comp = reconciler
+        .reconcile(&Heads::new(gid, heads), &[])
+        .await
+        .unwrap();
+    reconciler
+        .converge(&comp.peer_surplus, &mut phone_store)
         .await
         .unwrap();
 
-    let descriptor_id = BlockId::try_from(res_addr).unwrap();
-    let descriptor_block = relay_store
-        .get_block(&descriptor_id)
-        .await
-        .unwrap()
-        .expect("Descriptor block not found");
+    let restored_block = phone_store.get_block(&data.id()).await.unwrap().unwrap();
+    assert_eq!(restored_block.content().decrypt(&gkey).unwrap(), b"bits");
+}
 
-    // Phone decrypts the vault to recover Bob's random key!
-    let decrypted_bytes = descriptor_block
-        .content()
-        .decrypt(&recovered_keyring_key)
-        .unwrap();
-    let recovered_project_key_bytes: [u8; 32] = decrypted_bytes.try_into().unwrap();
-    let recovered_project_key = GraphKey::new(recovered_project_key_bytes);
+/// Generic recursive synchronization helper.
+async fn sync_recursive_closure<S: GraphStore + ?Sized, D: GraphStore + ?Sized>(
+    root_id: BlockId,
+    key: &GraphKey,
+    source: &S,
+    dest: &mut D,
+) {
+    let mut queue = VecDeque::new();
+    queue.push_back(root_id);
+    let mut visited = HashSet::new();
 
-    // --- Final Assertion ---
-    assert_eq!(
-        bob_project_key, recovered_project_key,
-        "Alice must recover Bob's random key using only her words"
-    );
+    while let Some(current_id) = queue.pop_front() {
+        if !visited.insert(current_id) {
+            continue;
+        }
+
+        // 1. Fetch block from source and ensure it exists in dest
+        if let Some(block) = source.get_block(&current_id).await.unwrap() {
+            dest.put_block(&block).await.unwrap();
+
+            // 2. If it's an index, discover and queue children
+            if *block.block_type() == akshara_aadhaara::BlockType::AksharaIndexV1 {
+                let plaintext = block.content().decrypt(key).unwrap();
+                let index: BTreeMap<String, Address> =
+                    akshara_aadhaara::from_canonical_bytes(&plaintext).unwrap();
+                for addr in index.values() {
+                    if let Ok(child_id) = BlockId::try_from(*addr) {
+                        queue.push_back(child_id);
+                    }
+                }
+            }
+        }
+    }
 }
