@@ -14,8 +14,14 @@ async fn create_block(parents: Vec<BlockId>, store: &mut InMemoryStore) -> Block
     let identity = SecretIdentity::generate(&mut rng);
     let key = GraphKey::from([0u8; 32]);
 
-    let block = Block::new(vec![], "p".to_string(), parents, &key, &identity)
-        .expect("Failed to create block");
+    let block = Block::new(
+        vec![],
+        crate::graph::BlockType::from("p"),
+        parents,
+        &key,
+        &identity,
+    )
+    .expect("Failed to create block");
     store.put_block(&block).await.unwrap();
     block.id()
 }

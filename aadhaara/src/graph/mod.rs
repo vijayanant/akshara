@@ -1,7 +1,7 @@
 pub mod block;
 pub mod manifest;
 
-pub use block::Block;
+pub use block::{Block, BlockType};
 pub use manifest::{Manifest, ManifestHeader};
 
 #[cfg(test)]

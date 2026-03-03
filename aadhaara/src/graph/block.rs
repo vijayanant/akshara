@@ -7,23 +7,104 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::fmt;
 use tracing::{Level, info, span};
 
-/// A `Block` is the atomic unit of content in Sovereign.
+/// Represents the semantic purpose of a Block.
+///
+/// Follows the Reserved Codec Registry (AIP-001). Types starting with
+/// 'akshara.' are reserved for the foundation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BlockType {
+    #[serde(rename = "akshara.index.v1")]
+    AksharaIndexV1,
+    #[serde(rename = "akshara.data.v1")]
+    AksharaDataV1,
+    #[serde(rename = "akshara.auth.v1")]
+    AksharaAuthV1,
+    #[serde(rename = "akshara.revocation.v1")]
+    AksharaRevocationV1,
+    #[serde(rename = "akshara.trust.v1")]
+    AksharaTrustV1,
+    #[serde(rename = "akshara.succession.v1")]
+    AksharaSuccessionV1,
+    /// Application-defined custom type. Must NOT start with 'akshara.'.
+    Custom(String),
+}
+
+impl BlockType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::AksharaIndexV1 => "akshara.index.v1",
+            Self::AksharaDataV1 => "akshara.data.v1",
+            Self::AksharaAuthV1 => "akshara.auth.v1",
+            Self::AksharaRevocationV1 => "akshara.revocation.v1",
+            Self::AksharaTrustV1 => "akshara.trust.v1",
+            Self::AksharaSuccessionV1 => "akshara.succession.v1",
+            Self::Custom(s) => s.as_str(),
+        }
+    }
+}
+
+impl From<&str> for BlockType {
+    fn from(s: &str) -> Self {
+        match s {
+            "akshara.index.v1" => Self::AksharaIndexV1,
+            "akshara.data.v1" => Self::AksharaDataV1,
+            "akshara.auth.v1" => Self::AksharaAuthV1,
+            "akshara.revocation.v1" => Self::AksharaRevocationV1,
+            "akshara.trust.v1" => Self::AksharaTrustV1,
+            "akshara.succession.v1" => Self::AksharaSuccessionV1,
+            // Legacy/Short-name mapping for backward compatibility in tests
+            "index" => Self::AksharaIndexV1,
+            "data" => Self::AksharaDataV1,
+            "auth" => Self::AksharaAuthV1,
+            "revocation" => Self::AksharaRevocationV1,
+            _ => Self::Custom(s.to_string()),
+        }
+    }
+}
+
+impl From<String> for BlockType {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+impl PartialEq<&str> for BlockType {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<str> for BlockType {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl fmt::Display for BlockType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// A `Block` is the atomic unit of content in Akshara.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub(crate) id: BlockId,
     pub(crate) author: SigningPublicKey,
     pub(crate) signature: Signature,
     pub(crate) content: BlockContent,
-    pub(crate) block_type: String,
+    pub(crate) block_type: BlockType,
     pub(crate) parents: Vec<BlockId>,
 }
 
 impl Block {
     pub fn new(
         plaintext: Vec<u8>,
-        block_type: String,
+        block_type: BlockType,
         parents: Vec<BlockId>,
         key: &GraphKey,
         signer: &impl SovereignSigner,
@@ -47,20 +128,25 @@ impl Block {
         rand::thread_rng().fill_bytes(&mut nonce);
         let content = BlockContent::encrypt(&plaintext, key, nonce)?;
 
-        Ok(Self::create(content, "index".to_string(), parents, signer))
+        Ok(Self::create(
+            content,
+            BlockType::AksharaIndexV1,
+            parents,
+            signer,
+        ))
     }
 
     fn create(
         content: BlockContent,
-        block_type: String,
+        block_type: BlockType,
         parents: Vec<BlockId>,
         signer: &impl SovereignSigner,
     ) -> Self {
         let id = Self::compute_id(&content, &block_type, &parents);
         let signature = signer.sign(id.as_ref());
 
-        info!(block_id = ?id, "Block created");
-        counter!("sovereign.block.created").increment(1);
+        info!(block_id = ?id, block_type = %block_type, "Block created");
+        counter!("akshara.block.created").increment(1);
 
         Block {
             id,
@@ -88,7 +174,7 @@ impl Block {
         &self.content
     }
 
-    pub fn block_type(&self) -> &str {
+    pub fn block_type(&self) -> &BlockType {
         &self.block_type
     }
 
@@ -103,7 +189,7 @@ impl Block {
         author: SigningPublicKey,
         signature: Signature,
         content: BlockContent,
-        block_type: String,
+        block_type: BlockType,
         parents: Vec<BlockId>,
     ) -> Self {
         Self {
@@ -134,12 +220,12 @@ impl Block {
         Ok(())
     }
 
-    fn compute_id(content: &BlockContent, block_type: &str, parents: &[BlockId]) -> BlockId {
+    fn compute_id(content: &BlockContent, block_type: &BlockType, parents: &[BlockId]) -> BlockId {
         let mut hasher = Sha256::new();
-        hasher.update(b"SOV_V1_BLOCK");
+        hasher.update(b"AKSHARA_V1_BLOCK");
         hasher.update(content.as_bytes());
         hasher.update(content.nonce());
-        hasher.update(block_type.as_bytes());
+        hasher.update(block_type.as_str().as_bytes());
 
         for parent in parents {
             hasher.update(parent.as_ref());

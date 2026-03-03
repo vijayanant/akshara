@@ -1,6 +1,6 @@
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::GraphKey;
-use crate::graph::{Block, Manifest};
+use crate::graph::{Block, BlockType, Manifest};
 use crate::identity::SecretIdentity;
 use crate::state::in_memory_store::InMemoryStore;
 use crate::state::store::GraphStore;
@@ -20,7 +20,7 @@ async fn test_identity_graph_device_resolution() {
     let device_identity = SecretIdentity::generate(&mut rng);
     let device_block = Block::new(
         crate::base::encoding::to_canonical_bytes(&"my-iphone".to_string()).unwrap(),
-        "akshara.data.v1".to_string(),
+        BlockType::AksharaDataV1,
         vec![],
         &key,
         &device_identity,
@@ -33,7 +33,7 @@ async fn test_identity_graph_device_resolution() {
     devices_map.insert("laptop_1".to_string(), Address::from(device_block.id()));
     let devices_index = Block::new(
         crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -46,7 +46,7 @@ async fn test_identity_graph_device_resolution() {
     root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
         crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -91,8 +91,8 @@ async fn test_identity_graph_missing_device_failure() {
     // Create Root Index with empty devices
     let devices_map: BTreeMap<String, Address> = BTreeMap::new();
     let devices_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&devices_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
+        BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -104,7 +104,7 @@ async fn test_identity_graph_missing_device_failure() {
     root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
         crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,

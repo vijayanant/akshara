@@ -36,6 +36,7 @@ pub(crate) async fn create_valid_anchor(
     store: &mut crate::state::in_memory_store::InMemoryStore,
     identity: &crate::identity::SecretIdentity,
 ) -> crate::base::address::ManifestId {
+    use crate::graph::BlockType;
     use crate::state::store::GraphStore;
     use std::collections::BTreeMap;
 
@@ -52,7 +53,7 @@ pub(crate) async fn create_valid_anchor(
     // Create an authorization block for the identity itself (Genesis authorization)
     let auth_block = crate::graph::Block::new(
         vec![],
-        "akshara.auth.v1".to_string(),
+        BlockType::AksharaAuthV1,
         vec![],
         &identity_key,
         identity,
@@ -71,7 +72,7 @@ pub(crate) async fn create_valid_anchor(
 
     let credentials_index = crate::graph::Block::new(
         credentials_bytes,
-        "akshara.index.v1".to_string(),
+        BlockType::AksharaIndexV1,
         vec![],
         &identity_key,
         identity,
@@ -88,7 +89,7 @@ pub(crate) async fn create_valid_anchor(
 
     let genesis_index = crate::graph::Block::new(
         root_bytes,
-        "akshara.index.v1".to_string(),
+        BlockType::AksharaIndexV1,
         vec![],
         &identity_key,
         identity,

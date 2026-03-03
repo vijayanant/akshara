@@ -87,8 +87,14 @@ async fn store_tracks_multiple_heads_on_fork() {
     store.put_manifest(&m_b).await.unwrap();
 
     // Fork C -> A (Must differ from B content-wise)
-    let unique_block =
-        Block::new(b"unique".to_vec(), "p".to_string(), vec![], &key, &identity).unwrap();
+    let unique_block = Block::new(
+        b"unique".to_vec(),
+        crate::graph::BlockType::from("p"),
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
     store.put_block(&unique_block).await.unwrap();
 
     let m_c = Manifest::new(
@@ -122,7 +128,7 @@ async fn store_merges_heads() {
     // Fork C needs unique content
     let unique_block = Block::new(
         b"unique2".to_vec(),
-        "p".to_string(),
+        crate::graph::BlockType::from("p"),
         vec![],
         &key,
         &identity,

@@ -1,6 +1,7 @@
 use crate::base::address::{BlockId, ManifestId};
 use crate::base::crypto::{GraphKey, SigningPublicKey};
 use crate::base::error::{IntegrityError, SovereignError};
+use crate::graph::BlockType;
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
 use tracing::{Level, debug, span};
@@ -78,7 +79,8 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
                     )))
                 })?;
 
-                if block.block_type() == "revocation" {
+                let block_type = block.block_type();
+                if *block_type == BlockType::AksharaRevocationV1 {
                     return Err(SovereignError::Integrity(
                         IntegrityError::UnauthorizedSigner("Signer has been revoked".to_string()),
                     ));

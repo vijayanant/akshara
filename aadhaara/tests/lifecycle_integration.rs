@@ -25,7 +25,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     let auth_block = Block::new(
         vec![],
-        "akshara.auth.v1".to_string(),
+        akshara_aadhaara::BlockType::AksharaAuthV1,
         vec![],
         &identity_key,
         &alice,
@@ -36,7 +36,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     let devices_index = Block::new(
         akshara_aadhaara::to_canonical_bytes(&devices_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        akshara_aadhaara::BlockType::AksharaIndexV1,
         vec![],
         &identity_key,
         &alice,
@@ -49,12 +49,13 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     let genesis_index = Block::new(
         akshara_aadhaara::to_canonical_bytes(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        akshara_aadhaara::BlockType::AksharaIndexV1,
         vec![],
         &identity_key,
         &alice,
     )
     .unwrap();
+
     alice_store.put_block(&genesis_index).await.unwrap();
 
     let null_anchor = ManifestId::from_sha256(&[0u8; 32]);
@@ -75,7 +76,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     let content = b"The Master Plan".to_vec();
     let data_block = Block::new(
         content.clone(),
-        "document".to_string(),
+        akshara_aadhaara::BlockType::from("document"),
         vec![],
         &graph_key,
         &alice,
@@ -88,12 +89,13 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     let project_index_block = Block::new(
         akshara_aadhaara::to_canonical_bytes(&project_root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        akshara_aadhaara::BlockType::AksharaIndexV1,
         vec![],
         &graph_key,
         &alice,
     )
     .unwrap();
+
     alice_store.put_block(&project_index_block).await.unwrap();
 
     let manifest = Manifest::new(graph_id, project_index_block.id(), vec![], anchor, &alice);

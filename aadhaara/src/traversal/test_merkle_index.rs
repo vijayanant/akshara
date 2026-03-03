@@ -19,7 +19,7 @@ async fn test_merkle_index_path_resolution() {
     // 1. Create a data block
     let data_block = Block::new(
         b"hello".to_vec(),
-        "data".to_string(),
+        crate::graph::BlockType::AksharaDataV1,
         vec![],
         &key,
         &identity,
@@ -31,8 +31,8 @@ async fn test_merkle_index_path_resolution() {
     let mut index_map = BTreeMap::new();
     index_map.insert("title".to_string(), Address::from(data_block.id()));
     let index_block = Block::new(
-        serde_ipld_dagcbor::to_vec(&index_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        crate::base::encoding::to_canonical_bytes(&index_map).unwrap(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -61,7 +61,7 @@ async fn test_merkle_index_nested_resolution() {
     // Leaf
     let data_block = Block::new(
         b"data".to_vec(),
-        "data".to_string(),
+        crate::graph::BlockType::AksharaDataV1,
         vec![],
         &key,
         &identity,
@@ -73,8 +73,8 @@ async fn test_merkle_index_nested_resolution() {
     let mut nested_map = BTreeMap::new();
     nested_map.insert("file".to_string(), Address::from(data_block.id()));
     let nested_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&nested_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        crate::base::encoding::to_canonical_bytes(&nested_map).unwrap(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -86,8 +86,8 @@ async fn test_merkle_index_nested_resolution() {
     let mut root_map = BTreeMap::new();
     root_map.insert("nested".to_string(), Address::from(nested_index.id()));
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -114,7 +114,7 @@ async fn test_merkle_index_path_normalization() {
 
     let data_block = Block::new(
         b"data".to_vec(),
-        "data".to_string(),
+        crate::graph::BlockType::AksharaDataV1,
         vec![],
         &key,
         &identity,
@@ -125,8 +125,8 @@ async fn test_merkle_index_path_normalization() {
     let mut root_map = BTreeMap::new();
     root_map.insert("file".to_string(), Address::from(data_block.id()));
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -160,8 +160,8 @@ async fn test_merkle_index_missing_path_failures() {
         Address::from(BlockId::from_sha256(&[1u8; 32])),
     );
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -196,7 +196,7 @@ async fn test_merkle_index_wrong_key_failure() {
 
     let index_block = Block::new(
         vec![1, 2, 3],
-        "akshara.index.v1".to_string(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -224,7 +224,7 @@ async fn test_merkle_index_malformed_cbor_failure() {
     // Data block that IS NOT an index (not CBOR map)
     let data_block = Block::new(
         b"not-cbor".to_vec(),
-        "data".to_string(),
+        crate::graph::BlockType::AksharaDataV1,
         vec![],
         &key,
         &identity,
@@ -235,8 +235,8 @@ async fn test_merkle_index_malformed_cbor_failure() {
     let mut root_map = BTreeMap::new();
     root_map.insert("not_a_folder".to_string(), Address::from(data_block.id()));
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -269,8 +269,8 @@ async fn test_merkle_index_type_mismatch_failure() {
         Address::from(crate::ManifestId::from_sha256(&[1u8; 32])),
     );
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
         &key,
         &identity,
@@ -312,7 +312,7 @@ async fn test_merkle_index_circular_reference_protection() {
         identity.public().signing_key().clone(),
         identity.sign(loop_id.as_ref()),
         content,
-        "akshara.index.v1".to_string(),
+        crate::graph::BlockType::AksharaIndexV1,
         vec![],
     );
     store.put_block(&root_index).await.unwrap();

@@ -1,7 +1,7 @@
 use crate::base::address::{Address, BlockId};
 use crate::base::crypto::{GraphKey, SovereignSigner};
 use crate::base::error::SovereignError;
-use crate::graph::Block;
+use crate::graph::{Block, BlockType};
 use crate::state::store::GraphStore;
 use std::collections::BTreeMap;
 
@@ -101,13 +101,7 @@ impl IndexBuilder {
 
         let plaintext = crate::base::encoding::to_canonical_bytes(&final_map)?;
 
-        let index_block = Block::new(
-            plaintext,
-            "akshara.index.v1".to_string(),
-            vec![],
-            key,
-            signer,
-        )?;
+        let index_block = Block::new(plaintext, BlockType::AksharaIndexV1, vec![], key, signer)?;
 
         store.put_block(&index_block).await?;
         Ok(index_block.id())

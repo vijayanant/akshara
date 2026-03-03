@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
 
-use crate::{BlockId, GraphKey, graph::Block, identity::SecretIdentity};
+use crate::{BlockId, GraphKey, graph::Block, graph::BlockType, identity::SecretIdentity};
 
 // Helper functions
 
@@ -17,7 +17,7 @@ pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
     let key = create_dummy_key();
     let block = Block::new(
         content_data.to_vec(),
-        "p".to_string(),
+        BlockType::from("p"),
         vec![],
         &key,
         &identity,
@@ -34,8 +34,15 @@ fn block_id_is_unique_due_to_random_nonce() {
     let key = create_dummy_key();
     let content = b"data".to_vec();
 
-    let block1 = Block::new(content.clone(), "p".to_string(), vec![], &key, &identity).unwrap();
-    let block2 = Block::new(content, "p".to_string(), vec![], &key, &identity).unwrap();
+    let block1 = Block::new(
+        content.clone(),
+        BlockType::from("p"),
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
+    let block2 = Block::new(content, BlockType::from("p"), vec![], &key, &identity).unwrap();
 
     // Since each block generation now uses a random 96-bit nonce,
     // identical content MUST result in different CIDs to ensure cryptographic safety (AES-GCM).
@@ -51,8 +58,8 @@ fn block_id_is_unique_per_content() {
     let identity = create_identity();
     let key = create_dummy_key();
 
-    let block1 = Block::new(b"A".to_vec(), "p".to_string(), vec![], &key, &identity).unwrap();
-    let block2 = Block::new(b"B".to_vec(), "p".to_string(), vec![], &key, &identity).unwrap();
+    let block1 = Block::new(b"A".to_vec(), BlockType::from("p"), vec![], &key, &identity).unwrap();
+    let block2 = Block::new(b"B".to_vec(), BlockType::from("p"), vec![], &key, &identity).unwrap();
 
     assert_ne!(block1.id(), block2.id());
 }
@@ -82,7 +89,7 @@ fn block_content_encryption_cycle() {
 
     let block = Block::new(
         plaintext.clone(),
-        "p".to_string(),
+        BlockType::from("p"),
         vec![],
         &graph_key,
         &identity,
@@ -129,7 +136,7 @@ fn block_supports_empty_content() {
     let identity = create_identity();
     let key = create_dummy_key();
 
-    let block = Block::new(vec![], "p".to_string(), vec![], &key, &identity).unwrap();
+    let block = Block::new(vec![], BlockType::from("p"), vec![], &key, &identity).unwrap();
     assert!(block.verify_integrity().is_ok());
 
     // Decrypt and check
@@ -163,7 +170,14 @@ fn block_supports_multiple_parents() {
     let p2 = BlockId::from_sha256(&[2u8; 32]);
     let parents = vec![p1, p2];
 
-    let block = Block::new(vec![], "p".to_string(), parents.clone(), &key, &identity).unwrap();
+    let block = Block::new(
+        vec![],
+        BlockType::from("p"),
+        parents.clone(),
+        &key,
+        &identity,
+    )
+    .unwrap();
 
     assert_eq!(block.parents().len(), 2);
     assert!(block.verify_integrity().is_ok());
@@ -179,7 +193,7 @@ fn block_restores_from_raw_parts() {
         original.author().clone(),
         original.signature().clone(),
         original.content().clone(),
-        original.block_type().to_string(),
+        original.block_type().clone(),
         original.parents().to_vec(),
     );
 

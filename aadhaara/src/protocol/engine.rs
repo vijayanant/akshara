@@ -1,6 +1,7 @@
 use crate::base::address::{Address, BlockId, ManifestId};
 use crate::base::crypto::SigningPublicKey;
 use crate::base::error::{ProtocolError, SovereignError};
+use crate::graph::BlockType;
 use crate::protocol::{Comparison, ConvergenceReport, Delta, Heads, Portion};
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
@@ -115,7 +116,8 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
             while let Some(current_block_id) = block_queue.pop_front() {
                 if let Some(block) = self.store.get_block(&current_block_id).await? {
                     // If it's an index block, we need to find its children
-                    if block.block_type() == "index" {
+                    let block_type = block.block_type();
+                    if *block_type == BlockType::AksharaIndexV1 {
                         // Note: In the blind model, the Relay CANNOT recursively expand.
                     }
 

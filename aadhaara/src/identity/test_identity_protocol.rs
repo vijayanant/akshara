@@ -1,6 +1,6 @@
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::GraphKey;
-use crate::graph::{Block, Manifest};
+use crate::graph::{Block, BlockType, Manifest};
 use crate::identity::SecretIdentity;
 use crate::state::in_memory_store::InMemoryStore;
 use crate::state::store::GraphStore;
@@ -42,7 +42,7 @@ async fn test_sovereign_full_authority_chain_verification() {
     let device = SecretIdentity::generate(&mut rng);
     let device_block = Block::new(
         device.public().signing_key().as_bytes().to_vec(),
-        "akshara.auth.v1".to_string(),
+        BlockType::AksharaAuthV1,
         vec![],
         &key,
         &master,
@@ -54,7 +54,7 @@ async fn test_sovereign_full_authority_chain_verification() {
     devices_map.insert("laptop".to_string(), Address::from(device_block.id()));
     let devices_index = Block::new(
         crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        BlockType::AksharaIndexV1,
         vec![],
         &key,
         &master,
@@ -66,7 +66,7 @@ async fn test_sovereign_full_authority_chain_verification() {
     root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
         crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        "akshara.index.v1".to_string(),
+        BlockType::AksharaIndexV1,
         vec![],
         &key,
         &master,
