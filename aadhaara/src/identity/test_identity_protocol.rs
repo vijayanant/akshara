@@ -6,7 +6,6 @@ use crate::state::in_memory_store::InMemoryStore;
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
 use rand::rngs::OsRng;
-use std::collections::BTreeMap;
 
 #[test]
 fn test_sovereign_blind_discovery_derivation() {
@@ -50,32 +49,14 @@ async fn test_sovereign_full_authority_chain_verification() {
     .unwrap();
     store.put_block(&device_block).await.unwrap();
 
-    let mut devices_map = BTreeMap::new();
-    devices_map.insert("laptop".to_string(), Address::from(device_block.id()));
-    let devices_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
-        BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &master,
-    )
-    .unwrap();
-    store.put_block(&devices_index).await.unwrap();
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("credentials/laptop", Address::from(device_block.id()))
+        .unwrap();
+    let root_index_id = builder.build(&mut store, &master, &key).await.unwrap();
 
-    let mut root_map = BTreeMap::new();
-    root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        BlockType::AksharaIndexV1,
-        vec![],
-        &key,
-        &master,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
-
-    let anchor = ManifestId::from_sha256(&[0u8; 32]);
-    let manifest = Manifest::new(graph_id, root_index.id(), vec![], anchor, &master);
+    let anchor = ManifestId::null();
+    let manifest = Manifest::new(graph_id, root_index_id, vec![], anchor, &master);
     store.put_manifest(&manifest).await.unwrap();
 
     // 3. Device signs a document update
@@ -85,7 +66,7 @@ async fn test_sovereign_full_authority_chain_verification() {
     // 4. VERIFY: Auditor walks the identity graph to check authorization
     let walker = GraphWalker::new(&store, master.public().signing_key().clone());
     let resolved_addr = walker
-        .resolve_path(root_index.id(), "/credentials/laptop", &key)
+        .resolve_path(root_index_id, "/credentials/laptop", &key)
         .await
         .unwrap();
 
