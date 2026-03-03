@@ -4,7 +4,6 @@ use crate::base::error::{CryptoError, IntegrityError, SovereignError};
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{Level, info, span};
 
 /// Represents the historical and structural metadata of a graph snapshot.
@@ -38,10 +37,9 @@ impl Manifest {
         let span = span!(Level::INFO, "manifest_new", graph_id = ?graph_id);
         let _enter = span.enter();
 
-        let created_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+        // ALPHA INVARIANT: created_at is anchored to 0 to ensure bit-identical
+        // determinism across different devices (Rebirth invariant).
+        let created_at = 0i64;
 
         let header = ManifestHeader {
             graph_id,
@@ -56,7 +54,7 @@ impl Manifest {
         let signature = signer.sign(id.as_ref());
 
         info!(manifest_id = ?id, "Manifest created");
-        counter!("sovereign.manifest.created").increment(1);
+        counter!("akshara.manifest.created").increment(1);
 
         Manifest {
             id,
@@ -138,7 +136,7 @@ impl Manifest {
 
     fn compute_id(header: &ManifestHeader, author: &SigningPublicKey) -> ManifestId {
         let mut hasher = Sha256::new();
-        hasher.update(b"SOV_V1_MANIFEST");
+        hasher.update(b"AKSHARA_V1_MANIFEST");
         hasher.update(header.graph_id.as_bytes());
         hasher.update(header.content_root.as_ref());
         for p in &header.parents {
