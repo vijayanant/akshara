@@ -42,13 +42,7 @@ pub(crate) async fn create_valid_anchor(
 
     let identity_key = crate::base::crypto::GraphKey::new([0u8; 32]);
     let mut credentials_map = BTreeMap::new();
-    let signer_hex = identity
-        .public()
-        .signing_key()
-        .as_bytes()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let signer_hex = identity.public().signing_key().to_hex();
 
     // Create an authorization block for the identity itself (Genesis authorization)
     let auth_block = crate::graph::Block::new(

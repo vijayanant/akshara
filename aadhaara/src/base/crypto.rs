@@ -29,6 +29,11 @@ impl SigningPublicKey {
         &self.0
     }
 
+    /// Returns the hex-encoded representation of the public key.
+    pub fn to_hex(&self) -> String {
+        self.0.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<(), SovereignError> {
         let span = span!(Level::TRACE, "signing_verify");
         let _enter = span.enter();

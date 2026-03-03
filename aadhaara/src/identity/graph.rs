@@ -56,15 +56,8 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
         let devices_root = manifest.content_root();
 
-        // Manual hex encoding to avoid production dependency on 'hex' crate.
-        let signer_hex = signer
-            .as_bytes()
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<String>();
-
         // Path matches our Specification: /credentials/<pubkey_hex>
-        let path = format!("credentials/{}", signer_hex);
+        let path = format!("credentials/{}", signer.to_hex());
         let resolution_result = walker
             .resolve_path(devices_root, &path, &identity_key)
             .await;

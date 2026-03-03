@@ -137,18 +137,8 @@ async fn test_negative_identity_stale_authority() {
     store.put_block(&auth_device_a).await.unwrap();
 
     // Manual hex encoding for test setup
-    let master_hex = master_key
-        .as_bytes()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
-    let device_a_hex = device_a
-        .public()
-        .signing_key()
-        .as_bytes()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let master_hex = master_key.to_hex();
+    let device_a_hex = device_a.public().signing_key().to_hex();
 
     devices_map.insert(master_hex, Address::from(auth_master.id()));
     devices_map.insert(device_a_hex, Address::from(auth_device_a.id()));
@@ -229,13 +219,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
 
     // Explicitly authorize the Phone in a second identity snapshot
     let identity_key = GraphKey::new([0u8; 32]);
-    let signer_hex = alice_phone
-        .public()
-        .signing_key()
-        .as_bytes()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let signer_hex = alice_phone.public().signing_key().to_hex();
 
     let auth_block = Block::new(
         vec![],

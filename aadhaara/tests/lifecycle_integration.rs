@@ -15,13 +15,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     let identity_key = GraphKey::new([0u8; 32]);
 
     let mut devices_map = BTreeMap::new();
-    let signer_hex = alice
-        .public()
-        .signing_key()
-        .as_bytes()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let signer_hex = alice.public().signing_key().to_hex();
 
     let auth_block = Block::new(
         vec![],
