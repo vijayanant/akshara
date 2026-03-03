@@ -18,7 +18,7 @@ pub use base::encoding::{from_canonical_bytes, to_canonical_bytes};
 pub use base::error::{IntegrityError, SovereignError};
 
 pub use graph::{Block, BlockType, Manifest, ManifestHeader};
-pub use identity::SecretIdentity;
+pub use identity::{MasterIdentity, SecretIdentity};
 pub use protocol::{Comparison, Delta, Heads, Portion, Reconciler};
 pub use state::{GraphStore, InMemoryStore};
 pub use traversal::{Auditor, BlockWalker, GraphWalker, IndexBuilder};

@@ -248,7 +248,8 @@ impl GraphId {
         GraphId(Uuid::new_v4())
     }
 
-    pub(crate) fn from_bytes(bytes: [u8; 16]) -> Self {
+    /// Creates a GraphId from raw 16-byte UUID bytes.
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
         GraphId(Uuid::from_bytes(bytes))
     }
 

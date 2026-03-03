@@ -7,7 +7,7 @@ pub mod types;
 // --- Public API Exports ---
 
 pub use graph::IdentityGraph;
-pub use types::SecretIdentity;
+pub use types::{MasterIdentity, SecretIdentity};
 
 #[cfg(test)]
 mod test_identity;

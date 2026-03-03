@@ -6,7 +6,6 @@ use crate::state::in_memory_store::InMemoryStore;
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
 use rand::rngs::OsRng;
-use std::collections::BTreeMap;
 
 #[tokio::test]
 async fn test_identity_temporal_forgery_rejection() {
@@ -18,50 +17,37 @@ async fn test_identity_temporal_forgery_rejection() {
     let anchor = ManifestId::null();
 
     // 1. AT T=0: Authorize Device A
-    let device_a = SecretIdentity::generate(&mut rng);
-    let mut devices_map = BTreeMap::new();
-    devices_map.insert(
-        "phone".to_string(),
-        Address::from(
-            Block::new(
-                device_a.public().signing_key().as_bytes().to_vec(),
-                "akshara.auth.v1".into(),
-                vec![],
-                &key,
-                &master,
-            )
-            .unwrap()
-            .id(),
-        ),
-    );
+    let device_a_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+    let device_a = SecretIdentity::from_mnemonic(&device_a_mnemonic, "").unwrap();
+    let device_a_pub = device_a.public().signing_key().clone();
 
-    let root_index_v1 = Block::new(
-        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
-        "akshara.index.v1".into(),
+    let auth_block = Block::new(
+        device_a_pub.as_bytes().to_vec(),
+        crate::graph::BlockType::AksharaAuthV1,
         vec![],
         &key,
         &master,
     )
     .unwrap();
-    store.put_block(&root_index_v1).await.unwrap();
-    let manifest_v1 = Manifest::new(graph_id, root_index_v1.id(), vec![], anchor, &master);
+    store.put_block(&auth_block).await.unwrap();
+
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert("phone", Address::from(auth_block.id()))
+        .unwrap();
+    let root_index_v1_id = builder.build(&mut store, &master, &key).await.unwrap();
+
+    let manifest_v1 = Manifest::new(graph_id, root_index_v1_id, vec![], anchor, &master);
     store.put_manifest(&manifest_v1).await.unwrap();
 
     // 2. AT T=10: Revoke Device A (Phone stolen!)
-    let revoked_map: BTreeMap<String, Address> = BTreeMap::new();
-    // "phone" is now missing from the index
-    let root_index_v2 = Block::new(
-        crate::base::encoding::to_canonical_bytes(&revoked_map).unwrap(),
-        "akshara.index.v1".into(),
-        vec![],
-        &key,
-        &master,
-    )
-    .unwrap();
-    store.put_block(&root_index_v2).await.unwrap();
+    // Revocation is simulated by removing the entry from the index
+    let builder_v2 = crate::traversal::IndexBuilder::new();
+    let root_index_v2_id = builder_v2.build(&mut store, &master, &key).await.unwrap();
+
     let manifest_v2 = Manifest::new(
         graph_id,
-        root_index_v2.id(),
+        root_index_v2_id,
         vec![manifest_v1.id()],
         anchor,
         &master,

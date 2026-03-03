@@ -7,7 +7,6 @@ use crate::state::store::GraphStore;
 use crate::traversal::auditor::Auditor;
 use crate::traversal::create_valid_anchor;
 use rand::rngs::OsRng;
-use std::collections::BTreeMap;
 
 /// **TEST: Imposter Genesis Hijack (Negative)**
 ///
@@ -112,62 +111,39 @@ async fn test_negative_identity_stale_authority() {
     let genesis_anchor = create_valid_anchor(&mut store, &alice).await;
 
     // 2. Device A is added in a NEW identity snapshot
-    let device_a = SecretIdentity::generate(&mut rng);
+    let device_a_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+    let device_a = SecretIdentity::from_mnemonic(&device_a_mnemonic, "").unwrap();
     let identity_key = GraphKey::new([0u8; 32]);
-    let mut devices_map = BTreeMap::new();
+    let signer_hex = device_a.public().signing_key().to_hex();
 
-    // Master Key (from genesis) + Device A
-    let auth_master = Block::new(
+    // 1. Create the authorization block (The Leaf)
+    let auth_block = crate::graph::Block::new(
         vec![],
-        "akshara.auth.v1".into(),
+        crate::graph::BlockType::AksharaAuthV1,
         vec![],
         &identity_key,
         &alice,
     )
     .unwrap();
-    let auth_device_a = Block::new(
-        vec![],
-        "akshara.auth.v1".into(),
-        vec![],
-        &identity_key,
-        &alice,
-    )
-    .unwrap();
-    store.put_block(&auth_master).await.unwrap();
-    store.put_block(&auth_device_a).await.unwrap();
+    store.put_block(&auth_block).await.unwrap();
 
-    // Manual hex encoding for test setup
-    let master_hex = master_key.to_hex();
-    let device_a_hex = device_a.public().signing_key().to_hex();
+    // 2. Use IndexBuilder to construct the hierarchical path: credentials/<pubkey>
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert(
+            &format!("credentials/{}", signer_hex),
+            crate::base::address::Address::from(auth_block.id()),
+        )
+        .unwrap();
 
-    devices_map.insert(master_hex, Address::from(auth_master.id()));
-    devices_map.insert(device_a_hex, Address::from(auth_device_a.id()));
-
-    let mut devices_index_map = BTreeMap::new();
-    let devices_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
-        "akshara.index.v1".into(),
-        vec![],
-        &identity_key,
-        &alice,
-    )
-    .unwrap();
-    store.put_block(&devices_index).await.unwrap();
-    devices_index_map.insert("credentials".to_string(), Address::from(devices_index.id()));
-
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&devices_index_map).unwrap(),
-        "akshara.index.v1".into(),
-        vec![],
-        &identity_key,
-        &alice,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    let root_index_id = builder
+        .build(&mut store, &alice, &identity_key)
+        .await
+        .unwrap();
 
     let _snapshot_2 = Manifest::new(
         GraphId::new(),
-        root_index.id(),
+        root_index_id,
         vec![genesis_anchor],
         genesis_anchor,
         &alice,
@@ -223,7 +199,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
 
     let auth_block = Block::new(
         vec![],
-        "akshara.auth.v1".into(),
+        crate::graph::BlockType::AksharaAuthV1,
         vec![],
         &identity_key,
         &alice_legislator,
@@ -231,38 +207,22 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     .unwrap();
     store.put_block(&auth_block).await.unwrap();
 
-    let mut credentials_map = std::collections::BTreeMap::new();
-    credentials_map.insert(signer_hex, Address::from(auth_block.id()));
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert(
+            &format!("credentials/{}", signer_hex),
+            Address::from(auth_block.id()),
+        )
+        .unwrap();
 
-    let credentials_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&credentials_map).unwrap(),
-        "akshara.index.v1".into(),
-        vec![],
-        &identity_key,
-        &alice_legislator,
-    )
-    .unwrap();
-    store.put_block(&credentials_index).await.unwrap();
-
-    let mut root_map = std::collections::BTreeMap::new();
-    root_map.insert(
-        "credentials".to_string(),
-        Address::from(credentials_index.id()),
-    );
-
-    let root_index = Block::new(
-        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
-        "akshara.index.v1".into(),
-        vec![],
-        &identity_key,
-        &alice_legislator,
-    )
-    .unwrap();
-    store.put_block(&root_index).await.unwrap();
+    let root_index_id = builder
+        .build(&mut store, &alice_legislator, &identity_key)
+        .await
+        .unwrap();
 
     let anchor = Manifest::new(
         GraphId::new(),
-        root_index.id(),
+        root_index_id,
         vec![anchor_1],
         anchor_1,
         &alice_legislator,
@@ -273,7 +233,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     // 4. ATTACK: The Phone tries to sign a NEW genesis manifest for a resource graph.
 
     let root = crate::traversal::create_dummy_root();
-    let null_anchor = ManifestId::from_sha256(&[0x00; 32]);
+    let null_anchor = ManifestId::null();
     let malicious_manifest = Manifest::new(GraphId::new(), root, vec![], null_anchor, &alice_phone);
 
     let auditor = Auditor::new(&store, master_key);
