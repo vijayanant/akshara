@@ -155,7 +155,7 @@ async fn test_negative_identity_stale_authority() {
 
     let mut devices_index_map = BTreeMap::new();
     let devices_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&devices_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &identity_key,
@@ -166,7 +166,7 @@ async fn test_negative_identity_stale_authority() {
     devices_index_map.insert("credentials".to_string(), Address::from(devices_index.id()));
 
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&devices_index_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&devices_index_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &identity_key,
@@ -251,7 +251,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     credentials_map.insert(signer_hex, Address::from(auth_block.id()));
 
     let credentials_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&credentials_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&credentials_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &identity_key,
@@ -267,7 +267,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     );
 
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &identity_key,

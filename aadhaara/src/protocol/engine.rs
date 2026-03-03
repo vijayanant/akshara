@@ -144,9 +144,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
                         id
                     )))
                 })?;
-                let data = serde_ipld_dagcbor::to_vec(&manifest).map_err(|e| {
-                    SovereignError::InternalError(format!("Manifest serialization failed: {}", e))
-                })?;
+                let data = crate::base::encoding::to_canonical_bytes(&manifest)?;
                 portions.push(Portion::new(*addr, data));
             } else {
                 let id = BlockId::try_from(*addr)?;
@@ -156,9 +154,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
                         id
                     )))
                 })?;
-                let data = serde_ipld_dagcbor::to_vec(&block).map_err(|e| {
-                    SovereignError::InternalError(format!("Block serialization failed: {}", e))
-                })?;
+                let data = crate::base::encoding::to_canonical_bytes(&block)?;
                 portions.push(Portion::new(*addr, data));
             }
         }
@@ -183,16 +179,11 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
             report.total_bytes += data.len();
 
             if addr.codec() == crate::base::address::CODEC_AKSHARA_MANIFEST {
-                let m: crate::graph::Manifest =
-                    serde_ipld_dagcbor::from_slice(data).map_err(|e| {
-                        SovereignError::InternalError(format!("Convergence failure: {}", e))
-                    })?;
+                let m: crate::graph::Manifest = crate::base::encoding::from_canonical_bytes(data)?;
                 dest.put_manifest(&m).await?;
                 report.manifests_synced += 1;
             } else {
-                let b: crate::graph::Block = serde_ipld_dagcbor::from_slice(data).map_err(|e| {
-                    SovereignError::InternalError(format!("Convergence failure: {}", e))
-                })?;
+                let b: crate::graph::Block = crate::base::encoding::from_canonical_bytes(data)?;
                 dest.put_block(&b).await?;
                 report.blocks_synced += 1;
             }

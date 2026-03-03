@@ -15,14 +15,14 @@ fn test_byzantine_bit_flip_fuzzer() {
 
     let data = b"Target Truth".to_vec();
     let block = Block::new(data, "post".into(), vec![], &key, &master).unwrap();
-    let block_bytes = serde_ipld_dagcbor::to_vec(&block).unwrap();
+    let block_bytes = akshara_aadhaara::to_canonical_bytes(&block).unwrap();
 
     for _ in 0..100 {
         let mut fuzzed_bytes = block_bytes.clone();
         let bit_to_flip = rng.gen_range(0..fuzzed_bytes.len());
         fuzzed_bytes[bit_to_flip] ^= 0x01;
 
-        let res: Result<Block, _> = serde_ipld_dagcbor::from_slice(&fuzzed_bytes);
+        let res: Result<Block, _> = akshara_aadhaara::from_canonical_bytes(&fuzzed_bytes);
 
         if let Ok(fuzzed_block) = res {
             let audit_res = fuzzed_block.verify_integrity();
@@ -41,7 +41,7 @@ fn test_byzantine_manifest_corruption() {
     let anchor = akshara_aadhaara::ManifestId::from_sha256(&[0u8; 32]);
 
     let manifest = akshara_aadhaara::Manifest::new(graph_id, root, vec![], anchor, &master);
-    let manifest_bytes = serde_ipld_dagcbor::to_vec(&manifest).unwrap();
+    let manifest_bytes = akshara_aadhaara::to_canonical_bytes(&manifest).unwrap();
 
     for _ in 0..100 {
         let mut fuzzed_bytes = manifest_bytes.clone();
@@ -49,7 +49,7 @@ fn test_byzantine_manifest_corruption() {
         fuzzed_bytes[bit_to_flip] ^= 0x01;
 
         let res: Result<akshara_aadhaara::Manifest, _> =
-            serde_ipld_dagcbor::from_slice(&fuzzed_bytes);
+            akshara_aadhaara::from_canonical_bytes(&fuzzed_bytes);
 
         if let Ok(fuzzed_manifest) = res {
             let audit_res = fuzzed_manifest.verify_integrity();
@@ -82,19 +82,19 @@ async fn test_byzantine_walker_robustness() {
 
     let mut root_map = BTreeMap::new();
     root_map.insert("file".to_string(), Address::from(leaf.id()));
-    let root_bytes = serde_ipld_dagcbor::to_vec(&root_map).unwrap();
+    let root_bytes = akshara_aadhaara::to_canonical_bytes(&root_map).unwrap();
 
     let root_block =
         Block::new(root_bytes, "akshara.index.v1".into(), vec![], &key, &master).unwrap();
     store.put_block(&root_block).await.unwrap();
 
     for _ in 0..50 {
-        let leaf_bytes = serde_ipld_dagcbor::to_vec(&leaf).unwrap();
+        let leaf_bytes = akshara_aadhaara::to_canonical_bytes(&leaf).unwrap();
         let mut corrupt_bytes = leaf_bytes.clone();
         let pos = rng.gen_range(0..corrupt_bytes.len());
         corrupt_bytes[pos] ^= 0xFF;
 
-        if let Ok(corrupt_block) = serde_ipld_dagcbor::from_slice::<Block>(&corrupt_bytes) {
+        if let Ok(corrupt_block) = akshara_aadhaara::from_canonical_bytes::<Block>(&corrupt_bytes) {
             store.put_block(&corrupt_block).await.unwrap();
         }
 

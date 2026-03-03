@@ -53,7 +53,7 @@ async fn test_sovereign_full_authority_chain_verification() {
     let mut devices_map = BTreeMap::new();
     devices_map.insert("laptop".to_string(), Address::from(device_block.id()));
     let devices_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&devices_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
         "akshara.index.v1".to_string(),
         vec![],
         &key,
@@ -65,7 +65,7 @@ async fn test_sovereign_full_authority_chain_verification() {
     let mut root_map = BTreeMap::new();
     root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
         "akshara.index.v1".to_string(),
         vec![],
         &key,

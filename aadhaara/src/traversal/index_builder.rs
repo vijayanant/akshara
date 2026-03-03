@@ -99,9 +99,7 @@ impl IndexBuilder {
             }
         }
 
-        let plaintext = serde_ipld_dagcbor::to_vec(&final_map).map_err(|e| {
-            SovereignError::InternalError(format!("DAG-CBOR serialization failed: {}", e))
-        })?;
+        let plaintext = crate::base::encoding::to_canonical_bytes(&final_map)?;
 
         let index_block = Block::new(
             plaintext,

@@ -14,6 +14,7 @@ pub use base::crypto::{
     BlockContent, EncryptionPublicKey, GraphKey, Lockbox, Signature, SigningPublicKey,
     SovereignSigner,
 };
+pub use base::encoding::{from_canonical_bytes, to_canonical_bytes};
 pub use base::error::{IntegrityError, SovereignError};
 
 pub use graph::{Block, Manifest, ManifestHeader};

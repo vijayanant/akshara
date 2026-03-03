@@ -41,9 +41,7 @@ impl Block {
         key: &GraphKey,
         signer: &impl SovereignSigner,
     ) -> Result<Self, SovereignError> {
-        let plaintext = serde_ipld_dagcbor::to_vec(&index).map_err(|e| {
-            SovereignError::InternalError(format!("DAG-CBOR serialization failed: {}", e))
-        })?;
+        let plaintext = crate::base::encoding::to_canonical_bytes(&index)?;
 
         let mut nonce = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut nonce);

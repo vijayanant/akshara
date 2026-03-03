@@ -73,14 +73,13 @@ fn test_cid_binary_cbor_representation() {
     let digest = [0u8; 32];
     let cid = BlockId::from_sha256(&digest);
 
-    let bytes = serde_ipld_dagcbor::to_vec(&cid).unwrap();
+    let bytes = crate::base::encoding::to_canonical_bytes(&cid).unwrap();
 
     // Binary CBOR for Tag 42 (IPLD Link) starts with 0xD8 0x2A.
     assert_eq!(bytes[0], 0xD8);
     assert_eq!(bytes[1], 42);
 
-    let restored: BlockId = serde_ipld_dagcbor::from_slice(&bytes[..]).unwrap();
-
+    let restored: BlockId = crate::base::encoding::from_canonical_bytes(&bytes[..]).unwrap();
     assert_eq!(cid, restored);
 }
 

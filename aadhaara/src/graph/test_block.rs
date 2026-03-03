@@ -109,7 +109,7 @@ fn block_integrity_check_success() {
 fn block_integrity_fails_on_tampered_metadata() {
     let (block, _) = create_standard_block(&[]);
 
-    let bytes = serde_ipld_dagcbor::to_vec(&block).unwrap();
+    let bytes = crate::base::encoding::to_canonical_bytes(&block).unwrap();
 
     // Tamper: Manually flip a bit in the CBOR bytes
     let mut fuzzed = bytes.clone();
@@ -118,8 +118,7 @@ fn block_integrity_fails_on_tampered_metadata() {
 
     // In strict mode, this might fail at the decoder level (Syntax error)
     // or at the application level (IntegrityError). Both are valid protections.
-    let decode_res: Result<Block, _> = serde_ipld_dagcbor::from_slice(&fuzzed[..]);
-
+    let decode_res: Result<Block, _> = crate::base::encoding::from_canonical_bytes(&fuzzed[..]);
     if let Ok(tampered_block) = decode_res {
         assert!(tampered_block.verify_integrity().is_err());
     }
@@ -142,7 +141,7 @@ fn block_supports_empty_content() {
 fn block_integrity_fails_on_tampered_signature() {
     let (block, _) = create_standard_block(&[]);
 
-    let mut bytes = serde_ipld_dagcbor::to_vec(&block).unwrap();
+    let mut bytes = crate::base::encoding::to_canonical_bytes(&block).unwrap();
 
     // Tamper: The signature is near the beginning of the block in our Serde mapping.
     // Flip a bit in the middle of the block to hit metadata or signature.

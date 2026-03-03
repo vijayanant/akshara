@@ -19,7 +19,7 @@ async fn test_identity_graph_device_resolution() {
     // 1. Create a Device Block
     let device_identity = SecretIdentity::generate(&mut rng);
     let device_block = Block::new(
-        serde_ipld_dagcbor::to_vec(&"my-iphone".to_string()).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&"my-iphone".to_string()).unwrap(),
         "akshara.data.v1".to_string(),
         vec![],
         &key,
@@ -32,7 +32,7 @@ async fn test_identity_graph_device_resolution() {
     let mut devices_map = BTreeMap::new();
     devices_map.insert("laptop_1".to_string(), Address::from(device_block.id()));
     let devices_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&devices_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
         "akshara.index.v1".to_string(),
         vec![],
         &key,
@@ -45,7 +45,7 @@ async fn test_identity_graph_device_resolution() {
     let mut root_map = BTreeMap::new();
     root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
         "akshara.index.v1".to_string(),
         vec![],
         &key,
@@ -75,7 +75,8 @@ async fn test_identity_graph_device_resolution() {
         .expect("Block not found");
 
     let name: String =
-        serde_ipld_dagcbor::from_slice(&block.content().decrypt(&key).unwrap()).unwrap();
+        crate::base::encoding::from_canonical_bytes(&block.content().decrypt(&key).unwrap())
+            .unwrap();
     assert_eq!(name, "my-iphone");
 }
 
@@ -102,7 +103,7 @@ async fn test_identity_graph_missing_device_failure() {
     let mut root_map = BTreeMap::new();
     root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&root_map).unwrap(),
         "akshara.index.v1".to_string(),
         vec![],
         &key,
@@ -167,7 +168,7 @@ async fn test_identity_graph_revocation() {
     let revoked_map: BTreeMap<String, Address> = BTreeMap::new();
 
     let root_index = Block::new(
-        serde_ipld_dagcbor::to_vec(&revoked_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&revoked_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &key,

@@ -67,7 +67,7 @@ pub(crate) async fn create_valid_anchor(
     );
 
     let mut root_map = BTreeMap::new();
-    let credentials_bytes = serde_ipld_dagcbor::to_vec(&credentials_map).unwrap();
+    let credentials_bytes = crate::base::encoding::to_canonical_bytes(&credentials_map).unwrap();
 
     let credentials_index = crate::graph::Block::new(
         credentials_bytes,
@@ -84,7 +84,7 @@ pub(crate) async fn create_valid_anchor(
         crate::base::address::Address::from(credentials_index.id()),
     );
 
-    let root_bytes = serde_ipld_dagcbor::to_vec(&root_map).unwrap();
+    let root_bytes = crate::base::encoding::to_canonical_bytes(&root_map).unwrap();
 
     let genesis_index = crate::graph::Block::new(
         root_bytes,

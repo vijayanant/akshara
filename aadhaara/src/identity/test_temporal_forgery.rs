@@ -36,7 +36,7 @@ async fn test_identity_temporal_forgery_rejection() {
     );
 
     let root_index_v1 = Block::new(
-        serde_ipld_dagcbor::to_vec(&devices_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&devices_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &key,
@@ -51,7 +51,7 @@ async fn test_identity_temporal_forgery_rejection() {
     let revoked_map: BTreeMap<String, Address> = BTreeMap::new();
     // "phone" is now missing from the index
     let root_index_v2 = Block::new(
-        serde_ipld_dagcbor::to_vec(&revoked_map).unwrap(),
+        crate::base::encoding::to_canonical_bytes(&revoked_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &key,
