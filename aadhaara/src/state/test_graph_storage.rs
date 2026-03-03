@@ -19,7 +19,7 @@ pub fn create_dummy_key() -> GraphKey {
 }
 
 pub fn create_dummy_anchor() -> ManifestId {
-    ManifestId::from_sha256(&[0u8; 32])
+    ManifestId::null()
 }
 
 pub fn create_dummy_root() -> BlockId {

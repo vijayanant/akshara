@@ -38,7 +38,7 @@ fn test_byzantine_manifest_corruption() {
     let master = SecretIdentity::generate(&mut rng);
     let graph_id = akshara_aadhaara::GraphId::new();
     let root = akshara_aadhaara::BlockId::from_sha256(&[0xFF; 32]);
-    let anchor = akshara_aadhaara::ManifestId::from_sha256(&[0u8; 32]);
+    let anchor = akshara_aadhaara::ManifestId::null();
 
     let manifest = akshara_aadhaara::Manifest::new(graph_id, root, vec![], anchor, &master);
     let manifest_bytes = akshara_aadhaara::to_canonical_bytes(&manifest).unwrap();
@@ -150,7 +150,7 @@ async fn test_async_storm_manifest_heads() {
     let store = Arc::new(tokio::sync::RwLock::new(InMemoryStore::new()));
     let graph_id = akshara_aadhaara::GraphId::new();
     let root = akshara_aadhaara::BlockId::from_sha256(&[0xAA; 32]);
-    let anchor = akshara_aadhaara::ManifestId::from_sha256(&[0x00; 32]);
+    let anchor = akshara_aadhaara::ManifestId::null();
 
     let mut handles = vec![];
 

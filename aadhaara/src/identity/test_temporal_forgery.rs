@@ -15,7 +15,7 @@ async fn test_identity_temporal_forgery_rejection() {
     let master = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
-    let anchor = ManifestId::from_sha256(&[0u8; 32]);
+    let anchor = ManifestId::null();
 
     // 1. AT T=0: Authorize Device A
     let device_a = SecretIdentity::generate(&mut rng);

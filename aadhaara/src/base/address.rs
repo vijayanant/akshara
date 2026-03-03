@@ -168,6 +168,15 @@ impl ManifestId {
         ManifestId(Address(cid))
     }
 
+    /// Returns the "Null Identifier" representing the genesis of a timeline.
+    ///
+    /// Uses a SHA2-256 digest of 32 zeros.
+    pub fn null() -> Self {
+        let hash = Code::Sha2_256.digest(&[0u8; 32]);
+        let cid = Cid::new_v1(CODEC_AKSHARA_MANIFEST, hash);
+        ManifestId(Address(cid))
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         self.0.to_bytes()
     }

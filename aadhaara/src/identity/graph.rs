@@ -30,7 +30,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
         // 1. GENESIS PROTECTION: The Null Anchor represents the root of all trust.
         // A Genesis manifest is only valid if signed by the Expected Master Root Key.
-        if anchor.as_ref() == [0u8; 32] {
+        if anchor == &ManifestId::null() {
             if signer == expected_root_key {
                 return Ok(());
             } else {
@@ -58,6 +58,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
         // Path matches our Specification: /credentials/<pubkey_hex>
         let path = format!("credentials/{}", signer.to_hex());
+
         let resolution_result = walker
             .resolve_path(devices_root, &path, &identity_key)
             .await;

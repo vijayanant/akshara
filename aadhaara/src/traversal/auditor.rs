@@ -35,7 +35,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
 
         // Tier 2: Path-Aware Purpose Enforcement
         // Genesis manifests (administrative) MUST be signed by a Legislator (m/0')
-        if manifest.identity_anchor().as_ref() == [0u8; 32]
+        if manifest.identity_anchor() == ManifestId::null()
             && !crate::identity::paths::is_legislator_path(manifest.signer_path())
         {
             return Err(crate::base::error::SovereignError::Integrity(

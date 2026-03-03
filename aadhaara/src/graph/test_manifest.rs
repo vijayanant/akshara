@@ -9,7 +9,7 @@ fn manifest_integrity_success() {
     let graph_id = GraphId::new();
     let content_root = BlockId::from_sha256(&[1u8; 32]);
     let parents = vec![ManifestId::from_sha256(&[2u8; 32])];
-    let anchor = ManifestId::from_sha256(&[0u8; 32]);
+    let anchor = ManifestId::null();
 
     let manifest = Manifest::new(graph_id, content_root, parents, anchor, &identity);
 
@@ -23,7 +23,7 @@ fn manifest_integrity_fails_on_tampered_content_root() {
         GraphId::new(),
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
-        ManifestId::from_sha256(&[0u8; 32]),
+        ManifestId::null(),
         &identity,
     );
 
@@ -40,7 +40,7 @@ fn manifest_integrity_fails_on_tampered_metadata() {
         GraphId::new(),
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
-        ManifestId::from_sha256(&[0u8; 32]),
+        ManifestId::null(),
         &identity,
     );
 
@@ -57,7 +57,7 @@ fn manifest_integrity_fails_on_tampered_signature() {
         GraphId::new(),
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
-        ManifestId::from_sha256(&[0u8; 32]),
+        ManifestId::null(),
         &identity,
     );
 
@@ -76,7 +76,7 @@ fn manifest_id_depends_on_content_root_and_authority() {
     let graph_id = GraphId::new();
     let content_root = BlockId::from_sha256(&[1u8; 32]);
     let parents = vec![];
-    let anchor = ManifestId::from_sha256(&[0u8; 32]);
+    let anchor = ManifestId::null();
 
     let m1 = Manifest::new(graph_id, content_root, parents.clone(), anchor, &id_a);
     let m2 = Manifest::new(graph_id, content_root, parents, anchor, &id_b);
@@ -95,7 +95,7 @@ fn manifest_is_signed_by_author() {
         GraphId::new(),
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
-        ManifestId::from_sha256(&[0u8; 32]),
+        ManifestId::null(),
         &identity,
     );
 
@@ -109,7 +109,7 @@ fn manifest_restores_from_raw_parts() {
         GraphId::new(),
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
-        ManifestId::from_sha256(&[0u8; 32]),
+        ManifestId::null(),
         &identity,
     );
 
