@@ -31,8 +31,8 @@ async fn test_merkle_index_path_resolution() {
     let mut index_map = BTreeMap::new();
     index_map.insert("title".to_string(), Address::from(data_block.id()));
     let index_block = Block::new(
-        serde_cbor::to_vec(&index_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&index_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -73,8 +73,8 @@ async fn test_merkle_index_nested_resolution() {
     let mut nested_map = BTreeMap::new();
     nested_map.insert("file".to_string(), Address::from(data_block.id()));
     let nested_index = Block::new(
-        serde_cbor::to_vec(&nested_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&nested_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -86,8 +86,8 @@ async fn test_merkle_index_nested_resolution() {
     let mut root_map = BTreeMap::new();
     root_map.insert("nested".to_string(), Address::from(nested_index.id()));
     let root_index = Block::new(
-        serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -125,8 +125,8 @@ async fn test_merkle_index_path_normalization() {
     let mut root_map = BTreeMap::new();
     root_map.insert("file".to_string(), Address::from(data_block.id()));
     let root_index = Block::new(
-        serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -160,8 +160,8 @@ async fn test_merkle_index_missing_path_failures() {
         Address::from(BlockId::from_sha256(&[1u8; 32])),
     );
     let root_index = Block::new(
-        serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -194,8 +194,14 @@ async fn test_merkle_index_wrong_key_failure() {
     let key = GraphKey::generate(&mut rng);
     let wrong_key = GraphKey::generate(&mut rng);
 
-    let index_block =
-        Block::new(vec![1, 2, 3], "index".to_string(), vec![], &key, &identity).unwrap();
+    let index_block = Block::new(
+        vec![1, 2, 3],
+        "akshara.index.v1".to_string(),
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
     store.put_block(&index_block).await.unwrap();
 
     let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
@@ -229,8 +235,8 @@ async fn test_merkle_index_malformed_cbor_failure() {
     let mut root_map = BTreeMap::new();
     root_map.insert("not_a_folder".to_string(), Address::from(data_block.id()));
     let root_index = Block::new(
-        serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -263,8 +269,8 @@ async fn test_merkle_index_type_mismatch_failure() {
         Address::from(crate::ManifestId::from_sha256(&[1u8; 32])),
     );
     let root_index = Block::new(
-        serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &identity,
@@ -296,7 +302,7 @@ async fn test_merkle_index_circular_reference_protection() {
     let mut root_map = BTreeMap::new();
     root_map.insert("loop".to_string(), Address::from(loop_id));
 
-    let content_bytes = serde_cbor::to_vec(&root_map).unwrap();
+    let content_bytes = serde_ipld_dagcbor::to_vec(&root_map).unwrap();
     let nonce = [0u8; 12];
     let content = crate::base::crypto::BlockContent::encrypt(&content_bytes, &key, nonce).unwrap();
 
@@ -306,7 +312,7 @@ async fn test_merkle_index_circular_reference_protection() {
         identity.public().signing_key().clone(),
         identity.sign(loop_id.as_ref()),
         content,
-        "index".to_string(),
+        "akshara.index.v1".to_string(),
         vec![],
     );
     store.put_block(&root_index).await.unwrap();

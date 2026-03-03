@@ -2,7 +2,6 @@ use crate::base::crypto::{
     BlockContent, EncryptionPublicKey, EncryptionSecretKey, GraphKey, Lockbox, SigningPublicKey,
 };
 use rand::rngs::OsRng;
-use serde_json::Value;
 
 #[test]
 fn dockey_generation_is_random() {
@@ -67,27 +66,22 @@ fn lockbox_fails_on_tampered_ciphertext() {
     let graph_key = GraphKey::generate(&mut rng);
     let lockbox = Lockbox::create(&bob_public, &graph_key, &mut rng).unwrap();
 
-    let mut val: Value = serde_json::to_value(&lockbox).unwrap();
+    let bytes = serde_ipld_dagcbor::to_vec(&lockbox).unwrap();
 
-    if let Some(arr) = val
-        .get_mut("content")
-        .and_then(|c| c.get_mut("ciphertext"))
-        .and_then(|ct| ct.as_array_mut())
-        .filter(|a| !a.is_empty())
-    {
-        let first = arr[0]
-            .as_u64()
-            .expect("Ciphertext element should be a number");
-        arr[0] = serde_json::json!(first ^ 0xFF);
+    // Tamper: Flip a bit in the CBOR bytes (this will hit the ciphertext or tag)
+    let mut fuzzed = bytes.clone();
+    let len = fuzzed.len();
+    fuzzed[len - 5] ^= 0xFF;
+
+    let decode_res: Result<Lockbox, _> = serde_ipld_dagcbor::from_slice(&fuzzed[..]);
+
+    if let Ok(tampered_lockbox) = decode_res {
+        let result = tampered_lockbox.open(&bob_secret);
+        assert!(
+            result.is_err(),
+            "Tampered ciphertext must fail AES-GCM auth tag check"
+        );
     }
-
-    let tampered_lockbox: Lockbox = serde_json::from_value(val).unwrap();
-    let result = tampered_lockbox.open(&bob_secret);
-
-    assert!(
-        result.is_err(),
-        "Tampered ciphertext must fail AES-GCM auth tag check"
-    );
 }
 
 #[test]

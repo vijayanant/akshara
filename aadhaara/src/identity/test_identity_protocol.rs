@@ -42,7 +42,7 @@ async fn test_sovereign_full_authority_chain_verification() {
     let device = SecretIdentity::generate(&mut rng);
     let device_block = Block::new(
         device.public().signing_key().as_bytes().to_vec(),
-        "device_auth".to_string(),
+        "akshara.auth.v1".to_string(),
         vec![],
         &key,
         &master,
@@ -53,8 +53,8 @@ async fn test_sovereign_full_authority_chain_verification() {
     let mut devices_map = BTreeMap::new();
     devices_map.insert("laptop".to_string(), Address::from(device_block.id()));
     let devices_index = Block::new(
-        serde_cbor::to_vec(&devices_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&devices_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &master,
@@ -63,10 +63,10 @@ async fn test_sovereign_full_authority_chain_verification() {
     store.put_block(&devices_index).await.unwrap();
 
     let mut root_map = BTreeMap::new();
-    root_map.insert("devices".to_string(), Address::from(devices_index.id()));
+    root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
     let root_index = Block::new(
-        serde_cbor::to_vec(&root_map).unwrap(),
-        "index".to_string(),
+        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
+        "akshara.index.v1".to_string(),
         vec![],
         &key,
         &master,
@@ -85,7 +85,7 @@ async fn test_sovereign_full_authority_chain_verification() {
     // 4. VERIFY: Auditor walks the identity graph to check authorization
     let walker = GraphWalker::new(&store, master.public().signing_key().clone());
     let resolved_addr = walker
-        .resolve_path(root_index.id(), "/devices/laptop", &key)
+        .resolve_path(root_index.id(), "/credentials/laptop", &key)
         .await
         .unwrap();
 

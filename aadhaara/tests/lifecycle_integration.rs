@@ -35,7 +35,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
     devices_map.insert(signer_hex, Address::from(auth_block.id()));
 
     let devices_index = Block::new(
-        serde_cbor::to_vec(&devices_map).unwrap(),
+        serde_ipld_dagcbor::to_vec(&devices_map).unwrap(),
         "akshara.index.v1".to_string(),
         vec![],
         &identity_key,
@@ -46,8 +46,9 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     let mut root_map = BTreeMap::new();
     root_map.insert("credentials".to_string(), Address::from(devices_index.id()));
+
     let genesis_index = Block::new(
-        serde_cbor::to_vec(&root_map).unwrap(),
+        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
         "akshara.index.v1".to_string(),
         vec![],
         &identity_key,
@@ -84,8 +85,9 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
 
     let mut project_root_map = BTreeMap::new();
     project_root_map.insert("plan.txt".to_string(), Address::from(data_block.id()));
+
     let project_index_block = Block::new(
-        serde_cbor::to_vec(&project_root_map).unwrap(),
+        serde_ipld_dagcbor::to_vec(&project_root_map).unwrap(),
         "akshara.index.v1".to_string(),
         vec![],
         &graph_key,
@@ -151,7 +153,7 @@ async fn test_full_sovereign_lifecycle_rebirth_and_sync() {
         .unwrap();
 
     let plaintext = index_block.content().decrypt(&graph_key).unwrap();
-    let index: BTreeMap<String, Address> = serde_cbor::from_slice(&plaintext).unwrap();
+    let index: BTreeMap<String, Address> = serde_ipld_dagcbor::from_slice(&plaintext).unwrap();
     let plan_addr = index.get("plan.txt").unwrap();
 
     let plan_delta = akshara_aadhaara::Delta::new(vec![*plan_addr]);

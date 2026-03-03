@@ -41,8 +41,8 @@ impl Block {
         key: &GraphKey,
         signer: &impl SovereignSigner,
     ) -> Result<Self, SovereignError> {
-        let plaintext = serde_cbor::to_vec(&index).map_err(|e| {
-            SovereignError::InternalError(format!("CBOR serialization failed: {}", e))
+        let plaintext = serde_ipld_dagcbor::to_vec(&index).map_err(|e| {
+            SovereignError::InternalError(format!("DAG-CBOR serialization failed: {}", e))
         })?;
 
         let mut nonce = [0u8; 12];

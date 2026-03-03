@@ -84,8 +84,8 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
 
             // 3. Decrypt and parse as Index
             let plaintext = block.content().decrypt(key)?;
-            let index: BTreeMap<String, Address> =
-                serde_cbor::from_slice(&plaintext).map_err(|e| {
+            let index: BTreeMap<String, Address> = serde_ipld_dagcbor::from_slice(&plaintext)
+                .map_err(|e| {
                     debug!(error = %e, "Block content is not a valid index");
                     SovereignError::InternalError(format!(
                         "Path resolution failed: Block is not a valid index: {}",

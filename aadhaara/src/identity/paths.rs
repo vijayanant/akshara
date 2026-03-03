@@ -41,3 +41,15 @@ pub fn format_akshara_path(branch: u32, index: u32) -> String {
 pub fn format_keyring_path(version: u32) -> String {
     format_akshara_path(BRANCH_KEYRING, version)
 }
+
+/// Returns true if the path belongs to the Legislator branch (Management).
+pub fn is_legislator_path(path: &str) -> bool {
+    // Standard Akshara Legislator path: m/44'/999'/0'/0'/...
+    path.contains("/0'/0'")
+}
+
+/// Returns true if the path belongs to the Executive branch (Data).
+pub fn is_executive_path(path: &str) -> bool {
+    // Standard Akshara Executive path: m/44'/999'/0'/1'/...
+    path.contains("/0'/1'")
+}

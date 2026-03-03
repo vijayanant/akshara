@@ -6,23 +6,21 @@ use uuid::Uuid;
 
 use cid::Cid;
 use multihash_codetable::{Code, MultihashDigest};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::base::error::{IntegrityError, SovereignError};
 
-/// The universal Multicodec for a Sovereign Data Block (Encrypted).
+/// The global Multicodec for an opaque Data Block (Raw bits).
 ///
 /// Ref: https://github.com/multiformats/multicodec/blob/master/table.csv
-/// We utilize 0x50 (identity) as a base, but semantically this represents
-/// a Sovereign-formatted Dag-CBOR block containing encrypted application data.
-pub const CODEC_SOVEREIGN_BLOCK: u64 = 0x50;
+/// We use 0x55 (raw) because encrypted content is an opaque bitstream.
+pub const CODEC_AKSHARA_BLOCK: u64 = 0x55;
 
-/// The universal Multicodec for a Sovereign Manifest (Unencrypted Metadata).
+/// The global Multicodec for a Merkle-DAG Manifest (DAG-CBOR).
 ///
 /// Ref: https://github.com/multiformats/multicodec/blob/master/table.csv
-/// We utilize 0x51 (dag-pb) as a base, but semantically this represents
-/// a Sovereign-formatted Manifest containing signed graph snapshots.
-pub const CODEC_SOVEREIGN_MANIFEST: u64 = 0x51;
+/// We use 0x71 (dag-cbor) because our manifests are strict canonical maps.
+pub const CODEC_AKSHARA_MANIFEST: u64 = 0x71;
 
 /// `Address` is the opaque, universal pointer of the Sovereign Web.
 ///
@@ -32,7 +30,8 @@ pub const CODEC_SOVEREIGN_MANIFEST: u64 = 0x51;
 /// By using `Address` instead of raw library types, we ensure that the
 /// core logic remains "Blind" to the underlying hashing and transport physics,
 /// adhering to the Principle of Maximum Information Hiding.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Address(Cid);
 
 impl Address {
@@ -81,28 +80,9 @@ impl FromStr for Address {
     }
 }
 
-impl Serialize for Address {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.0.to_string())
-    }
-}
-
-impl<'de> Deserialize<'de> for Address {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Address::from_str(&s).map_err(serde::de::Error::custom)
-    }
-}
-
 /// `BlockId` is a semantic refinement of an `Address` representing a Data Block.
 ///
-/// It is guaranteed to possess a Multicodec of `CODEC_SOVEREIGN_BLOCK` (0x50).
+/// It is guaranteed to possess a Multicodec of `CODEC_AKSHARA_BLOCK` (CODEC_AKSHARA_BLOCK).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct BlockId(Address);
 
@@ -110,7 +90,7 @@ impl BlockId {
     /// Creates a new BlockId from a SHA2-256 digest.
     pub fn from_sha256(digest: &[u8]) -> Self {
         let hash = Code::Sha2_256.digest(digest);
-        let cid = Cid::new_v1(CODEC_SOVEREIGN_BLOCK, hash);
+        let cid = Cid::new_v1(CODEC_AKSHARA_BLOCK, hash);
         BlockId(Address(cid))
     }
 
@@ -137,7 +117,7 @@ impl From<BlockId> for Address {
 impl TryFrom<Address> for BlockId {
     type Error = SovereignError;
     fn try_from(addr: Address) -> Result<Self, Self::Error> {
-        if addr.codec() != CODEC_SOVEREIGN_BLOCK {
+        if addr.codec() != CODEC_AKSHARA_BLOCK {
             return Err(SovereignError::Integrity(IntegrityError::TypeMismatch(
                 addr, "BlockId",
             )));
@@ -176,7 +156,7 @@ impl TryFrom<&[u8]> for BlockId {
 
 /// `ManifestId` is a semantic refinement of an `Address` representing a Manifest.
 ///
-/// It is guaranteed to possess a Multicodec of `CODEC_SOVEREIGN_MANIFEST` (0x51).
+/// It is guaranteed to possess a Multicodec of `CODEC_AKSHARA_MANIFEST` (CODEC_AKSHARA_MANIFEST).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct ManifestId(Address);
 
@@ -184,7 +164,7 @@ impl ManifestId {
     /// Creates a new ManifestId from a SHA2-256 digest.
     pub fn from_sha256(digest: &[u8]) -> Self {
         let hash = Code::Sha2_256.digest(digest);
-        let cid = Cid::new_v1(CODEC_SOVEREIGN_MANIFEST, hash);
+        let cid = Cid::new_v1(CODEC_AKSHARA_MANIFEST, hash);
         ManifestId(Address(cid))
     }
 
@@ -210,7 +190,7 @@ impl From<ManifestId> for Address {
 impl TryFrom<Address> for ManifestId {
     type Error = SovereignError;
     fn try_from(addr: Address) -> Result<Self, Self::Error> {
-        if addr.codec() != CODEC_SOVEREIGN_MANIFEST {
+        if addr.codec() != CODEC_AKSHARA_MANIFEST {
             return Err(SovereignError::Integrity(IntegrityError::TypeMismatch(
                 addr,
                 "ManifestId",

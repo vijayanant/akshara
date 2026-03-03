@@ -117,8 +117,22 @@ async fn test_negative_identity_stale_authority() {
     let mut devices_map = BTreeMap::new();
 
     // Master Key (from genesis) + Device A
-    let auth_master = Block::new(vec![], "auth".into(), vec![], &identity_key, &alice).unwrap();
-    let auth_device_a = Block::new(vec![], "auth".into(), vec![], &identity_key, &alice).unwrap();
+    let auth_master = Block::new(
+        vec![],
+        "akshara.auth.v1".into(),
+        vec![],
+        &identity_key,
+        &alice,
+    )
+    .unwrap();
+    let auth_device_a = Block::new(
+        vec![],
+        "akshara.auth.v1".into(),
+        vec![],
+        &identity_key,
+        &alice,
+    )
+    .unwrap();
     store.put_block(&auth_master).await.unwrap();
     store.put_block(&auth_device_a).await.unwrap();
 
@@ -141,19 +155,19 @@ async fn test_negative_identity_stale_authority() {
 
     let mut devices_index_map = BTreeMap::new();
     let devices_index = Block::new(
-        serde_cbor::to_vec(&devices_map).unwrap(),
-        "index".into(),
+        serde_ipld_dagcbor::to_vec(&devices_map).unwrap(),
+        "akshara.index.v1".into(),
         vec![],
         &identity_key,
         &alice,
     )
     .unwrap();
     store.put_block(&devices_index).await.unwrap();
-    devices_index_map.insert("devices".to_string(), Address::from(devices_index.id()));
+    devices_index_map.insert("credentials".to_string(), Address::from(devices_index.id()));
 
     let root_index = Block::new(
-        serde_cbor::to_vec(&devices_index_map).unwrap(),
-        "index".into(),
+        serde_ipld_dagcbor::to_vec(&devices_index_map).unwrap(),
+        "akshara.index.v1".into(),
         vec![],
         &identity_key,
         &alice,
@@ -237,7 +251,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     credentials_map.insert(signer_hex, Address::from(auth_block.id()));
 
     let credentials_index = Block::new(
-        serde_cbor::to_vec(&credentials_map).unwrap(),
+        serde_ipld_dagcbor::to_vec(&credentials_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &identity_key,
@@ -253,7 +267,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     );
 
     let root_index = Block::new(
-        serde_cbor::to_vec(&root_map).unwrap(),
+        serde_ipld_dagcbor::to_vec(&root_map).unwrap(),
         "akshara.index.v1".into(),
         vec![],
         &identity_key,

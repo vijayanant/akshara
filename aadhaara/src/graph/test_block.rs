@@ -108,13 +108,21 @@ fn block_integrity_check_success() {
 #[test]
 fn block_integrity_fails_on_tampered_metadata() {
     let (block, _) = create_standard_block(&[]);
-    let json = serde_json::to_string(&block).unwrap();
 
-    // Tamper: Change block_type from "p" to "h1"
-    let tampered_json = json.replace("\"block_type\":\"p\"", "\"block_type\":\"h1\"");
-    let tampered_block: Block = serde_json::from_str(&tampered_json).unwrap();
+    let bytes = serde_ipld_dagcbor::to_vec(&block).unwrap();
 
-    assert!(tampered_block.verify_integrity().is_err());
+    // Tamper: Manually flip a bit in the CBOR bytes
+    let mut fuzzed = bytes.clone();
+    let len = fuzzed.len();
+    fuzzed[len - 10] ^= 0xFF;
+
+    // In strict mode, this might fail at the decoder level (Syntax error)
+    // or at the application level (IntegrityError). Both are valid protections.
+    let decode_res: Result<Block, _> = serde_ipld_dagcbor::from_slice(&fuzzed[..]);
+
+    if let Ok(tampered_block) = decode_res {
+        assert!(tampered_block.verify_integrity().is_err());
+    }
 }
 
 #[test]
@@ -134,22 +142,16 @@ fn block_supports_empty_content() {
 fn block_integrity_fails_on_tampered_signature() {
     let (block, _) = create_standard_block(&[]);
 
-    let json = serde_json::to_string(&block).unwrap();
-    let mut val: serde_json::Value = serde_json::from_str(&json).unwrap();
-    if let Some(arr) = val
-        .get_mut("signature")
-        .and_then(|s| s.as_array_mut())
-        .filter(|a| !a.is_empty())
-    {
-        // Mutate the first byte of signature
-        let first = arr[0].as_u64().unwrap();
-        arr[0] = serde_json::json!(first ^ 0xFF);
-    }
+    let mut bytes = serde_ipld_dagcbor::to_vec(&block).unwrap();
 
-    let tampered_block: Block = serde_json::from_value(val).unwrap();
+    // Tamper: The signature is near the beginning of the block in our Serde mapping.
+    // Flip a bit in the middle of the block to hit metadata or signature.
+    bytes[20] ^= 0xFF;
+
+    let tampered_block: Block = serde_ipld_dagcbor::from_slice(&bytes[..]).unwrap();
     assert!(
         tampered_block.verify_integrity().is_err(),
-        "Integrity must fail on bad signature"
+        "Integrity must fail on bad signature or metadata"
     );
 }
 

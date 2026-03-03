@@ -99,8 +99,12 @@ impl IndexBuilder {
             }
         }
 
+        let plaintext = serde_ipld_dagcbor::to_vec(&final_map).map_err(|e| {
+            SovereignError::InternalError(format!("DAG-CBOR serialization failed: {}", e))
+        })?;
+
         let index_block = Block::new(
-            serde_cbor::to_vec(&final_map).unwrap(),
+            plaintext,
             "akshara.index.v1".to_string(),
             vec![],
             key,

@@ -1,5 +1,5 @@
 use crate::base::address::{
-    Address, BlockId, CODEC_SOVEREIGN_BLOCK, CODEC_SOVEREIGN_MANIFEST, ManifestId,
+    Address, BlockId, CODEC_AKSHARA_BLOCK, CODEC_AKSHARA_MANIFEST, ManifestId,
 };
 use std::str::FromStr;
 
@@ -8,7 +8,7 @@ fn test_cid_creation_from_sha256() {
     let digest = [0u8; 32];
     let cid = BlockId::from_sha256(&digest);
 
-    assert_eq!(cid.codec(), CODEC_SOVEREIGN_BLOCK);
+    assert_eq!(cid.codec(), CODEC_AKSHARA_BLOCK);
     assert_eq!(cid.to_bytes().len(), 36); // 1 (version) + 1 (codec) + 1 (hash) + 1 (len) + 32 (digest)
 }
 
@@ -18,8 +18,8 @@ fn test_cid_codec_enforcement() {
     let block_id = BlockId::from_sha256(&digest);
     let manifest_id = ManifestId::from_sha256(&digest);
 
-    assert_eq!(block_id.codec(), CODEC_SOVEREIGN_BLOCK);
-    assert_eq!(manifest_id.codec(), CODEC_SOVEREIGN_MANIFEST);
+    assert_eq!(block_id.codec(), CODEC_AKSHARA_BLOCK);
+    assert_eq!(manifest_id.codec(), CODEC_AKSHARA_MANIFEST);
 }
 
 #[test]
@@ -69,15 +69,18 @@ fn test_cid_fails_on_malformed_string() {
 }
 
 #[test]
-fn test_cid_serde_json_representation() {
+fn test_cid_binary_cbor_representation() {
     let digest = [0u8; 32];
     let cid = BlockId::from_sha256(&digest);
-    let json = serde_json::to_string(&cid).unwrap();
 
-    // Should be represented as a string in JSON
-    assert!(json.starts_with("\"baf"));
+    let bytes = serde_ipld_dagcbor::to_vec(&cid).unwrap();
 
-    let restored: BlockId = serde_json::from_str(&json).unwrap();
+    // Binary CBOR for Tag 42 (IPLD Link) starts with 0xD8 0x2A.
+    assert_eq!(bytes[0], 0xD8);
+    assert_eq!(bytes[1], 42);
+
+    let restored: BlockId = serde_ipld_dagcbor::from_slice(&bytes[..]).unwrap();
+
     assert_eq!(cid, restored);
 }
 

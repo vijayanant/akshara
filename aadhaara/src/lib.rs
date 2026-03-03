@@ -8,7 +8,7 @@ pub(crate) mod traversal;
 // --- Public API ---
 
 pub use base::address::{
-    Address, BlockId, CODEC_SOVEREIGN_BLOCK, CODEC_SOVEREIGN_MANIFEST, GraphId, ManifestId,
+    Address, BlockId, CODEC_AKSHARA_BLOCK, CODEC_AKSHARA_MANIFEST, GraphId, ManifestId,
 };
 pub use base::crypto::{
     BlockContent, EncryptionPublicKey, GraphKey, Lockbox, Signature, SigningPublicKey,

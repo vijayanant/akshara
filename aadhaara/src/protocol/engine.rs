@@ -136,7 +136,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
     pub async fn fulfill(&self, delta: &Delta) -> Result<Vec<Portion>, SovereignError> {
         let mut portions = Vec::new();
         for addr in delta.missing() {
-            if addr.codec() == crate::base::address::CODEC_SOVEREIGN_MANIFEST {
+            if addr.codec() == crate::base::address::CODEC_AKSHARA_MANIFEST {
                 let id = ManifestId::try_from(*addr)?;
                 let manifest = self.store.get_manifest(&id).await?.ok_or_else(|| {
                     SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
@@ -144,7 +144,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
                         id
                     )))
                 })?;
-                let data = serde_cbor::to_vec(&manifest).map_err(|e| {
+                let data = serde_ipld_dagcbor::to_vec(&manifest).map_err(|e| {
                     SovereignError::InternalError(format!("Manifest serialization failed: {}", e))
                 })?;
                 portions.push(Portion::new(*addr, data));
@@ -156,7 +156,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
                         id
                     )))
                 })?;
-                let data = serde_cbor::to_vec(&block).map_err(|e| {
+                let data = serde_ipld_dagcbor::to_vec(&block).map_err(|e| {
                     SovereignError::InternalError(format!("Block serialization failed: {}", e))
                 })?;
                 portions.push(Portion::new(*addr, data));
@@ -182,14 +182,15 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
 
             report.total_bytes += data.len();
 
-            if addr.codec() == crate::base::address::CODEC_SOVEREIGN_MANIFEST {
-                let m: crate::graph::Manifest = serde_cbor::from_slice(data).map_err(|e| {
-                    SovereignError::InternalError(format!("Convergence failure: {}", e))
-                })?;
+            if addr.codec() == crate::base::address::CODEC_AKSHARA_MANIFEST {
+                let m: crate::graph::Manifest =
+                    serde_ipld_dagcbor::from_slice(data).map_err(|e| {
+                        SovereignError::InternalError(format!("Convergence failure: {}", e))
+                    })?;
                 dest.put_manifest(&m).await?;
                 report.manifests_synced += 1;
             } else {
-                let b: crate::graph::Block = serde_cbor::from_slice(data).map_err(|e| {
+                let b: crate::graph::Block = serde_ipld_dagcbor::from_slice(data).map_err(|e| {
                     SovereignError::InternalError(format!("Convergence failure: {}", e))
                 })?;
                 dest.put_block(&b).await?;

@@ -36,7 +36,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         // Tier 2: Path-Aware Purpose Enforcement
         // Genesis manifests (administrative) MUST be signed by a Legislator (m/0')
         if manifest.identity_anchor().as_ref() == [0u8; 32]
-            && !manifest.signer_path().contains("/0'/0'")
+            && !crate::identity::paths::is_legislator_path(manifest.signer_path())
         {
             return Err(crate::base::error::SovereignError::Integrity(
                 crate::base::error::IntegrityError::UnauthorizedSigner(format!(
@@ -78,7 +78,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
 
     /// Verifies that an Address matches the expected type and exists in the store.
     pub async fn verify_existence(&self, addr: &Address) -> Result<(), SovereignError> {
-        if addr.codec() == crate::base::address::CODEC_SOVEREIGN_MANIFEST {
+        if addr.codec() == crate::base::address::CODEC_AKSHARA_MANIFEST {
             let id = ManifestId::try_from(*addr)?;
             self.store.get_manifest(&id).await.and_then(|opt| {
                 opt.ok_or_else(|| {
