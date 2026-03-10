@@ -70,6 +70,9 @@ async fn test_sync_recursive_index_structure() {
 }
 
 /// SCENARIO 2: Honest Identity Rebirth
+///
+/// Alice creates her identity on a laptop, then recovers it on a phone.
+/// NO variables are passed between the two scopes except the mnemonic string.
 #[tokio::test]
 async fn test_identity_rebirth_bootstrap() {
     let mut relay_store = InMemoryStore::new();
@@ -77,10 +80,17 @@ async fn test_identity_rebirth_bootstrap() {
 
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let passphrase = "salt";
+    // The stable base ID used to derive the Identity Graph's discovery identifier.
+    let identity_graph_base_id = GraphId::from_bytes([0xDA; 16]);
 
-    let id_gid = {
+    // --- Phase 1: Laptop (Creation and Sync) ---
+    {
         let laptop_identity = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
-        let gid = GraphId::new();
+        let master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
+        
+        // Derive the stable Discovery ID for the Identity Graph
+        let id_gid = master.derive_discovery_id(&identity_graph_base_id).unwrap();
+        
         let id_key = GraphKey::new([0u8; 32]);
         let id_root = Block::new(
             vec![],
@@ -91,7 +101,7 @@ async fn test_identity_rebirth_bootstrap() {
         )
         .unwrap();
         let id_manifest = Manifest::new(
-            gid,
+            id_gid,
             id_root.id(),
             vec![],
             ManifestId::null(),
@@ -100,24 +110,21 @@ async fn test_identity_rebirth_bootstrap() {
 
         relay_store.put_block(&id_root).await.unwrap();
         relay_store.put_manifest(&id_manifest).await.unwrap();
-        gid
-    };
+    } // ALL laptop variables are destroyed here.
 
+    // --- Phase 2: Phone (Rebirth and Recovery) ---
     let reborn_identity = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
-
-    {
-        let master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
-        let identity_graph_discovery_base = GraphId::from_bytes([0xDA; 16]);
-        master
-            .derive_discovery_id(&identity_graph_discovery_base)
-            .unwrap();
-    }
+    let phone_master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
+    
+    // The phone derives the Discovery ID independently purely from the words.
+    let derived_id_gid = phone_master.derive_discovery_id(&identity_graph_base_id).unwrap();
 
     let reconciler = Reconciler::new(&relay_store, reborn_identity.public_key());
-    let heads = relay_store.get_heads(&id_gid).await.unwrap();
+    let heads = relay_store.get_heads(&derived_id_gid).await.unwrap();
+    assert!(!heads.is_empty(), "Phone could not find Identity Graph on Relay via Discovery ID");
 
     let comp = reconciler
-        .reconcile(&Heads::new(id_gid, heads), &[])
+        .reconcile(&Heads::new(derived_id_gid, heads), &[])
         .await
         .unwrap();
     reconciler
@@ -125,7 +132,8 @@ async fn test_identity_rebirth_bootstrap() {
         .await
         .unwrap();
 
-    assert!(!phone_store.get_heads(&id_gid).await.unwrap().is_empty());
+    // PROOF: Phone has successfully recovered Alice's Identity Graph frontier.
+    assert!(!phone_store.get_heads(&derived_id_gid).await.unwrap().is_empty());
 }
 
 /// SCENARIO 3: The Complete Stateless Journey (Type-Safe)
