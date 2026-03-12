@@ -12,7 +12,7 @@ date: 2026-02-23
 This document defines the structure and verification rules for **Graph Manifests** (Snapshots). Manifests are signed metadata nodes that establish the authoritative "Head" of a graph at a specific point in time.
 
 ## 2. Snapshot Identifier (ManifestId)
-All Graph Manifests MUST utilize an address with the **`0x51`** multicodec. This prevents type-confusion attacks where a data block could be mistaken for an authoritative snapshot.
+All Graph Manifests MUST utilize an address with the **`0x58`** multicodec. This prevents type-confusion attacks where a data block could be mistaken for an authoritative snapshot.
 
 ## 3. Manifest Structure
 A Manifest is encoded using **Canonical DAG-CBOR** and consists of:

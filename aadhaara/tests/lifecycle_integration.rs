@@ -87,10 +87,10 @@ async fn test_identity_rebirth_bootstrap() {
     {
         let laptop_identity = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
         let master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
-        
+
         // Derive the stable Discovery ID for the Identity Graph
         let id_gid = master.derive_discovery_id(&identity_graph_base_id).unwrap();
-        
+
         let id_key = GraphKey::new([0u8; 32]);
         let id_root = Block::new(
             vec![],
@@ -115,13 +115,18 @@ async fn test_identity_rebirth_bootstrap() {
     // --- Phase 2: Phone (Rebirth and Recovery) ---
     let reborn_identity = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
     let phone_master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
-    
+
     // The phone derives the Discovery ID independently purely from the words.
-    let derived_id_gid = phone_master.derive_discovery_id(&identity_graph_base_id).unwrap();
+    let derived_id_gid = phone_master
+        .derive_discovery_id(&identity_graph_base_id)
+        .unwrap();
 
     let reconciler = Reconciler::new(&relay_store, reborn_identity.public_key());
     let heads = relay_store.get_heads(&derived_id_gid).await.unwrap();
-    assert!(!heads.is_empty(), "Phone could not find Identity Graph on Relay via Discovery ID");
+    assert!(
+        !heads.is_empty(),
+        "Phone could not find Identity Graph on Relay via Discovery ID"
+    );
 
     let comp = reconciler
         .reconcile(&Heads::new(derived_id_gid, heads), &[])
@@ -133,7 +138,13 @@ async fn test_identity_rebirth_bootstrap() {
         .unwrap();
 
     // PROOF: Phone has successfully recovered Alice's Identity Graph frontier.
-    assert!(!phone_store.get_heads(&derived_id_gid).await.unwrap().is_empty());
+    assert!(
+        !phone_store
+            .get_heads(&derived_id_gid)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// SCENARIO 3: The Complete Stateless Journey (Type-Safe)

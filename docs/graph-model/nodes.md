@@ -12,7 +12,7 @@ date: 2026-02-23
 This document defines the physical structure and recursive properties of **Data Blocks** (Nodes) within the Akshara Graph Model. Blocks are the atomic units of information, containing encrypted application data and the links required to form complex structures.
 
 ## 2. Node Identifier (BlockId)
-All Data Blocks MUST utilize an address with the **`0x50`** multicodec. This ensures that the system can distinguish between raw data and signed snapshots at the bit-level.
+All Data Blocks MUST utilize an address with the **`0x57`** multicodec. This ensures that the system can distinguish between raw data and signed snapshots at the bit-level.
 
 ## 3. Block Structure
 A Block is encoded using the **Canonical DAG-CBOR** standard and consists of the following logical fields:

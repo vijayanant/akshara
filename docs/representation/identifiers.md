@@ -39,13 +39,13 @@ Structural type-safety is enforced via the **Multicodec** field. Akshara mandate
 
 | Identifier Type | Multicodec (Hex) | Multicodec (Semantic) |
 | :--- | :--- | :--- |
-| **`BlockId`** | `0x50` | `identity` (Sovereign Block Base) |
-| **`ManifestId`** | `0x51` | `dag-pb` (Sovereign Manifest Base) |
+| **`BlockId`** | `0x57` | `akshara-block` (Sovereign Block Base) |
+| **`ManifestId`** | `0x58` | `akshara-manifest` (Sovereign Manifest Base) |
 
 ## 4. Verification Invariants
 The `Auditor` and `Reconciler` MUST enforce the following integrity rules during any representation-layer operation:
 
-1.  **Codec Enforcement:** Any operation expecting a `BlockId` MUST reject an address with a codec other than `0x50`. Any operation expecting a `ManifestId` MUST reject an address with a codec other than `0x51`.
+1.  **Codec Enforcement:** Any operation expecting a `BlockId` MUST reject an address with a codec other than `0x57`. Any operation expecting a `ManifestId` MUST reject an address with a codec other than `0x58`.
 2.  **Bitstream Verification:** The address MUST be re-derived from the payload bytes using SHA2-256 before the payload is accepted into the local store.
 3.  **Fortress Rule (Opaqueness):** Higher-level modules (SDK, Application) MUST NOT attempt to parse or interpret the internal components of an `Address`. It must be treated as an atomic, immutable token.
 

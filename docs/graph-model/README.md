@@ -15,8 +15,8 @@ Akshara operates on the principle that **Everything is a Graph**. There are no "
 ## 2. Node Taxonomy
 The graph model is composed of two fundamental node types, distinguished by their representational multicodecs:
 
-1.  **Data Blocks ([Nodes](nodes.md)):** Atomic units of application data. They are encrypted at the source and linked recursively to form complex structures. (Multicodec: `0x50`).
-2.  **Graph Manifests ([Snapshots](snapshots.md)):** Signed metadata nodes that capture a specific state of a graph. They provide the "Head" pointers for synchronization and authority. (Multicodec: `0x51`).
+1.  **Data Blocks ([Nodes](nodes.md)):** Atomic units of application data. They are encrypted at the source and linked recursively to form complex structures. (Multicodec: `0x57`).
+2.  **Graph Manifests ([Snapshots](snapshots.md)):** Signed metadata nodes that capture a specific state of a graph. They provide the "Head" pointers for synchronization and authority. (Multicodec: `0x58`).
 
 ## 3. Structural Properties
 *   **Merkle-DAG Integrity:** Every link in the graph is a Content Identifier (CID). This ensure that any modification to a leaf node causes a cascading change in CIDs up to the root, enabling instant tamper detection.

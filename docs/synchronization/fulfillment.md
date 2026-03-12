@@ -31,8 +31,8 @@ Akshara mandates a **Blind Fulfillment** loop to preserve the secrecy of the dat
 Every synchronization turn MUST yield a **`ConvergenceReport`**. This report provides the high-level application with the metrics required for progress tracking and auditing.
 
 ### 4.1 Report Schema
-*   **`manifests_synced`**: Count of 0x51 nodes successfully ingested.
-*   **`blocks_synced`**: Count of 0x50 nodes successfully ingested.
+*   **`manifests_synced`**: Count of 0x58 nodes successfully ingested.
+*   **`blocks_synced`**: Count of 0x57 nodes successfully ingested.
 *   **`total_bytes`**: Cumulative size of all data payloads transferred.
 
 ## 5. Error Recovery

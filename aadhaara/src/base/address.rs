@@ -10,17 +10,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::base::error::{IntegrityError, SovereignError};
 
-/// The global Multicodec for an opaque Data Block (Raw bits).
+/// The global Multicodec for an opaque Data Block (Encrypted-then-Signed).
 ///
 /// Ref: https://github.com/multiformats/multicodec/blob/master/table.csv
-/// We use 0x55 (raw) because encrypted content is an opaque bitstream.
-pub const CODEC_AKSHARA_BLOCK: u64 = 0x55;
+/// We use 0x57 (Akshara Block) to distinguish protocol content from generic bytes.
+pub const CODEC_AKSHARA_BLOCK: u64 = 0x57;
 
-/// The global Multicodec for a Merkle-DAG Manifest (DAG-CBOR).
+/// The global Multicodec for a signed Graph Snapshot (Manifest).
 ///
 /// Ref: https://github.com/multiformats/multicodec/blob/master/table.csv
-/// We use 0x71 (dag-cbor) because our manifests are strict canonical maps.
-pub const CODEC_AKSHARA_MANIFEST: u64 = 0x71;
+/// We use 0x58 (Akshara Manifest) to mark public metadata entry points.
+pub const CODEC_AKSHARA_MANIFEST: u64 = 0x58;
 
 /// `Address` is the opaque, universal pointer of the Sovereign Web.
 ///
@@ -51,6 +51,12 @@ impl Address {
     }
 }
 
+impl From<Cid> for Address {
+    fn from(cid: Cid) -> Self {
+        Self(cid)
+    }
+}
+
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -64,9 +70,16 @@ impl TryFrom<&[u8]> for Address {
         let cid = Cid::read_bytes(&mut cursor)
             .map_err(|_| SovereignError::Integrity(IntegrityError::MalformedId))?;
 
+        // THE FORTRESS RULE: Entire buffer must be consumed
         if cursor.position() != bytes.len() as u64 {
             return Err(SovereignError::Integrity(IntegrityError::MalformedId));
         }
+
+        // AKSHARA MANDATE: Only CIDv1 is permitted for algorithm agility
+        if cid.version() != cid::Version::V1 {
+            return Err(SovereignError::Integrity(IntegrityError::MalformedId));
+        }
+
         Ok(Self(cid))
     }
 }

@@ -12,7 +12,7 @@ date: 2026-02-23
 This document describes the **Merkle-Index** structure, which provides the mechanism for resolving human-readable path sequences (e.g., `/notes/ideas.txt`) into cryptographically verifiable `Address` objects.
 
 ## 2. Structural Definition
-A Merkle-Index is a specialized **Data Block** (`0x50`) with the semantic type `"index"`. 
+A Merkle-Index is a specialized **Data Block** (`0x57`) with the semantic type `"index"`. 
 
 ### 2.1 Payload Schema
 The encrypted `content` of an index block consists of a **BTreeMap<String, Address>** encoded in DAG-CBOR.

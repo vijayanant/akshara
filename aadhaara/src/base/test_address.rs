@@ -1,6 +1,7 @@
 use crate::base::address::{
     Address, BlockId, CODEC_AKSHARA_BLOCK, CODEC_AKSHARA_MANIFEST, ManifestId,
 };
+use multihash_codetable::MultihashDigest;
 use std::str::FromStr;
 
 #[test]
@@ -81,6 +82,45 @@ fn test_cid_binary_cbor_representation() {
 
     let restored: BlockId = crate::base::encoding::from_canonical_bytes(&bytes[..]).unwrap();
     assert_eq!(cid, restored);
+}
+
+#[test]
+fn test_negative_reject_generic_codecs() {
+    let digest = [0u8; 32];
+    let hash = multihash_codetable::Code::Sha2_256.digest(&digest);
+
+    // 1. Rejects 0x55 (Raw)
+    let raw_cid = cid::Cid::new_v1(0x55, hash);
+    assert!(BlockId::try_from(Address::from(raw_cid)).is_err());
+
+    // 2. Rejects 0x71 (DAG-CBOR)
+    let cbor_cid = cid::Cid::new_v1(0x71, hash);
+    assert!(ManifestId::try_from(Address::from(cbor_cid)).is_err());
+}
+
+#[test]
+fn test_negative_reject_cid_v0() {
+    // CIDv0 is always 34 bytes (0x12 0x20 [32-byte digest])
+    let mut v0_bytes = vec![0x12, 0x20];
+    v0_bytes.extend_from_slice(&[0u8; 32]);
+
+    // Our gate must reject V0
+    assert!(Address::try_from(&v0_bytes[..]).is_err());
+}
+
+#[test]
+fn test_negative_reject_malformed_multihash() {
+    let digest = [0u8; 32];
+    // Use Sha2_512 as an "unexpected" algorithm
+    let hash = multihash_codetable::Code::Sha2_512.digest(&digest);
+
+    let unexpected_cid = cid::Cid::new_v1(CODEC_AKSHARA_BLOCK, hash);
+    let addr = Address::from(unexpected_cid);
+
+    // While this is a valid CID, our factory methods force SHA2-256.
+    // If we receive a different hash algorithm via the network, we can still parse it as an Address,
+    // but specific logic may choose to reject it later.
+    assert!(BlockId::try_from(addr).is_ok()); // The gate only checks the codec
 }
 
 pub mod properties {
