@@ -1,7 +1,7 @@
 use crate::base::error::{CryptoError, SovereignError};
-use aes_gcm::{
-    Aes256Gcm, Nonce,
-    aead::{Aead, KeyInit},
+use chacha20poly1305::{
+    KeyInit, XChaCha20Poly1305, XNonce,
+    aead::{Aead, Payload},
 };
 use ed25519_dalek::{Signature as EdSignature, Verifier, VerifyingKey};
 use metrics::counter;
@@ -103,13 +103,13 @@ impl EncryptionSecretKey {
     }
 }
 
-// --- Symmetric Keys (AES-256) ---
+// --- Symmetric Keys (XChaCha20) ---
 
-/// `GraphKey` is the AES-256 symmetric key used to encrypt the content of a graph.
+/// `GraphKey` is the 256-bit symmetric key used to encrypt the content of a graph.
 ///
 /// This key is the "Master Secret" for a specific document. Anyone with this key
-/// can read every block in the graph. We use AES-256-GCM to provide both
-/// Confidentiality and Authenticated Integrity.
+/// can read every block in the graph. We use XChaCha20-Poly1305 to provide both
+/// Confidentiality and Authenticated Integrity with extended 192-bit nonces.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct GraphKey([u8; 32]);
 
@@ -154,34 +154,40 @@ pub trait SovereignSigner {
     fn derivation_path(&self) -> &str;
 }
 
-/// `BlockContent` holds the encrypted ciphertext and the nonce of a data block.
+/// `BlockContent` holds the encrypted ciphertext and the extended nonce of a data block.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct BlockContent {
     ciphertext: Vec<u8>,
-    nonce: [u8; 12],
+    nonce: [u8; 24],
 }
 
 impl BlockContent {
-    /// Encrypts plaintext using AES-256-GCM.
+    /// Encrypts plaintext using XChaCha20-Poly1305 with Associated Data.
     ///
-    /// SAFETY: Every encryption operation MUST use a unique nonce.
-    /// Reusing a nonce with the same key allows an attacker to XOR two ciphertexts
-    /// and recover the plaintext (The "Forbidden Attack").
+    /// SAFETY: XChaCha20 uses a 192-bit (24-byte) nonce, which is large enough
+    /// to be randomly generated without risk of collision for the lifetime
+    /// of any graph.
     pub fn encrypt(
         plaintext: &[u8],
         key: &GraphKey,
-        nonce_bytes: [u8; 12],
+        nonce_bytes: [u8; 24],
+        associated_data: &[u8],
     ) -> Result<Self, SovereignError> {
         let span = span!(Level::TRACE, "content_encrypt");
         let _enter = span.enter();
 
-        let cipher = Aes256Gcm::new(key.as_bytes().into());
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let cipher = XChaCha20Poly1305::new(key.as_bytes().into());
+        let nonce = XNonce::from_slice(&nonce_bytes);
 
-        let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
-            error!(error = %e, "AES-GCM encryption failed");
+        let payload = Payload {
+            msg: plaintext,
+            aad: associated_data,
+        };
+
+        let ciphertext = cipher.encrypt(nonce, payload).map_err(|e| {
+            error!(error = %e, "XChaCha20-Poly1305 encryption failed");
             SovereignError::Crypto(CryptoError::EncryptionFailed(format!(
-                "AES-GCM failed: {}",
+                "XChaCha20 failed: {}",
                 e
             )))
         })?;
@@ -192,23 +198,30 @@ impl BlockContent {
         })
     }
 
-    pub fn decrypt(&self, key: &GraphKey) -> Result<Vec<u8>, SovereignError> {
+    pub fn decrypt(
+        &self,
+        key: &GraphKey,
+        associated_data: &[u8],
+    ) -> Result<Vec<u8>, SovereignError> {
         let span = span!(Level::TRACE, "content_decrypt");
         let _enter = span.enter();
 
-        let cipher = Aes256Gcm::new(key.as_bytes().into());
-        let nonce = Nonce::from_slice(&self.nonce);
+        let cipher = XChaCha20Poly1305::new(key.as_bytes().into());
+        let nonce = XNonce::from_slice(&self.nonce);
 
-        let plaintext = cipher
-            .decrypt(nonce, self.ciphertext.as_slice())
-            .map_err(|e| {
-                debug!(error = %e, "AES-GCM decryption failed");
-                counter!("sovereign.crypto.decryption_failure").increment(1);
-                SovereignError::Crypto(CryptoError::DecryptionFailed(format!(
-                    "AES-GCM failed: {}",
-                    e
-                )))
-            })?;
+        let payload = Payload {
+            msg: self.ciphertext.as_slice(),
+            aad: associated_data,
+        };
+
+        let plaintext = cipher.decrypt(nonce, payload).map_err(|e| {
+            debug!(error = %e, "XChaCha20-Poly1305 decryption failed (AD or Key mismatch)");
+            counter!("sovereign.crypto.decryption_failure").increment(1);
+            SovereignError::Crypto(CryptoError::DecryptionFailed(format!(
+                "XChaCha20 failed: {}",
+                e
+            )))
+        })?;
 
         Ok(plaintext)
     }
@@ -217,23 +230,22 @@ impl BlockContent {
         &self.ciphertext
     }
 
-    pub fn nonce(&self) -> &[u8; 12] {
+    pub fn nonce(&self) -> &[u8; 24] {
         &self.nonce
     }
 
     /// Public-Crate API: Used by sibling crates for wire mapping.
     #[allow(dead_code)]
-    pub(crate) fn from_raw_parts(ciphertext: Vec<u8>, nonce: [u8; 12]) -> Self {
+    pub(crate) fn from_raw_parts(ciphertext: Vec<u8>, nonce: [u8; 24]) -> Self {
         Self { ciphertext, nonce }
     }
 }
 
-/// `Lockbox` implements a Hybrid Encryption scheme (X25519 + AES-GCM).
+/// `Lockbox` implements a Hybrid Encryption scheme (X25519 + XChaCha20-Poly1305).
 ///
 /// It allows a sender to share a `GraphKey` with a specific recipient without
 /// pre-sharing a secret. We use an ephemeral X25519 key for every lockbox
-/// to ensure that if the sender's master key is compromised, previous
-/// lockboxes cannot be decrypted (Forward Secrecy).
+/// to ensure Forward Secrecy.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct Lockbox {
     pub(crate) ephemeral_public_key: EncryptionPublicKey,
@@ -257,10 +269,14 @@ impl Lockbox {
         let shared_secret = ephemeral_secret.diffie_hellman(&recipient_xpub);
         let shared_key = GraphKey::new(*shared_secret.as_bytes());
 
-        let mut nonce = [0u8; 12];
+        let mut nonce = [0u8; 24];
         rng.fill_bytes(&mut nonce);
 
-        let content = BlockContent::encrypt(secret_to_lock.as_bytes(), &shared_key, nonce)?;
+        // LOCKBOX INVARIANT: Associated Data for a lockbox is the recipient's public key
+        // to ensure the box cannot be replayed for another user.
+        let ad = recipient_public.as_bytes();
+
+        let content = BlockContent::encrypt(secret_to_lock.as_bytes(), &shared_key, nonce, ad)?;
 
         trace!("Lockbox created with ephemeral key");
 
@@ -280,7 +296,12 @@ impl Lockbox {
         let shared_secret = recipient_secret_scalar.diffie_hellman(&ephemeral_public_point);
         let shared_key = GraphKey::new(*shared_secret.as_bytes());
 
-        let decrypted_bytes = self.content.decrypt(&shared_key).map_err(|e| {
+        // Re-derive recipient public key for AD verification
+        let recipient_public_bytes =
+            *XPublicKey::from(&StaticSecret::from(*recipient_secret.as_bytes())).as_bytes();
+        let ad = &recipient_public_bytes;
+
+        let decrypted_bytes = self.content.decrypt(&shared_key, ad).map_err(|e| {
             debug!(error = ?e, "Failed to decrypt lockbox content");
             e
         })?;

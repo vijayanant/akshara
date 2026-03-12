@@ -52,12 +52,13 @@ async fn test_sovereign_full_authority_chain_verification() {
     let mut relay_store = InMemoryStore::new();
 
     // --- ACTOR 1: Alice's Laptop (The Authorizer) ---
-    let (id_root_index, alice_master_pub) = {
+    let (id_root_index, alice_master_pub, id_graph_id) = {
         let alice_master =
             SecretIdentity::from_mnemonic_at_path(&mnemonic, passphrase, "m/44'/999'/0'/0'/0'")
                 .unwrap();
         let alice_pub = alice_master.public().signing_key().clone();
         let graph_key = GraphKey::new([0u8; 32]);
+        let id_graph_id = GraphId::new();
 
         // 1. Authorize a Phone (m/1'/0')
         let alice_phone_master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
@@ -67,6 +68,7 @@ async fn test_sovereign_full_authority_chain_verification() {
         let phone_pub = alice_phone.public().signing_key().clone();
 
         let auth_block = Block::new(
+            id_graph_id,
             phone_pub.as_bytes().to_vec(),
             BlockType::AksharaAuthV1,
             vec![],
@@ -84,11 +86,11 @@ async fn test_sovereign_full_authority_chain_verification() {
             )
             .unwrap();
         let root_index_id = builder
-            .build(&mut relay_store, &alice_master, &graph_key)
+            .build(id_graph_id, &mut relay_store, &alice_master, &graph_key)
             .await
             .unwrap();
 
-        (root_index_id, alice_pub)
+        (root_index_id, alice_pub, id_graph_id)
     };
 
     // --- ACTOR 2: Alice's Phone (The Signer) ---
@@ -115,7 +117,7 @@ async fn test_sovereign_full_authority_chain_verification() {
         // 1. Walk the graph to find the authorized key
         let path = format!("/credentials/{}", doc_manifest.author().to_hex());
         let resolved_addr = walker
-            .resolve_path(id_root_index, &path, &identity_key)
+            .resolve_path(&id_graph_id, id_root_index, &path, &identity_key)
             .await
             .unwrap();
 
@@ -124,7 +126,7 @@ async fn test_sovereign_full_authority_chain_verification() {
             .await
             .unwrap()
             .unwrap();
-        let authorized_key_bytes = block.content().decrypt(&identity_key).unwrap();
+        let authorized_key_bytes = block.decrypt(&id_graph_id, &identity_key).unwrap();
 
         // 2. Verify: Does the key in the Identity Graph match the Signer?
         assert_eq!(authorized_key_bytes, doc_manifest.author().as_bytes());

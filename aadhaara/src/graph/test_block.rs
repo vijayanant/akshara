@@ -15,7 +15,9 @@ pub fn create_dummy_key() -> GraphKey {
 pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
     let identity = create_identity();
     let key = create_dummy_key();
+    let gid = crate::GraphId::new();
     let block = Block::new(
+        gid,
         content_data.to_vec(),
         BlockType::from("p"),
         vec![],
@@ -27,14 +29,15 @@ pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
 }
 
 // --- Identity & Randomness Tests ---
-
 #[test]
 fn block_id_is_unique_due_to_random_nonce() {
     let identity = create_identity();
     let key = create_dummy_key();
+    let gid = crate::GraphId::new();
     let content = b"data".to_vec();
 
     let block1 = Block::new(
+        gid,
         content.clone(),
         BlockType::from("p"),
         vec![],
@@ -42,10 +45,10 @@ fn block_id_is_unique_due_to_random_nonce() {
         &identity,
     )
     .unwrap();
-    let block2 = Block::new(content, BlockType::from("p"), vec![], &key, &identity).unwrap();
+    let block2 = Block::new(gid, content, BlockType::from("p"), vec![], &key, &identity).unwrap();
 
-    // Since each block generation now uses a random 96-bit nonce,
-    // identical content MUST result in different CIDs to ensure cryptographic safety (AES-GCM).
+    // Since each block generation now uses a random 192-bit nonce,
+    // identical content MUST result in different CIDs to ensure cryptographic safety (XChaCha20).
     assert_ne!(
         block1.id(),
         block2.id(),
@@ -57,14 +60,29 @@ fn block_id_is_unique_due_to_random_nonce() {
 fn block_id_is_unique_per_content() {
     let identity = create_identity();
     let key = create_dummy_key();
+    let gid = crate::GraphId::new();
 
-    let block1 = Block::new(b"A".to_vec(), BlockType::from("p"), vec![], &key, &identity).unwrap();
-    let block2 = Block::new(b"B".to_vec(), BlockType::from("p"), vec![], &key, &identity).unwrap();
+    let block1 = Block::new(
+        gid,
+        b"A".to_vec(),
+        BlockType::from("p"),
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
+    let block2 = Block::new(
+        gid,
+        b"B".to_vec(),
+        BlockType::from("p"),
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
 
     assert_ne!(block1.id(), block2.id());
 }
-
-// --- Authorization Tests ---
 
 #[test]
 fn block_is_signed_by_author() {
@@ -86,8 +104,10 @@ fn block_content_encryption_cycle() {
     let identity = SecretIdentity::generate(&mut rng);
     let plaintext = b"Sensitive Data".to_vec();
     let graph_key = GraphKey::generate(&mut rng);
+    let gid = crate::GraphId::new();
 
     let block = Block::new(
+        gid,
         plaintext.clone(),
         BlockType::from("p"),
         vec![],
@@ -100,7 +120,7 @@ fn block_content_encryption_cycle() {
     assert_ne!(block.content().as_bytes(), plaintext);
 
     // Verify decryption
-    let decrypted = block.content().decrypt(&graph_key).unwrap();
+    let decrypted = block.decrypt(&gid, &graph_key).unwrap();
     assert_eq!(decrypted, plaintext);
 }
 
@@ -135,12 +155,13 @@ fn block_integrity_fails_on_tampered_metadata() {
 fn block_supports_empty_content() {
     let identity = create_identity();
     let key = create_dummy_key();
+    let gid = crate::GraphId::new();
 
-    let block = Block::new(vec![], BlockType::from("p"), vec![], &key, &identity).unwrap();
+    let block = Block::new(gid, vec![], BlockType::from("p"), vec![], &key, &identity).unwrap();
     assert!(block.verify_integrity().is_ok());
 
     // Decrypt and check
-    let decrypted = block.content().decrypt(&key).unwrap();
+    let decrypted = block.decrypt(&gid, &key).unwrap();
     assert!(decrypted.is_empty());
 }
 
@@ -165,12 +186,14 @@ fn block_integrity_fails_on_tampered_signature() {
 fn block_supports_multiple_parents() {
     let identity = create_identity();
     let key = create_dummy_key();
+    let gid = crate::GraphId::new();
 
     let p1 = BlockId::from_sha256(&[1u8; 32]);
     let p2 = BlockId::from_sha256(&[2u8; 32]);
     let parents = vec![p1, p2];
 
     let block = Block::new(
+        gid,
         vec![],
         BlockType::from("p"),
         parents.clone(),

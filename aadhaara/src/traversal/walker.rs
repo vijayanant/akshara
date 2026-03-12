@@ -1,4 +1,4 @@
-use crate::base::address::{Address, BlockId, ManifestId};
+use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::{GraphKey, SigningPublicKey};
 use crate::base::error::{IntegrityError, SovereignError, StoreError};
 use crate::state::store::GraphStore;
@@ -44,6 +44,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     ///    that every block encountered meets the mathematical and social laws of the platform.
     pub async fn resolve_path(
         &self,
+        graph_id: &GraphId,
         root: BlockId,
         path: &str,
         key: &GraphKey,
@@ -83,7 +84,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
             self.auditor.audit_block(&block)?;
 
             // 3. Decrypt and parse as Index
-            let plaintext = block.content().decrypt(key)?;
+            let plaintext = block.decrypt(graph_id, key)?;
             let index: BTreeMap<String, Address> =
                 crate::base::encoding::from_canonical_bytes(&plaintext)?;
 

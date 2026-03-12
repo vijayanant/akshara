@@ -14,10 +14,11 @@ fn bench_fulfillment(c: &mut Criterion) {
 
     // 1. Pre-fill the store with 1000 blocks
     let mut addresses = Vec::new();
+    let gid = akshara_aadhaara::GraphId::new();
     rt.block_on(async {
         for i in 0..1000 {
             let data = vec![i as u8; 1024]; // 1KB blocks
-            let block = Block::new(data, "test".into(), vec![], &key, &identity).unwrap();
+            let block = Block::new(gid, data, "test".into(), vec![], &key, &identity).unwrap();
             let addr = Address::from(block.id());
             store.put_block(&block).await.unwrap();
             addresses.push(addr);

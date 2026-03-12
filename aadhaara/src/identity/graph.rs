@@ -58,9 +58,10 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
         // Path matches our Specification: /credentials/<pubkey_hex>
         let path = format!("credentials/{}", signer.to_hex());
+        let graph_id = manifest.graph_id();
 
         let resolution_result = walker
-            .resolve_path(devices_root, &path, &identity_key)
+            .resolve_path(&graph_id, devices_root, &path, &identity_key)
             .await;
 
         match resolution_result {

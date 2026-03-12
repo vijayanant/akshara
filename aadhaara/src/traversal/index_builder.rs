@@ -1,4 +1,4 @@
-use crate::base::address::{Address, BlockId};
+use crate::base::address::{Address, BlockId, GraphId};
 use crate::base::crypto::{GraphKey, SovereignSigner};
 use crate::base::error::SovereignError;
 use crate::graph::{Block, BlockType};
@@ -71,15 +71,18 @@ impl IndexBuilder {
     /// Returns the BlockId of the Root Index.
     pub async fn build<S: GraphStore + ?Sized>(
         &self,
+        graph_id: GraphId,
         store: &mut S,
         signer: &impl SovereignSigner,
         key: &GraphKey,
     ) -> Result<BlockId, SovereignError> {
-        self.persist_node(&self.tree, store, signer, key).await
+        self.materialize_node(graph_id, &self.tree, store, signer, key)
+            .await
     }
 
-    async fn persist_node<S: GraphStore + ?Sized>(
+    async fn materialize_node<S: GraphStore + ?Sized>(
         &self,
+        graph_id: GraphId,
         map: &BTreeMap<String, IndexNode>,
         store: &mut S,
         signer: &impl SovereignSigner,
@@ -93,7 +96,9 @@ impl IndexBuilder {
                     final_map.insert(name.clone(), *addr);
                 }
                 IndexNode::Branch(sub_map) => {
-                    let child_id = Box::pin(self.persist_node(sub_map, store, signer, key)).await?;
+                    let child_id =
+                        Box::pin(self.materialize_node(graph_id, sub_map, store, signer, key))
+                            .await?;
                     final_map.insert(name.clone(), Address::from(child_id));
                 }
             }
@@ -101,7 +106,14 @@ impl IndexBuilder {
 
         let plaintext = crate::base::encoding::to_canonical_bytes(&final_map)?;
 
-        let index_block = Block::new(plaintext, BlockType::AksharaIndexV1, vec![], key, signer)?;
+        let index_block = Block::new(
+            graph_id,
+            plaintext,
+            BlockType::AksharaIndexV1,
+            vec![],
+            key,
+            signer,
+        )?;
 
         store.put_block(&index_block).await?;
         Ok(index_block.id())

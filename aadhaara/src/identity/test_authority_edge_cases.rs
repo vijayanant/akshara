@@ -118,6 +118,7 @@ async fn test_negative_identity_stale_authority() {
 
     // 1. Create the authorization block (The Leaf)
     let auth_block = crate::graph::Block::new(
+        GraphId::new(), // Pass a new GraphId for testing
         vec![],
         crate::graph::BlockType::AksharaAuthV1,
         vec![],
@@ -137,7 +138,7 @@ async fn test_negative_identity_stale_authority() {
         .unwrap();
 
     let root_index_id = builder
-        .build(&mut store, &alice, &identity_key)
+        .build(GraphId::new(), &mut store, &alice, &identity_key)
         .await
         .unwrap();
 
@@ -198,6 +199,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     let signer_hex = alice_phone.public().signing_key().to_hex();
 
     let auth_block = Block::new(
+        GraphId::new(),
         vec![],
         crate::graph::BlockType::AksharaAuthV1,
         vec![],
@@ -216,7 +218,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
         .unwrap();
 
     let root_index_id = builder
-        .build(&mut store, &alice_legislator, &identity_key)
+        .build(GraphId::new(), &mut store, &alice_legislator, &identity_key)
         .await
         .unwrap();
 

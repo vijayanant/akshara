@@ -1,4 +1,4 @@
-use crate::base::address::BlockId;
+use crate::base::address::{BlockId, GraphId};
 use crate::base::crypto::{BlockContent, GraphKey, Signature, SigningPublicKey, SovereignSigner};
 use crate::base::error::{CryptoError, IntegrityError, SovereignError};
 use cid::Cid;
@@ -103,20 +103,25 @@ pub struct Block {
 
 impl Block {
     pub fn new(
+        graph_id: GraphId,
         plaintext: Vec<u8>,
         block_type: BlockType,
         parents: Vec<BlockId>,
         key: &GraphKey,
         signer: &impl SovereignSigner,
     ) -> Result<Self, SovereignError> {
-        let mut nonce = [0u8; 12];
+        let mut nonce = [0u8; 24];
         rand::thread_rng().fill_bytes(&mut nonce);
-        let content = BlockContent::encrypt(&plaintext, key, nonce)?;
+
+        let ad = Self::compute_ad(&graph_id, &signer.public_key(), &block_type, &parents);
+
+        let content = BlockContent::encrypt(&plaintext, key, nonce, &ad)?;
 
         Ok(Self::create(content, block_type, parents, signer))
     }
 
     pub fn new_index(
+        graph_id: GraphId,
         index: BTreeMap<String, Cid>,
         parents: Vec<BlockId>,
         key: &GraphKey,
@@ -124,9 +129,17 @@ impl Block {
     ) -> Result<Self, SovereignError> {
         let plaintext = crate::base::encoding::to_canonical_bytes(&index)?;
 
-        let mut nonce = [0u8; 12];
+        let mut nonce = [0u8; 24];
         rand::thread_rng().fill_bytes(&mut nonce);
-        let content = BlockContent::encrypt(&plaintext, key, nonce)?;
+
+        let ad = Self::compute_ad(
+            &graph_id,
+            &signer.public_key(),
+            &BlockType::AksharaIndexV1,
+            &parents,
+        );
+
+        let content = BlockContent::encrypt(&plaintext, key, nonce, &ad)?;
 
         Ok(Self::create(
             content,
@@ -156,6 +169,11 @@ impl Block {
             block_type,
             parents,
         }
+    }
+
+    pub fn decrypt(&self, graph_id: &GraphId, key: &GraphKey) -> Result<Vec<u8>, SovereignError> {
+        let ad = Self::compute_ad(graph_id, &self.author, &self.block_type, &self.parents);
+        self.content.decrypt(key, &ad)
     }
 
     pub fn id(&self) -> BlockId {
@@ -218,6 +236,26 @@ impl Block {
             .map_err(|e| SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
 
         Ok(())
+    }
+
+    /// Computes the canonical Associated Data (AD) for a block.
+    ///
+    /// This binds the ciphertext to the Graph, the Author, the Type, and the History.
+    fn compute_ad(
+        graph_id: &GraphId,
+        author: &SigningPublicKey,
+        block_type: &BlockType,
+        parents: &[BlockId],
+    ) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(b"AKSHARA_V1_AD");
+        hasher.update(graph_id.as_bytes());
+        hasher.update(author.as_bytes());
+        hasher.update(block_type.as_str().as_bytes());
+        for p in parents {
+            hasher.update(p.as_ref());
+        }
+        hasher.finalize().to_vec()
     }
 
     fn compute_id(content: &BlockContent, block_type: &BlockType, parents: &[BlockId]) -> BlockId {

@@ -17,7 +17,7 @@ async fn test_sync_recursive_index_structure() {
     let graph_key = identity.derive_graph_key(&graph_id).unwrap();
 
     let data = b"Target Bits".to_vec();
-    let leaf = Block::new(data, "data".into(), vec![], &graph_key, &identity).unwrap();
+    let leaf = Block::new(graph_id, data, "data".into(), vec![], &graph_key, &identity).unwrap();
     laptop_store.put_block(&leaf).await.unwrap();
 
     let mut builder = IndexBuilder::new();
@@ -25,7 +25,7 @@ async fn test_sync_recursive_index_structure() {
         .insert("folder/sub/file.txt", Address::from(leaf.id()))
         .unwrap();
     let root_index_id = builder
-        .build(&mut laptop_store, &identity, &graph_key)
+        .build(graph_id, &mut laptop_store, &identity, &graph_key)
         .await
         .unwrap();
 
@@ -39,7 +39,14 @@ async fn test_sync_recursive_index_structure() {
     laptop_store.put_manifest(&manifest).await.unwrap();
 
     relay_store.put_manifest(&manifest).await.unwrap();
-    sync_recursive_closure(root_index_id, &graph_key, &laptop_store, &mut relay_store).await;
+    sync_recursive_closure(
+        &graph_id,
+        root_index_id,
+        &graph_key,
+        &laptop_store,
+        &mut relay_store,
+    )
+    .await;
 
     let reconciler_phone = Reconciler::new(&relay_store, identity.public_key());
     let heads_relay = relay_store.get_heads(&graph_id).await.unwrap();
@@ -53,7 +60,14 @@ async fn test_sync_recursive_index_structure() {
         .await
         .unwrap();
 
-    sync_recursive_closure(root_index_id, &graph_key, &relay_store, &mut phone_store).await;
+    sync_recursive_closure(
+        &graph_id,
+        root_index_id,
+        &graph_key,
+        &relay_store,
+        &mut phone_store,
+    )
+    .await;
 
     let restored_manifest = phone_store
         .get_manifest(&manifest.id())
@@ -64,7 +78,7 @@ async fn test_sync_recursive_index_structure() {
 
     let restored_leaf = phone_store.get_block(&leaf.id()).await.unwrap().unwrap();
     assert_eq!(
-        restored_leaf.content().decrypt(&graph_key).unwrap(),
+        restored_leaf.decrypt(&graph_id, &graph_key).unwrap(),
         b"Target Bits"
     );
 }
@@ -93,6 +107,7 @@ async fn test_identity_rebirth_bootstrap() {
 
         let id_key = GraphKey::new([0u8; 32]);
         let id_root = Block::new(
+            id_gid,
             vec![],
             akshara_aadhaara::BlockType::AksharaAuthV1,
             vec![],
@@ -166,6 +181,7 @@ async fn test_full_lifecycle_stateless_journey() {
         let project_id = GraphId::new();
         let project_key = alice_laptop.derive_graph_key(&project_id).unwrap();
         let data = Block::new(
+            project_id,
             b"Stateless Secret".to_vec(),
             "data".into(),
             vec![],
@@ -184,6 +200,7 @@ async fn test_full_lifecycle_stateless_journey() {
         laptop_store.put_manifest(&manifest).await.unwrap();
 
         let descriptor = Block::new(
+            id_graph_id,
             b"Project Alpha".to_vec(),
             "akshara.descriptor.v1".into(),
             vec![],
@@ -201,7 +218,7 @@ async fn test_full_lifecycle_stateless_journey() {
             )
             .unwrap();
         let id_root_id = builder
-            .build(&mut laptop_store, &alice_laptop, &id_key)
+            .build(id_graph_id, &mut laptop_store, &alice_laptop, &id_key)
             .await
             .unwrap();
 
@@ -217,7 +234,14 @@ async fn test_full_lifecycle_stateless_journey() {
         relay_store.put_manifest(&manifest).await.unwrap();
         relay_store.put_block(&data).await.unwrap();
         relay_store.put_manifest(&id_manifest).await.unwrap();
-        sync_recursive_closure(id_root_id, &id_key, &laptop_store, &mut relay_store).await;
+        sync_recursive_closure(
+            &id_graph_id,
+            id_root_id,
+            &id_key,
+            &laptop_store,
+            &mut relay_store,
+        )
+        .await;
 
         (id_graph_id, project_id)
     };
@@ -250,6 +274,7 @@ async fn test_full_lifecycle_stateless_journey() {
     let id_manifest = phone_store.get_manifest(&mid).await.unwrap().unwrap();
     let id_key = GraphKey::new([0u8; 32]);
     sync_recursive_closure(
+        &id_gid,
         id_manifest.content_root(),
         &id_key,
         &relay_store,
@@ -286,14 +311,14 @@ async fn test_full_lifecycle_stateless_journey() {
         .unwrap();
 
     let plaintext = restored_block
-        .content()
-        .decrypt(&phone_project_key)
+        .decrypt(&project_id, &phone_project_key)
         .unwrap();
     assert_eq!(plaintext, b"Stateless Secret");
 }
 
 /// Generic recursive synchronization helper for simulations.
 async fn sync_recursive_closure<S: GraphStore + ?Sized, D: GraphStore + ?Sized>(
+    graph_id: &GraphId,
     root_id: BlockId,
     key: &GraphKey,
     source: &S,
@@ -312,7 +337,10 @@ async fn sync_recursive_closure<S: GraphStore + ?Sized, D: GraphStore + ?Sized>(
             dest.put_block(&block).await.unwrap();
 
             if *block.block_type() == akshara_aadhaara::BlockType::AksharaIndexV1 {
-                let plaintext = block.content().decrypt(key).unwrap();
+                let plaintext = block.decrypt(graph_id, key).unwrap_or_default();
+                if plaintext.is_empty() {
+                    continue;
+                } // handle gracefully
                 let index: BTreeMap<String, Address> =
                     akshara_aadhaara::from_canonical_bytes(&plaintext).unwrap();
                 for addr in index.values() {

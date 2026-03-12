@@ -14,7 +14,15 @@ fn test_byzantine_bit_flip_fuzzer() {
     let key = GraphKey::generate(&mut rng);
 
     let data = b"Target Truth".to_vec();
-    let block = Block::new(data, "post".into(), vec![], &key, &master).unwrap();
+    let block = Block::new(
+        akshara_aadhaara::GraphId::new(),
+        data,
+        "post".into(),
+        vec![],
+        &key,
+        &master,
+    )
+    .unwrap();
     let block_bytes = akshara_aadhaara::to_canonical_bytes(&block).unwrap();
 
     for _ in 0..100 {
@@ -77,15 +85,30 @@ async fn test_byzantine_walker_robustness() {
     let master = SecretIdentity::generate(&mut rng);
     let key = GraphKey::generate(&mut rng);
 
-    let leaf = Block::new(b"leaf".to_vec(), "data".into(), vec![], &key, &master).unwrap();
+    let leaf = Block::new(
+        akshara_aadhaara::GraphId::new(),
+        b"leaf".to_vec(),
+        "data".into(),
+        vec![],
+        &key,
+        &master,
+    )
+    .unwrap();
     store.put_block(&leaf).await.unwrap();
 
     let mut root_map = BTreeMap::new();
     root_map.insert("file".to_string(), Address::from(leaf.id()));
     let root_bytes = akshara_aadhaara::to_canonical_bytes(&root_map).unwrap();
 
-    let root_block =
-        Block::new(root_bytes, "akshara.index.v1".into(), vec![], &key, &master).unwrap();
+    let root_block = Block::new(
+        akshara_aadhaara::GraphId::new(),
+        root_bytes,
+        "akshara.index.v1".into(),
+        vec![],
+        &key,
+        &master,
+    )
+    .unwrap();
     store.put_block(&root_block).await.unwrap();
 
     for _ in 0..50 {
@@ -100,7 +123,14 @@ async fn test_byzantine_walker_robustness() {
 
         {
             let walker = GraphWalker::new(&store, master.public().signing_key().clone());
-            let _ = walker.resolve_path(root_block.id(), "file", &key).await;
+            let _ = walker
+                .resolve_path(
+                    &akshara_aadhaara::GraphId::new(),
+                    root_block.id(),
+                    "file",
+                    &key,
+                )
+                .await;
         }
     }
 }
@@ -117,11 +147,19 @@ async fn store_rwlock_torture_test() {
             let mut rng = OsRng;
             let identity = SecretIdentity::generate(&mut rng);
             let key = GraphKey::generate(&mut rng);
+            let gid = akshara_aadhaara::GraphId::new();
 
             for j in 0..100 {
                 let data = format!("thread-{}-entry-{}", i, j);
-                let block =
-                    Block::new(data.into_bytes(), "test".into(), vec![], &key, &identity).unwrap();
+                let block = Block::new(
+                    gid,
+                    data.into_bytes(),
+                    "test".into(),
+                    vec![],
+                    &key,
+                    &identity,
+                )
+                .unwrap();
                 let id = block.id();
 
                 {

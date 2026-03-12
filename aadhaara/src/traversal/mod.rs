@@ -41,9 +41,11 @@ pub(crate) async fn create_valid_anchor(
 
     let identity_key = crate::base::crypto::GraphKey::new([0u8; 32]);
     let signer_hex = identity.public().signing_key().to_hex();
+    let graph_id = crate::base::address::GraphId::new();
 
     // 1. Create the authorization block (The Leaf)
     let auth_block = crate::graph::Block::new(
+        graph_id,
         vec![],
         BlockType::AksharaAuthV1,
         vec![],
@@ -62,11 +64,14 @@ pub(crate) async fn create_valid_anchor(
         )
         .unwrap();
 
-    let root_index_id = builder.build(store, identity, &identity_key).await.unwrap();
+    let root_index_id = builder
+        .build(graph_id, store, identity, &identity_key)
+        .await
+        .unwrap();
 
     // 3. Create the Genesis Manifest
     let genesis_manifest = crate::graph::Manifest::new(
-        crate::base::address::GraphId::new(),
+        graph_id,
         root_index_id,
         vec![],
         crate::base::address::ManifestId::null(),

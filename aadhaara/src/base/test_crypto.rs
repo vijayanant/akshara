@@ -1,5 +1,5 @@
 use crate::base::crypto::{
-    BlockContent, EncryptionPublicKey, EncryptionSecretKey, GraphKey, Lockbox, SigningPublicKey,
+    BlockContent, EncryptionPublicKey, EncryptionSecretKey, GraphKey, Lockbox,
 };
 use rand::rngs::OsRng;
 
@@ -16,15 +16,16 @@ fn block_content_encryption_roundtrip() {
     let mut rng = OsRng;
     let key = GraphKey::generate(&mut rng);
     let plaintext = b"Hello Sovereign Crypto";
-    let nonce = [0u8; 12];
+    let nonce = [0u8; 24]; // XChaCha20 nonce
+    let ad = b"context-binding-ad";
 
-    let content = BlockContent::encrypt(plaintext, &key, nonce).expect("Encryption failed");
+    let content = BlockContent::encrypt(plaintext, &key, nonce, ad).expect("Encryption failed");
 
     // Authenticated encryption: ciphertext length = plaintext + tag (16 bytes)
     assert_eq!(content.as_bytes().len(), plaintext.len() + 16);
     assert_ne!(content.as_bytes(), plaintext);
 
-    let decrypted = content.decrypt(&key).expect("Decryption failed");
+    let decrypted = content.decrypt(&key, ad).expect("Decryption failed");
     assert_eq!(decrypted, plaintext);
 }
 
@@ -66,20 +67,20 @@ fn lockbox_fails_on_tampered_ciphertext() {
     let graph_key = GraphKey::generate(&mut rng);
     let lockbox = Lockbox::create(&bob_public, &graph_key, &mut rng).unwrap();
 
-    let bytes = serde_ipld_dagcbor::to_vec(&lockbox).unwrap();
+    let bytes = crate::base::encoding::to_canonical_bytes(&lockbox).unwrap();
 
     // Tamper: Flip a bit in the CBOR bytes (this will hit the ciphertext or tag)
     let mut fuzzed = bytes.clone();
     let len = fuzzed.len();
     fuzzed[len - 5] ^= 0xFF;
 
-    let decode_res: Result<Lockbox, _> = serde_ipld_dagcbor::from_slice(&fuzzed[..]);
+    let decode_res: Result<Lockbox, _> = crate::base::encoding::from_canonical_bytes(&fuzzed[..]);
 
     if let Ok(tampered_lockbox) = decode_res {
         let result = tampered_lockbox.open(&bob_secret);
         assert!(
             result.is_err(),
-            "Tampered ciphertext must fail AES-GCM auth tag check"
+            "Tampered ciphertext must fail XChaCha20-Poly1305 auth tag check"
         );
     }
 }
@@ -87,7 +88,7 @@ fn lockbox_fails_on_tampered_ciphertext() {
 #[test]
 fn signing_verify_fails_on_malformed_signature() {
     let msg = b"test";
-    let public_key = SigningPublicKey::new([0u8; 32]);
+    let public_key = crate::base::crypto::SigningPublicKey::new([0u8; 32]);
 
     // Wrong length (not 64)
     let bad_sig = crate::base::crypto::Signature::new(vec![0u8; 32]);

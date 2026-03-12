@@ -88,6 +88,7 @@ async fn store_tracks_multiple_heads_on_fork() {
 
     // Fork C -> A (Must differ from B content-wise)
     let unique_block = Block::new(
+        graph_id,
         b"unique".to_vec(),
         crate::graph::BlockType::from("p"),
         vec![],
@@ -127,6 +128,7 @@ async fn store_merges_heads() {
 
     // Fork C needs unique content
     let unique_block = Block::new(
+        graph_id,
         b"unique2".to_vec(),
         crate::graph::BlockType::from("p"),
         vec![],
