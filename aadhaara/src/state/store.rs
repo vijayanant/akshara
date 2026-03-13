@@ -1,8 +1,8 @@
 use crate::base::address::{BlockId, GraphId, ManifestId};
-use crate::base::crypto::Lockbox;
-use crate::base::crypto::SigningPublicKey;
+use crate::base::crypto::{EncryptionPublicKey, Lockbox, SigningPublicKey};
 use crate::base::error::SovereignError;
 use crate::graph::{Block, Manifest};
+use crate::identity::types::PreKeyBundle;
 use async_trait::async_trait;
 
 #[async_trait]
@@ -26,4 +26,20 @@ pub trait GraphStore: Send + Sync {
         &self,
         recipient: &SigningPublicKey,
     ) -> Result<Vec<(GraphId, Lockbox)>, SovereignError>;
+
+    /// Stores a Pre-Key Bundle for a specific device.
+    async fn put_prekey_bundle(&mut self, bundle: &PreKeyBundle) -> Result<(), SovereignError>;
+
+    /// Retrieves the current Pre-Key Bundle for a specific device.
+    async fn get_prekey_bundle(
+        &self,
+        device_key: &SigningPublicKey,
+    ) -> Result<Option<PreKeyBundle>, SovereignError>;
+
+    /// Atomically retrieves and REMOVES a specific pre-key from a bundle.
+    async fn consume_prekey(
+        &mut self,
+        device_key: &SigningPublicKey,
+        prekey_index: u32,
+    ) -> Result<Option<EncryptionPublicKey>, SovereignError>;
 }

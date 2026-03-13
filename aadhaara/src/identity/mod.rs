@@ -13,6 +13,9 @@ pub use types::{MasterIdentity, SecretIdentity};
 mod test_identity;
 
 #[cfg(test)]
+mod test_prekey;
+
+#[cfg(test)]
 mod test_identity_graph;
 
 #[cfg(test)]

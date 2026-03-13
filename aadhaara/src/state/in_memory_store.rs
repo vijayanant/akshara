@@ -1,7 +1,8 @@
 use crate::base::address::{BlockId, GraphId, ManifestId};
-use crate::base::crypto::{Lockbox, SigningPublicKey};
+use crate::base::crypto::{EncryptionPublicKey, Lockbox, SigningPublicKey};
 use crate::base::error::{SovereignError, StoreError};
 use crate::graph::{Block, Manifest};
+use crate::identity::types::PreKeyBundle;
 use crate::state::store::GraphStore;
 use async_trait::async_trait;
 use metrics::counter;
@@ -10,6 +11,7 @@ use std::sync::{Arc, RwLock};
 use tracing::{debug, trace};
 
 type LockboxMap = HashMap<SigningPublicKey, Vec<(GraphId, Lockbox)>>;
+type PreKeyMap = HashMap<SigningPublicKey, PreKeyBundle>;
 
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryStore {
@@ -17,6 +19,7 @@ pub struct InMemoryStore {
     pub(crate) manifests: Arc<RwLock<HashMap<ManifestId, Manifest>>>,
     pub(crate) heads: Arc<RwLock<HashMap<GraphId, Vec<ManifestId>>>>,
     pub(crate) lockboxes: Arc<RwLock<LockboxMap>>,
+    pub(crate) prekeys: Arc<RwLock<PreKeyMap>>,
 }
 
 impl InMemoryStore {
@@ -125,5 +128,48 @@ impl GraphStore for InMemoryStore {
         let entries = lockboxes.get(recipient).cloned().unwrap_or_default();
         counter!("sovereign.store.get", "type" => "lockbox").increment(1);
         Ok(entries)
+    }
+
+    async fn put_prekey_bundle(&mut self, bundle: &PreKeyBundle) -> Result<(), SovereignError> {
+        let mut prekeys = self.prekeys.write().map_err(|_| StoreError::LockPoisoned)?;
+        let device_key = bundle.device_identity.signing_key().clone();
+        debug!(device = ?device_key, count = bundle.pre_keys.len(), "Storing pre-key bundle");
+        prekeys.insert(device_key, bundle.clone());
+        counter!("sovereign.store.put", "type" => "prekey_bundle").increment(1);
+        Ok(())
+    }
+
+    async fn get_prekey_bundle(
+        &self,
+        device_key: &SigningPublicKey,
+    ) -> Result<Option<PreKeyBundle>, SovereignError> {
+        let prekeys = self.prekeys.read().map_err(|_| StoreError::LockPoisoned)?;
+        let result = prekeys.get(device_key).cloned();
+        counter!("sovereign.store.get", "type" => "prekey_bundle").increment(1);
+        Ok(result)
+    }
+
+    async fn consume_prekey(
+        &mut self,
+        device_key: &SigningPublicKey,
+        prekey_index: u32,
+    ) -> Result<Option<EncryptionPublicKey>, SovereignError> {
+        let mut prekeys = self.prekeys.write().map_err(|_| StoreError::LockPoisoned)?;
+
+        if let Some(bundle) = prekeys.get_mut(device_key) {
+            // THE ATOMIC CONSUMPTION: Remove from BTreeMap
+            let key = bundle.pre_keys.remove(&prekey_index);
+
+            if key.is_some() {
+                debug!(device = ?device_key, index = prekey_index, "Consumed one-time pre-key");
+                counter!("sovereign.store.consume", "type" => "prekey").increment(1);
+
+                // AKSHARA RITUAL: After consuming, we should ideally re-sign the bundle
+                // but since the Relay doesn't have the private key, we just track the depletion.
+            }
+            Ok(key)
+        } else {
+            Ok(None)
+        }
     }
 }

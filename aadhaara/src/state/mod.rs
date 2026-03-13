@@ -8,4 +8,7 @@ pub use store::GraphStore;
 mod test_graph_storage;
 
 #[cfg(test)]
+mod test_prekey_storage;
+
+#[cfg(test)]
 mod test_lockbox_storage;

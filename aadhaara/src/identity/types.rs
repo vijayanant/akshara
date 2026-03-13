@@ -4,12 +4,13 @@ use crate::base::crypto::{
     SigningSecretKey, SovereignSigner,
 };
 use crate::base::error::SovereignError;
-use crate::identity::{derivation, mnemonic};
+use crate::identity::{derivation, mnemonic, paths};
 use ed25519_dalek::{Signer, SigningKey};
 use hmac::{Hmac, Mac};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha512;
+use std::collections::BTreeMap;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 use zeroize::Zeroizing;
 
@@ -52,6 +53,19 @@ pub struct SecretIdentity {
 /// `MasterIdentity` is a transient container for the root entropy.
 pub struct MasterIdentity {
     pub(crate) seed: Zeroizing<[u8; 64]>,
+}
+
+/// `PreKeyBundle` is a collection of signed, one-time-use encryption keys.
+///
+/// It is stored on the Relay to facilitate asynchronous handshakes with offline recipients.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreKeyBundle {
+    /// The public identity of the device that owns these pre-keys.
+    pub device_identity: Identity,
+    /// A map of index -> Public Encryption Key (X25519).
+    pub pre_keys: BTreeMap<u32, EncryptionPublicKey>,
+    /// A signature over the canonical bytes of (device_identity + pre_keys).
+    pub signature: Signature,
 }
 
 impl MasterIdentity {
@@ -102,6 +116,44 @@ impl MasterIdentity {
         uuid_bytes.copy_from_slice(&result[..16]);
 
         Ok(GraphId::from_bytes(uuid_bytes))
+    }
+
+    /// Generates a Pre-Key Bundle for a specific device index.
+    pub fn generate_pre_key_bundle(
+        &self,
+        device_index: u32,
+        start_index: u32,
+        count: u32,
+    ) -> Result<PreKeyBundle, SovereignError> {
+        let device_path = paths::format_akshara_path(paths::BRANCH_EXECUTIVE, device_index);
+        let device_secret = self.derive_child(&device_path)?;
+
+        let mut pre_keys = BTreeMap::new();
+        for i in 0..count {
+            let index = start_index + i;
+            let path = format!(
+                "m/{}'/{}'/0'/{}'/{}'/{}'",
+                paths::PURPOSE_AKSHARA,
+                paths::COIN_TYPE_AKSHARA,
+                paths::BRANCH_HANDSHAKE,
+                device_index,
+                index
+            );
+            let child = self.derive_child(&path)?;
+            pre_keys.insert(index, child.public().encryption_key().clone());
+        }
+
+        // AKSHARA RITUAL: Canonicalize and sign the bundle
+        let mut data_to_sign = crate::base::encoding::to_canonical_bytes(&device_secret.public)?;
+        data_to_sign.extend(crate::base::encoding::to_canonical_bytes(&pre_keys)?);
+
+        let signature = device_secret.sign(&data_to_sign);
+
+        Ok(PreKeyBundle {
+            device_identity: device_secret.public().clone(),
+            pre_keys,
+            signature,
+        })
     }
 }
 
@@ -187,6 +239,18 @@ impl SecretIdentity {
 
     pub fn encryption_key(&self) -> &EncryptionSecretKey {
         &self.encryption_key
+    }
+}
+
+impl PreKeyBundle {
+    /// Verifies the integrity and authority of the bundle.
+    pub fn verify(&self) -> Result<(), SovereignError> {
+        let mut data_to_verify = crate::base::encoding::to_canonical_bytes(&self.device_identity)?;
+        data_to_verify.extend(crate::base::encoding::to_canonical_bytes(&self.pre_keys)?);
+
+        self.device_identity
+            .signing_key()
+            .verify(&data_to_verify, &self.signature)
     }
 }
 
