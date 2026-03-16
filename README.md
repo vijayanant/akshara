@@ -77,6 +77,31 @@ A Graph is a collection of encrypted blocks that share a permission boundary. On
 
 ---
 
+## Starting Points
+
+### I'm New to Akshara
+
+1. **[Docs Overview](./docs/README.md)** — What is Akshara, architecture, roadmap
+2. **[Vision](./docs/VISION.md)** — Philosophy and design rationale
+3. **[Getting Started Guide](./docs/guides/)** — Create identity, make a graph, sync
+
+### I'm Building an Implementation
+
+**Specifications:**
+- **[Identity](./docs/specs/identity/)** — Key derivation, authority, revocation
+- **[Graph Model](./docs/specs/graph-model/)** — Blocks, manifests, CIDs, indices
+- **[Synchronization](./docs/specs/synchronization/)** — Reconciliation, fulfillment
+- **[Sharing](./docs/specs/sharing/)** — Lockboxes, pre-keys, async handshakes
+- **[Storage](./docs/specs/storage/)** — GraphStore interface, semantics
+
+### I'm Using the Rust Implementation
+
+- **[akshara-aadhaara](./aadhaara/README.md)** — Core library (v0.1.0-alpha.1)
+- **[akshara-sdk](./sdk/)** — (Coming in v0.2)
+- **[akshara-relay](./relay/)** — (Coming in v0.2)
+
+---
+
 ## For Developers
 
 ### What Works Now (`aadhaara`)
