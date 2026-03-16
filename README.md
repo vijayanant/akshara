@@ -14,37 +14,31 @@ Whether it's a cloud giant, a SaaS startup, or a private server—whoever hosts 
 
 **Akshara sidesteps the whole problem.**
 
-We break data into blocks, encrypt them, and sign them on your device. The data leaves your device already encrypted. The server hosting it can't read it. Can't be subpoenaed for it. Can't even tell who you're working with.
+We break data into blocks, encrypt them, and sign them on your device. The data leaves your device already encrypted. The hosting provider can't read it. Can't tell who you're working with. Can't leak what they never had access to.
 
 > **We don't ask you to trust the host. The host doesn't matter.**
 
 ---
 
-## Mental Model: If Git and Bitcoin Had a Baby
+## How It Works
 
-Look, we didn't invent anything new. We just combined two proven ideas:
+Data is decomposed into encrypted blocks. Each block is signed. Blocks are linked into a graph.
 
-1.  **Git-style versioning:** Every change is a signed block in a Merkle-DAG. History is permanent. Conflicts are visible branches.
-2.  **Bitcoin-style identity:** Your entire digital life recovers from 24 words. No "Forgot Password." No central authority.
-
-**But here's the difference:** Git isn't encrypted. Bitcoin is for money. Akshara is for **high-secrecy collaboration** where the server can't read your data.
-
-**The result:** A document is a **Graph of blocks**. Every edit is tracked and signed. Merging happens on your device—not on a server.
+**The result:** Every edit is tracked. Every change is signed. Merging happens on your device—not on a server.
 
 ---
 
-## Key Insight: Files are for Computers, Graphs are for People
+## Files vs. Graphs
 
-In Akshara, we don't use files. We use **Graphs**. 
-A Graph is just a collection of encrypted blocks that share a permission boundary.
+Akshara uses Graphs, not files.
 
-| The Old Way | The Akshara Way |
-| :--- | :--- |
-| The file is the unit of storage | The **Graph** is the unit of collaboration |
-| The app owns the proprietary format | The app layer interprets the graph structure |
-| Merge conflicts are technical errors | Merge conflicts are **visible branches** in history |
-| A central server decides who "won" | Your device performs **semantic reconciliation** |
-| History is a server-side log | History is a **permanent, signed Merkle-DAG** |
+A Graph is a collection of encrypted blocks that share a permission boundary. One contract. One patient record. One project.
+
+**In a Graph:**
+- Every edit is tracked and signed
+- Merge conflicts are visible branches (not errors)
+- Your device reconciles semantically (no server deciding)
+- History is a permanent, signed Merkle-DAG
 
 ---
 
