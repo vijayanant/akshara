@@ -62,8 +62,14 @@ impl SigningPublicKey {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SigningSecretKey([u8; 32]);
+
+impl std::fmt::Debug for SigningSecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SigningSecretKey(<REDACTED>)")
+    }
+}
 
 impl SigningSecretKey {
     pub fn new(bytes: [u8; 32]) -> Self {
@@ -90,8 +96,14 @@ impl EncryptionPublicKey {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct EncryptionSecretKey([u8; 32]);
+
+impl std::fmt::Debug for EncryptionSecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "EncryptionSecretKey(<REDACTED>)")
+    }
+}
 
 impl EncryptionSecretKey {
     pub fn new(bytes: [u8; 32]) -> Self {
@@ -110,8 +122,14 @@ impl EncryptionSecretKey {
 /// This key is the "Master Secret" for a specific document. Anyone with this key
 /// can read every block in the graph. We use XChaCha20-Poly1305 to provide both
 /// Confidentiality and Authenticated Integrity with extended 192-bit nonces.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct GraphKey([u8; 32]);
+
+impl std::fmt::Debug for GraphKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "GraphKey(<REDACTED>)")
+    }
+}
 
 impl GraphKey {
     pub fn new(bytes: [u8; 32]) -> Self {

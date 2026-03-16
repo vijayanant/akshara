@@ -50,9 +50,26 @@ pub struct SecretIdentity {
     pub(crate) derivation_path: String,
 }
 
+impl std::fmt::Debug for SecretIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretIdentity")
+            .field("public", &self.public)
+            .field("derivation_path", &self.derivation_path)
+            .field("signing_key", &"<REDACTED>")
+            .field("encryption_key", &"<REDACTED>")
+            .finish()
+    }
+}
+
 /// `MasterIdentity` is a transient container for the root entropy.
 pub struct MasterIdentity {
     pub(crate) seed: Zeroizing<[u8; 64]>,
+}
+
+impl std::fmt::Debug for MasterIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MasterIdentity(<REDACTED>)")
+    }
 }
 
 /// `PreKeyBundle` is a collection of signed, one-time-use encryption keys.
