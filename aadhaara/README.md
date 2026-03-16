@@ -1,6 +1,15 @@
 # Akshara Aadhaara (v0.1.0-alpha.1)
 
-The imperishable mathematical and cryptographic foundation of the Sovereign Web. **ಅಕ್ಷರ-ಆಧಾರ** (Akshara-Aadhaara) provides the supporting vessel for content-addressed graphs, causal identity, and symmetric synchronization.
+The imperishable mathematical and cryptographic foundation of the Akshara protocol. **ಅಕ್ಷರ-ಆಧಾರ** (Akshara-Aadhaara) provides the supporting vessel for content-addressed graphs, causal identity, and symmetric synchronization.
+
+## Known Issues (Pre-Release)
+
+| Issue | Severity | Planned |
+|-------|----------|---------|
+| `BlockContent` in public API | Medium | v0.2 |
+| 12-word mnemonic acceptance | High | v0.2 |
+| Ghost authority (full history walk) | Critical | v0.2 |
+| Identity clustering | Critical | v0.3 |
 
 ## Architecture
 
