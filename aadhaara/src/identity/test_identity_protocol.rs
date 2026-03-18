@@ -63,7 +63,7 @@ async fn test_sovereign_full_authority_chain_verification() {
         // 1. Authorize a Phone (m/1'/0')
         let alice_phone_master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
         let alice_phone = alice_phone_master
-            .derive_child("m/44'/999'/0'/1'/0'")
+            .derive_child("m/44'/999'/0'/1'/0'", None)
             .unwrap();
         let phone_pub = alice_phone.public().signing_key().clone();
 

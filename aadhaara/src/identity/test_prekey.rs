@@ -10,14 +10,14 @@ fn test_prekey_derivation_isolation() {
 
     // 1. Derive two different pre-keys from Branch 3
     // Path: m/44'/999'/0'/3'/<device>'/<index>'
-    let pk0 = master.derive_child("m/44'/999'/0'/3'/0'/0'").unwrap();
-    let pk1 = master.derive_child("m/44'/999'/0'/3'/0'/1'").unwrap();
+    let pk0 = master.derive_child("m/44'/999'/0'/3'/0'/0'", None).unwrap();
+    let pk1 = master.derive_child("m/44'/999'/0'/3'/0'/1'", None).unwrap();
 
     // 2. MUST be isolated from each other
     assert_ne!(pk0.public().encryption_key(), pk1.public().encryption_key());
 
     // 3. MUST be isolated from the Executive (Branch 1) key
-    let exec = master.derive_child("m/44'/999'/0'/1'/0'").unwrap();
+    let exec = master.derive_child("m/44'/999'/0'/1'/0'", None).unwrap();
     assert_ne!(
         pk0.public().encryption_key(),
         exec.public().encryption_key()
@@ -33,10 +33,10 @@ fn test_prekey_asynchronous_handshake() {
     let prekey_index = 42;
     let device_index = 0;
     let alice_prekey_secret = alice_master
-        .derive_child(&format!(
-            "m/44'/999'/0'/3'/{}'/{}'",
-            device_index, prekey_index
-        ))
+        .derive_child(
+            &format!("m/44'/999'/0'/3'/{}'/{}'", device_index, prekey_index),
+            None,
+        )
         .unwrap();
     let alice_prekey_public = alice_prekey_secret.public().encryption_key().clone();
 
@@ -55,10 +55,10 @@ fn test_prekey_asynchronous_handshake() {
     // --- Alice wakes up ---
     // She sees Bob's lockbox and the tag "Pre-Key #42"
     let recovered_alice_prekey = alice_master
-        .derive_child(&format!(
-            "m/44'/999'/0'/3'/{}'/{}'",
-            device_index, prekey_index
-        ))
+        .derive_child(
+            &format!("m/44'/999'/0'/3'/{}'/{}'", device_index, prekey_index),
+            None,
+        )
         .unwrap();
 
     let opened_key = lockbox

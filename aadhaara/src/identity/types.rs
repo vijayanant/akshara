@@ -91,8 +91,30 @@ impl MasterIdentity {
         Ok(Self { seed })
     }
 
-    pub fn derive_child(&self, path: &str) -> Result<SecretIdentity, SovereignError> {
-        let signing_key = derivation::derive_slip0010_key(&self.seed, path)?;
+    pub fn derive_child(
+        &self,
+        path: &str,
+        graph_id: Option<&GraphId>,
+    ) -> Result<SecretIdentity, SovereignError> {
+        let mut signing_key = derivation::derive_slip0010_key(&self.seed, path)?;
+
+        // SHADOW IDENTITY RITUAL (Privacy Preservation):
+        // If a GraphId is provided, we perform an additional HMAC-SHA256 step to
+        // isolate the key to this specific graph. This prevents "clustering" attacks
+        // where a Relay can link the same author across different graphs.
+        if let Some(gid) = graph_id {
+            let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(&signing_key.to_bytes())
+                .map_err(|e| SovereignError::InternalError(format!("HMAC init failed: {}", e)))?;
+            hmac.update(b"akshara.v1.shadow_identity");
+            hmac.update(gid.as_bytes());
+            let result = hmac.finalize().into_bytes();
+            let mut shadow_seed = [0u8; 32];
+            shadow_seed.copy_from_slice(&result[..32]);
+
+            // Re-derive a valid SigningKey from the HMAC output
+            signing_key = SigningKey::from_bytes(&shadow_seed);
+        }
+
         Ok(SecretIdentity::from_signing_key_at_path(
             signing_key,
             path.to_string(),
@@ -143,7 +165,7 @@ impl MasterIdentity {
         count: u32,
     ) -> Result<PreKeyBundle, SovereignError> {
         let device_path = paths::format_akshara_path(paths::BRANCH_EXECUTIVE, device_index);
-        let device_secret = self.derive_child(&device_path)?;
+        let device_secret = self.derive_child(&device_path, None)?;
 
         let mut pre_keys = BTreeMap::new();
         for i in 0..count {
@@ -156,7 +178,7 @@ impl MasterIdentity {
                 device_index,
                 index
             );
-            let child = self.derive_child(&path)?;
+            let child = self.derive_child(&path, None)?;
             pre_keys.insert(index, child.public().encryption_key().clone());
         }
 
@@ -204,7 +226,7 @@ impl SecretIdentity {
         path: &str,
     ) -> Result<Self, SovereignError> {
         let master = MasterIdentity::from_mnemonic(phrase, passphrase)?;
-        master.derive_child(path)
+        master.derive_child(path, None)
     }
 
     pub(crate) fn from_signing_key_at_path(signing_key: SigningKey, path: String) -> Self {
