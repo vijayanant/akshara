@@ -7,6 +7,9 @@ pub use index_builder::IndexBuilder;
 pub use walker::{BlockWalker, GraphWalker};
 
 #[cfg(test)]
+mod test_auditor;
+
+#[cfg(test)]
 mod test_traversal;
 
 #[cfg(test)]
