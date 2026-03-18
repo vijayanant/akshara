@@ -2,8 +2,8 @@ use crate::base::address::{BlockId, GraphId};
 use crate::base::crypto::{BlockContent, GraphKey, Signature, SigningPublicKey, SovereignSigner};
 use crate::base::error::{CryptoError, IntegrityError, SovereignError};
 use cid::Cid;
+use hmac::{Hmac, Mac};
 use metrics::counter;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -110,11 +110,18 @@ impl Block {
         key: &GraphKey,
         signer: &impl SovereignSigner,
     ) -> Result<Self, SovereignError> {
+        // DEDUPLICATION RITUAL:
+        // We use a deterministic nonce derived from (Key + Plaintext).
+        // This ensures that identical content in the same graph results in the same CID,
+        // enabling massive storage and sync savings (Pillar 2: Permanence).
+        let mut hmac = Hmac::<Sha256>::new_from_slice(key.as_bytes())
+            .map_err(|e| SovereignError::InternalError(format!("HMAC init failed: {}", e)))?;
+        hmac.update(&plaintext);
+        let hmac_result = hmac.finalize().into_bytes();
         let mut nonce = [0u8; 24];
-        rand::thread_rng().fill_bytes(&mut nonce);
+        nonce.copy_from_slice(&hmac_result[..24]);
 
         let ad = Self::compute_ad(&graph_id, &signer.public_key(), &block_type, &parents);
-
         let content = BlockContent::encrypt(&plaintext, key, nonce, &ad)?;
 
         Ok(Self::create(content, block_type, parents, signer))
@@ -129,8 +136,13 @@ impl Block {
     ) -> Result<Self, SovereignError> {
         let plaintext = crate::base::encoding::to_canonical_bytes(&index)?;
 
+        // Deterministic Nonce for Index deduplication
+        let mut hmac = Hmac::<Sha256>::new_from_slice(key.as_bytes())
+            .map_err(|e| SovereignError::InternalError(format!("HMAC init failed: {}", e)))?;
+        hmac.update(&plaintext);
+        let hmac_result = hmac.finalize().into_bytes();
         let mut nonce = [0u8; 24];
-        rand::thread_rng().fill_bytes(&mut nonce);
+        nonce.copy_from_slice(&hmac_result[..24]);
 
         let ad = Self::compute_ad(
             &graph_id,

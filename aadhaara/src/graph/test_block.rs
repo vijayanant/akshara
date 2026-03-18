@@ -28,9 +28,9 @@ pub fn create_standard_block(content_data: &[u8]) -> (Block, SecretIdentity) {
     (block, identity)
 }
 
-// --- Identity & Randomness Tests ---
+// --- Identity & Deduplication Tests ---
 #[test]
-fn block_id_is_unique_due_to_random_nonce() {
+fn block_id_is_deterministic_for_deduplication() {
     let identity = create_identity();
     let key = create_dummy_key();
     let gid = crate::GraphId::new();
@@ -47,12 +47,54 @@ fn block_id_is_unique_due_to_random_nonce() {
     .unwrap();
     let block2 = Block::new(gid, content, BlockType::from("p"), vec![], &key, &identity).unwrap();
 
-    // Since each block generation now uses a random 192-bit nonce,
-    // identical content MUST result in different CIDs to ensure cryptographic safety (XChaCha20).
-    assert_ne!(
+    // DEDUPLICATION RITUAL:
+    // Identical content in the same graph results in the same CID,
+    // enabling massive storage and sync savings (Pillar 2: Permanence).
+    assert_eq!(
         block1.id(),
         block2.id(),
-        "Identical content must have different IDs due to unique nonces"
+        "Identical content MUST result in identical CIDs for deduplication"
+    );
+}
+
+#[test]
+fn block_adversarial_deduplication_privacy_leak() {
+    let identity = create_identity();
+    let content = b"Secret Message".to_vec();
+
+    // Same content, different keys (simulating different graphs)
+    let key_a = create_dummy_key();
+    let key_b = create_dummy_key();
+
+    let gid_a = crate::GraphId::new();
+    let gid_b = crate::GraphId::new();
+
+    let block_a = Block::new(
+        gid_a,
+        content.clone(),
+        BlockType::from("p"),
+        vec![],
+        &key_a,
+        &identity,
+    )
+    .unwrap();
+    let block_b = Block::new(
+        gid_b,
+        content,
+        BlockType::from("p"),
+        vec![],
+        &key_b,
+        &identity,
+    )
+    .unwrap();
+
+    // CRITICAL PRIVACY INVARIANT:
+    // Even if the content is identical, the CID must be different if the keys are different.
+    // This prevents a Relay from performing "Correlation Attacks" across different private graphs.
+    assert_ne!(
+        block_a.id(),
+        block_b.id(),
+        "Blocks from different graphs must have different CIDs even if content is identical"
     );
 }
 
