@@ -60,6 +60,33 @@ fn identity_fails_on_invalid_mnemonic() {
 }
 
 #[test]
+fn identity_adversarial_entropy_wall() {
+    let short_mnemonics = vec![
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", // 12
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", // 15
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", // 18
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", // 21
+    ];
+
+    for m in short_mnemonics {
+        let result = SecretIdentity::from_mnemonic(m, "");
+        match result {
+            Err(crate::base::error::SovereignError::Identity(
+                crate::base::error::IdentityError::MnemonicInvalid(msg),
+            )) => {
+                assert!(
+                    msg.contains("exactly 24 words"),
+                    "Error message should enforce 24 words: {}",
+                    msg
+                );
+            }
+            Ok(_) => panic!("MasterIdentity should have REJECTED mnemonic: {}", m),
+            Err(e) => panic!("Unexpected error type for mnemonic {}: {:?}", m, e),
+        }
+    }
+}
+
+#[test]
 fn identity_derivation_changes_with_passphrase() {
     let id1 = SecretIdentity::from_mnemonic(MNEMONIC_1, "pass1").unwrap();
     let id2 = SecretIdentity::from_mnemonic(MNEMONIC_1, "pass2").unwrap();
@@ -80,8 +107,8 @@ fn identity_can_generate_valid_mnemonics() {
 
 #[test]
 fn identity_derivation_matches_bip39_standard_phrase() {
-    // 12-word valid phrase for compatibility check
-    let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    // 24-word valid phrase for compatibility check (standard "abandon" phrase)
+    let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
     let id = SecretIdentity::from_mnemonic(mnemonic, "TREZOR").unwrap();
 
     // Verify derivation path m/44'/999'/0'/0'/0' works
@@ -110,6 +137,45 @@ fn identity_derives_isolated_graph_keys() {
         .derive_graph_key(&graph_id_2)
         .expect("Derivation failed");
     assert_ne!(graph_key, graph_key_2);
+}
+
+#[tokio::test]
+async fn identity_adversarial_shadow_isolation() {
+    let mnemonic = MNEMONIC_1;
+    let master = crate::identity::types::MasterIdentity::from_mnemonic(mnemonic, "").unwrap();
+    let alice = master.derive_child("m/44'/999'/0'/0'/0'", None).unwrap();
+    let alice_pub = alice.public().signing_key().clone();
+
+    let gid_a = GraphId::new();
+    let gid_b = GraphId::new();
+
+    // Shadow Key for Graph A
+    let shadow_a = master
+        .derive_child("m/44'/999'/0'/1'/0'", Some(&gid_a))
+        .unwrap();
+
+    // Attempting to use Shadow A to sign for Graph B
+    let data_root = crate::base::address::BlockId::from_sha256(&[0xBB; 32]);
+    let malicious_manifest = crate::graph::Manifest::new(
+        gid_b,
+        data_root,
+        vec![],
+        crate::base::address::ManifestId::null(),
+        &shadow_a,
+    );
+
+    // Audit in context of Graph B
+    let store = crate::state::in_memory_store::InMemoryStore::new();
+    let auditor = crate::traversal::auditor::Auditor::new(&store, alice_pub.clone());
+
+    let result = auditor.audit_manifest(&malicious_manifest).await;
+
+    // This should fail because the Shadow Key derived for GID_A is mathematically
+    // different from the one that would be derived for GID_B.
+    assert!(
+        result.is_err(),
+        "Auditor MUST reject Shadow Key from a different graph context"
+    );
 }
 
 #[test]

@@ -23,6 +23,16 @@ pub fn mnemonic_to_seed(
     passphrase: &str,
 ) -> Result<Zeroizing<[u8; 64]>, SovereignError> {
     let normalized = phrase.trim().to_lowercase();
+    let words: Vec<&str> = normalized.split_whitespace().collect();
+    if words.len() != 24 {
+        return Err(SovereignError::Identity(IdentityError::MnemonicInvalid(
+            format!(
+                "Akshara requires exactly 24 words for 256-bit entropy, but found {}",
+                words.len()
+            ),
+        )));
+    }
+
     let mnemonic = Mnemonic::parse_in_normalized(Language::English, &normalized)
         .map_err(|e| SovereignError::Identity(IdentityError::MnemonicInvalid(e.to_string())))?;
 
