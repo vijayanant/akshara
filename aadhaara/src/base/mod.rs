@@ -10,4 +10,7 @@ mod test_address;
 mod test_crypto;
 
 #[cfg(test)]
+mod test_encoding;
+
+#[cfg(test)]
 mod test_error;
