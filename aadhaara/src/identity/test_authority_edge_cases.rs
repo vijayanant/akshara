@@ -1,7 +1,9 @@
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::GraphKey;
-use crate::graph::{Block, Manifest};
+use crate::base::error::{IntegrityError, SovereignError};
+use crate::graph::{Block, BlockType, Manifest};
 use crate::identity::SecretIdentity;
+use crate::identity::types::MasterIdentity;
 use crate::state::in_memory_store::InMemoryStore;
 use crate::state::store::GraphStore;
 use crate::traversal::auditor::Auditor;
@@ -298,4 +300,115 @@ async fn test_negative_path_hijack_prefix() {
         res.is_err(),
         "Auditor must reject keys from non-legislator branches even if they are authorized"
     );
+}
+
+#[tokio::test]
+async fn test_adversarial_ghost_branch_rejection() {
+    let mut store = InMemoryStore::new();
+    let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+    let master = MasterIdentity::from_mnemonic(mnemonic, "").unwrap();
+    let master_pub = master
+        .derive_child("m/44'/999'/0'/0'/0'", None)
+        .unwrap()
+        .public()
+        .signing_key()
+        .clone();
+
+    // 1. Genesis: Alice (Master) is the root.
+    let gid = GraphId::new();
+    let gkey = GraphKey::new([0u8; 32]);
+    let alice = master.derive_child("m/44'/999'/0'/0'/0'", None).unwrap();
+
+    // 2. Authorize a Laptop
+    let laptop = master.derive_child("m/44'/999'/0'/1'/0'", None).unwrap();
+    let laptop_pub = laptop.public().signing_key().clone();
+
+    let auth_block = Block::new(
+        gid,
+        laptop_pub.as_bytes().to_vec(),
+        BlockType::AksharaAuthV1,
+        vec![],
+        &gkey,
+        &alice,
+    )
+    .unwrap();
+    store.put_block(&auth_block).await.unwrap();
+
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert(
+            &format!("credentials/{}", laptop_pub.to_hex()),
+            auth_block.id().into(),
+        )
+        .unwrap();
+    let id_root = builder.build(gid, &mut store, &alice, &gkey).await.unwrap();
+
+    let id_manifest_v1 = Manifest::new(gid, id_root, vec![], ManifestId::null(), &alice);
+    store.put_manifest(&id_manifest_v1).await.unwrap();
+
+    // 3. Revoke the Laptop in ID_V2
+    let revoke_block = Block::new(
+        gid,
+        laptop_pub.as_bytes().to_vec(),
+        BlockType::AksharaRevocationV1,
+        vec![auth_block.id()],
+        &gkey,
+        &alice,
+    )
+    .unwrap();
+    store.put_block(&revoke_block).await.unwrap();
+
+    let mut builder_v2 = crate::traversal::IndexBuilder::new();
+    builder_v2
+        .insert(
+            &format!("credentials/{}", laptop_pub.to_hex()),
+            revoke_block.id().into(),
+        )
+        .unwrap();
+    let id_root_v2 = builder_v2
+        .build(gid, &mut store, &alice, &gkey)
+        .await
+        .unwrap();
+
+    let id_manifest_v2 = Manifest::new(
+        gid,
+        id_root_v2,
+        vec![id_manifest_v1.id()],
+        id_manifest_v1.id(),
+        &alice,
+    );
+    store.put_manifest(&id_manifest_v2).await.unwrap();
+
+    // 4. THE ATTACK: The "revoked" laptop tries to create a new data manifest
+    // It anchors to ID_V1 (where it was still valid) to try and bypass the revocation.
+    let data_root = BlockId::from_sha256(&[0xEE; 32]);
+    let ghost_manifest = Manifest::new(
+        GraphId::new(),
+        data_root,
+        vec![],
+        id_manifest_v1.id(),
+        &laptop,
+    );
+
+    // 5. THE AUDIT:
+    // A naive auditor (no frontier) would accept this.
+    // Our hardened Auditor (with latest_identity) MUST reject it.
+    let auditor =
+        Auditor::new(&store, master_pub.clone()).with_latest_identity(id_manifest_v2.id());
+
+    let result = auditor.audit_manifest(&ghost_manifest).await;
+
+    match result {
+        Err(SovereignError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
+            assert!(
+                msg.contains("revoked in the latest state"),
+                "Error should mention revocation at frontier: {}",
+                msg
+            );
+        }
+        other => panic!(
+            "Auditor should have rejected Ghost Branch with UnauthorizedSigner error, got: {:?}",
+            other
+        ),
+    }
 }

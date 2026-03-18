@@ -14,6 +14,9 @@ pub struct Auditor<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
     /// The immutable Master Public Key that serves as the root of trust for this audit.
     pub(crate) expected_root_key: SigningPublicKey,
+    /// The latest known valid Identity Manifest (optional).
+    /// Used to prevent "Ghost Branches" by ensuring signers aren't revoked in the latest state.
+    pub(crate) latest_identity: Option<ManifestId>,
 }
 
 impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
@@ -22,7 +25,14 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         Self {
             store,
             expected_root_key,
+            latest_identity: None,
         }
+    }
+
+    /// Sets the latest known Identity (Frontier) for this Auditor.
+    pub fn with_latest_identity(mut self, identity: ManifestId) -> Self {
+        self.latest_identity = Some(identity);
+        self
     }
 
     /// Performs a full audit of a Manifest, including mathematical and social integrity.
@@ -57,6 +67,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
                 manifest.author(),
                 &manifest.identity_anchor(),
                 &self.expected_root_key,
+                self.latest_identity.as_ref(),
             )
             .await?;
 
