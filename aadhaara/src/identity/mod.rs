@@ -19,6 +19,9 @@ mod test_prekey;
 mod test_identity_graph;
 
 #[cfg(test)]
+mod test_identity_graph_authority;
+
+#[cfg(test)]
 mod test_identity_protocol;
 
 #[cfg(test)]
