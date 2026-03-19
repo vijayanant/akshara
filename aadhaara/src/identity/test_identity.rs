@@ -286,6 +286,106 @@ fn test_hierarchical_path_isolation() {
 }
 
 #[test]
+fn identity_derive_key_invalid_path_format() {
+    // Test various invalid path formats
+    let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+
+    // Non-hardened path (Ed25519 requires hardened)
+    let result = SecretIdentity::from_mnemonic_at_path(&mnemonic, "", "m/44/999/0/0/0");
+    assert!(result.is_err(), "Must reject non-hardened path");
+
+    // Missing 'm' prefix
+    let result = SecretIdentity::from_mnemonic_at_path(&mnemonic, "", "44'/999'/0'/0'/0'");
+    assert!(result.is_err(), "Must reject path without 'm' prefix");
+
+    // Invalid characters
+    let result = SecretIdentity::from_mnemonic_at_path(&mnemonic, "", "m/44'/999'/0'/0'/x");
+    assert!(result.is_err(), "Must reject path with invalid characters");
+
+    // Empty path
+    let result = SecretIdentity::from_mnemonic_at_path(&mnemonic, "", "");
+    assert!(result.is_err(), "Must reject empty path");
+
+    // Overflow index
+    let result = SecretIdentity::from_mnemonic_at_path(&mnemonic, "", "m/4294967296'");
+    assert!(result.is_err(), "Must reject overflow index");
+}
+
+#[test]
+fn shadow_key_collision_resistance() {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    // Generate two different master identities
+    let identity_a = SecretIdentity::generate(&mut OsRng);
+    let identity_b = SecretIdentity::generate(&mut OsRng);
+    let graph_id = GraphId::new();
+
+    // Derive shadow keys using the same HMAC logic as IdentityGraph
+    let mut hmac_a =
+        Hmac::<Sha256>::new_from_slice(identity_a.public().signing_key().as_bytes()).unwrap();
+    hmac_a.update(b"akshara.v1.shadow_identity");
+    hmac_a.update(graph_id.as_bytes());
+    let shadow_a = hmac_a.finalize().into_bytes();
+
+    let mut hmac_b =
+        Hmac::<Sha256>::new_from_slice(identity_b.public().signing_key().as_bytes()).unwrap();
+    hmac_b.update(b"akshara.v1.shadow_identity");
+    hmac_b.update(graph_id.as_bytes());
+    let shadow_b = hmac_b.finalize().into_bytes();
+
+    // CRITICAL SECURITY INVARIANT:
+    // Two different masters MUST NOT produce the same shadow key
+    assert_ne!(
+        shadow_a[..],
+        shadow_b[..],
+        "Shadow key collision: two different masters produced same shadow!"
+    );
+}
+
+#[test]
+fn mnemonic_validation_edge_cases() {
+    // Test empty mnemonic
+    let result = SecretIdentity::from_mnemonic("", "");
+    assert!(result.is_err(), "Empty mnemonic should fail");
+
+    // Test single word
+    let result = SecretIdentity::from_mnemonic("abandon", "");
+    assert!(result.is_err(), "Single word should fail");
+
+    // Test 12 words - should FAIL (Akshara requires 24 words for 256-bit security)
+    let result = SecretIdentity::from_mnemonic(
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        "",
+    );
+    assert!(
+        result.is_err(),
+        "12-word mnemonic should fail (Akshara requires 24 words)"
+    );
+
+    // Test 24 words (should work - valid BIP39)
+    let result = SecretIdentity::from_mnemonic(
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
+        "",
+    );
+    assert!(result.is_ok(), "Valid 24-word mnemonic should work");
+
+    // Test wrong checksum (last word changed)
+    let result = SecretIdentity::from_mnemonic(
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon",
+        "",
+    );
+    assert!(result.is_err(), "Invalid checksum should fail");
+
+    // Test invalid word
+    let result = SecretIdentity::from_mnemonic(
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon invalid word",
+        "",
+    );
+    assert!(result.is_err(), "Invalid word should fail");
+}
+
+#[test]
 fn test_keyring_secret_synchronization() {
     // Both devices start with the same mnemonic
     let version = 0;

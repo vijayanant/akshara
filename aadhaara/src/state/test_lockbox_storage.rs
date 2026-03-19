@@ -94,3 +94,29 @@ async fn store_handles_multiple_lockboxes_for_same_recipient() {
         .unwrap();
     assert_eq!(retrieved.len(), 2);
 }
+
+#[test]
+fn lockbox_tampered_associated_data_fails() {
+    use rand::rngs::OsRng;
+
+    let mut rng = OsRng;
+    let bob = create_identity();
+    let graph_key = create_dummy_key();
+
+    let lockbox = Lockbox::create(bob.public().encryption_key(), &graph_key, &mut rng).unwrap();
+
+    // Open with correct secret should work
+    let result_ok = lockbox.open(bob.encryption_key());
+    assert!(result_ok.is_ok());
+    assert_eq!(result_ok.unwrap().as_bytes(), graph_key.as_bytes());
+
+    // Create a different identity's secret
+    let alice = create_identity();
+
+    // Open with WRONG secret MUST fail (AD mismatch - different recipient)
+    let result_wrong = lockbox.open(alice.encryption_key());
+    assert!(
+        result_wrong.is_err(),
+        "Lockbox must fail when opened with wrong recipient's secret (AD mismatch)"
+    );
+}

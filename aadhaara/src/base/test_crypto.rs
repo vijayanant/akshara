@@ -96,3 +96,28 @@ fn signing_verify_fails_on_malformed_signature() {
 
     assert!(result.is_err());
 }
+
+#[test]
+fn signature_verify_fails_on_truncated_message() {
+    use crate::base::crypto::SovereignSigner;
+    use rand::rngs::OsRng;
+
+    let identity = crate::identity::SecretIdentity::generate(&mut OsRng);
+    let msg = b"This is a test message that will be truncated";
+    let signature = identity.sign(msg);
+
+    // Verify with full message should work
+    let result_ok = identity.public().signing_key().verify(msg, &signature);
+    assert!(result_ok.is_ok());
+
+    // Verify with truncated message MUST fail
+    let truncated_msg = &msg[..10];
+    let result_truncated = identity
+        .public()
+        .signing_key()
+        .verify(truncated_msg, &signature);
+    assert!(
+        result_truncated.is_err(),
+        "Signature verification must fail with truncated message"
+    );
+}

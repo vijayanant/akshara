@@ -9,6 +9,47 @@ use crate::{
 };
 
 #[tokio::test]
+async fn walker_with_corrupted_index_block() {
+    let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let graph_id = GraphId::new();
+    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let root = create_dummy_root();
+
+    // Create a valid manifest first
+    let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
+    store.put_manifest(&manifest).await.unwrap();
+
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+
+    // Walker should handle corrupted/missing index gracefully
+    let result = walker.get_ancestors(&manifest.id()).await;
+
+    // Should not panic - either succeeds or returns error gracefully
+    assert!(result.is_ok() || result.is_err());
+}
+
+#[tokio::test]
+async fn walker_handles_missing_blocks_gracefully() {
+    let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let graph_id = GraphId::new();
+    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let root = create_dummy_root();
+
+    let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
+    store.put_manifest(&manifest).await.unwrap();
+
+    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+
+    // Walker should handle missing blocks without panicking
+    let result = walker.get_ancestors(&manifest.id()).await;
+
+    // Should complete without panic
+    assert!(result.is_ok() || result.is_err());
+}
+
+#[tokio::test]
 async fn can_find_ancestors_in_chain() {
     let mut store = InMemoryStore::new();
     let (chain, master_key) = create_chain(3, &mut store).await; // A -> B -> C

@@ -39,6 +39,78 @@ pub async fn create_chain(
 }
 
 #[tokio::test]
+async fn reconciler_handles_empty_heads() {
+    let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let graph_id = GraphId::new();
+
+    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let root = create_dummy_root();
+    let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
+    store.put_manifest(&manifest).await.unwrap();
+
+    let reconciler = Reconciler::new(&store, identity.public().signing_key().clone());
+
+    // Both peers have empty heads - should reconcile to empty delta
+    let peer_heads = Heads::new(graph_id, vec![]);
+    let self_heads: Vec<ManifestId> = vec![];
+
+    let comparison = reconciler
+        .reconcile(&peer_heads, &self_heads)
+        .await
+        .unwrap();
+
+    assert!(comparison.peer_surplus.is_empty());
+    assert!(comparison.self_surplus.is_empty());
+}
+
+#[tokio::test]
+async fn reconciler_handles_one_empty_one_with_heads() {
+    let mut store = InMemoryStore::new();
+    let (chain, master_key) = create_chain(3, &mut store).await;
+    let graph_id = GraphId::new();
+
+    let reconciler = Reconciler::new(&store, master_key);
+
+    // Peer has heads, self is empty
+    let peer_heads = Heads::new(graph_id, vec![chain[2]]);
+    let self_heads: Vec<ManifestId> = vec![];
+
+    let comparison = reconciler
+        .reconcile(&peer_heads, &self_heads)
+        .await
+        .unwrap();
+
+    assert!(!comparison.peer_surplus.is_empty());
+    assert!(comparison.self_surplus.is_empty());
+}
+
+#[tokio::test]
+async fn reconciler_rejects_too_many_heads() {
+    let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let graph_id = GraphId::new();
+    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let root = create_dummy_root();
+
+    // Create 1025 heads (exceeds limit of 1024)
+    let mut heads = vec![];
+    for _i in 0..1025 {
+        let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
+        store.put_manifest(&manifest).await.unwrap();
+        heads.push(manifest.id());
+    }
+
+    let reconciler = Reconciler::new(&store, identity.public().signing_key().clone());
+    let peer_heads = Heads::new(graph_id, heads);
+    let self_heads: Vec<ManifestId> = vec![];
+
+    let result = reconciler.reconcile(&peer_heads, &self_heads).await;
+
+    assert!(result.is_err(), "Should reject too many heads");
+}
+
+#[tokio::test]
 async fn reconciler_identifies_peer_surplus() {
     let mut store = InMemoryStore::new();
     let (chain, master_key) = create_chain(3, &mut store).await; // A -> B -> C

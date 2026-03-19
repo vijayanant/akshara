@@ -265,3 +265,179 @@ fn block_restores_from_raw_parts() {
     assert_eq!(restored.id(), original.id());
     assert!(restored.verify_integrity().is_ok());
 }
+
+// --- Security Tests ---
+
+#[test]
+fn block_decrypt_with_wrong_graph_key_fails() {
+    let identity = create_identity();
+    let correct_key = create_dummy_key();
+    let wrong_key = create_dummy_key();
+    let gid = crate::GraphId::new();
+    let plaintext = b"Secret Data".to_vec();
+
+    let block = Block::new(
+        gid,
+        plaintext.clone(),
+        BlockType::from("p"),
+        vec![],
+        &correct_key,
+        &identity,
+    )
+    .unwrap();
+
+    // Decrypt with correct key should work
+    let decrypted_correct = block.decrypt(&gid, &correct_key);
+    assert!(decrypted_correct.is_ok());
+    assert_eq!(decrypted_correct.unwrap(), plaintext);
+
+    // Decrypt with wrong key MUST fail (AEAD authentication)
+    let decrypted_wrong = block.decrypt(&gid, &wrong_key);
+    assert!(
+        decrypted_wrong.is_err(),
+        "Decryption with wrong key must fail (XChaCha20-Poly1305 authentication)"
+    );
+}
+
+#[test]
+fn block_decrypt_with_wrong_graph_id_fails() {
+    let identity = create_identity();
+    let key = create_dummy_key();
+    let correct_gid = crate::GraphId::new();
+    let wrong_gid = crate::GraphId::new();
+    let plaintext = b"Secret Data".to_vec();
+
+    let block = Block::new(
+        correct_gid,
+        plaintext.clone(),
+        BlockType::from("p"),
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
+
+    // Decrypt with correct graph_id should work
+    let decrypted_correct = block.decrypt(&correct_gid, &key);
+    assert!(decrypted_correct.is_ok());
+    assert_eq!(decrypted_correct.unwrap(), plaintext);
+
+    // Decrypt with wrong graph_id MUST fail (associated data mismatch)
+    let decrypted_wrong = block.decrypt(&wrong_gid, &key);
+    assert!(
+        decrypted_wrong.is_err(),
+        "Decryption with wrong graph_id must fail (associated data mismatch)"
+    );
+}
+
+#[test]
+fn block_with_tampered_parents_array_fails_integrity() {
+    let identity = create_identity();
+    let key = create_dummy_key();
+    let gid = crate::GraphId::new();
+
+    let p1 = BlockId::from_sha256(&[1u8; 32]);
+    let p2 = BlockId::from_sha256(&[2u8; 32]);
+
+    let block = Block::new(
+        gid,
+        b"data".to_vec(),
+        BlockType::from("p"),
+        vec![p1, p2],
+        &key,
+        &identity,
+    )
+    .unwrap();
+
+    // Verify original is valid
+    assert!(block.verify_integrity().is_ok());
+
+    // Serialize and tamper with parents array in CBOR
+    let bytes = crate::base::encoding::to_canonical_bytes(&block).unwrap();
+
+    // Parents are part of the block structure - tampering will break the ID
+    let mut tampered = bytes.clone();
+    if tampered.len() > 50 {
+        tampered[50] ^= 0xFF;
+    }
+
+    // Try to deserialize - should fail integrity check
+    let result: Result<Block, _> = crate::base::encoding::from_canonical_bytes(&tampered);
+
+    // Either deserialization fails OR integrity check fails - both are OK
+    if let Ok(tampered_block) = result {
+        assert!(
+            tampered_block.verify_integrity().is_err(),
+            "Tampered parents must be detected"
+        );
+    }
+}
+
+#[test]
+fn block_type_confusion_index_vs_data_fails() {
+    let identity = create_identity();
+    let key = create_dummy_key();
+    let gid = crate::GraphId::new();
+
+    // Create a data block
+    let data_block = Block::new(
+        gid,
+        b"data".to_vec(),
+        BlockType::AksharaDataV1,
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
+
+    // Verify it's correctly typed
+    assert_eq!(data_block.block_type(), &BlockType::AksharaDataV1);
+
+    // The type is part of the signed structure - can't be changed without breaking signature
+    // This test verifies that type is embedded in the block structure
+    let bytes = crate::base::encoding::to_canonical_bytes(&data_block).unwrap();
+
+    // Tamper with type bytes
+    let mut tampered = bytes.clone();
+    if tampered.len() > 30 {
+        tampered[30] ^= 0xFF;
+    }
+
+    let result: Result<Block, _> = crate::base::encoding::from_canonical_bytes(&tampered);
+
+    // Should fail either deserialization or integrity
+    if let Ok(tampered_block) = result {
+        assert!(
+            tampered_block.verify_integrity().is_err(),
+            "Type tampering must be detected"
+        );
+    }
+}
+
+#[test]
+fn block_handles_large_payload() {
+    let identity = create_identity();
+    let key = create_dummy_key();
+    let gid = crate::GraphId::new();
+
+    // Create a 1MB payload
+    let large_payload = vec![0x42u8; 1024 * 1024];
+
+    let block = Block::new(
+        gid,
+        large_payload.clone(),
+        BlockType::AksharaDataV1,
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
+
+    // Verify block was created
+    assert!(block.verify_integrity().is_ok());
+
+    // Verify decryption works
+    let decrypted = block.decrypt(&gid, &key).unwrap();
+    assert_eq!(decrypted.len(), large_payload.len());
+    assert_eq!(decrypted, large_payload);
+}

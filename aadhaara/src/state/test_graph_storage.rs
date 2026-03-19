@@ -178,3 +178,95 @@ async fn store_handles_out_of_order_insertion() {
     assert!(heads.contains(&m_b.id()));
     assert!(heads.contains(&m_a.id()));
 }
+
+#[tokio::test]
+async fn store_isolates_different_graph_ids() {
+    let mut store = InMemoryStore::new();
+    let identity = create_identity();
+    let anchor = create_dummy_anchor();
+
+    let graph_a = GraphId::new();
+    let graph_b = GraphId::new();
+
+    // Create manifests for graph A
+    let manifest_a = Manifest::new(
+        graph_a,
+        BlockId::from_sha256(&[0xAA; 32]),
+        vec![],
+        anchor,
+        &identity,
+    );
+    store.put_manifest(&manifest_a).await.unwrap();
+
+    // Create manifests for graph B
+    let manifest_b = Manifest::new(
+        graph_b,
+        BlockId::from_sha256(&[0xBB; 32]),
+        vec![],
+        anchor,
+        &identity,
+    );
+    store.put_manifest(&manifest_b).await.unwrap();
+
+    // Verify isolation: graph A's heads don't include graph B's manifest
+    let heads_a = store.get_heads(&graph_a).await.unwrap();
+    let heads_b = store.get_heads(&graph_b).await.unwrap();
+
+    assert_eq!(heads_a.len(), 1);
+    assert_eq!(heads_b.len(), 1);
+    assert_ne!(heads_a[0], heads_b[0]);
+
+    // Verify cross-graph query returns empty
+    let graph_c = GraphId::new();
+    let heads_c = store.get_heads(&graph_c).await.unwrap();
+    assert!(heads_c.is_empty());
+}
+
+#[tokio::test]
+async fn store_handles_concurrent_writes_to_same_graph() {
+    use std::sync::Arc;
+    use tokio::sync::{Barrier, Mutex};
+
+    let store = Arc::new(Mutex::new(InMemoryStore::new()));
+    let anchor = create_dummy_anchor();
+    let graph_id = GraphId::new();
+
+    let num_threads = 10;
+    let barrier = Arc::new(Barrier::new(num_threads));
+    let mut handles = vec![];
+
+    // Spawn multiple concurrent writers, each with their own identity
+    for i in 0..num_threads {
+        let store_clone = Arc::clone(&store);
+        let barrier_clone = Arc::clone(&barrier);
+
+        let handle = tokio::spawn(async move {
+            let identity = create_identity();
+            barrier_clone.wait().await;
+
+            let manifest = Manifest::new(
+                graph_id,
+                BlockId::from_sha256(&[i as u8; 32]),
+                vec![],
+                anchor,
+                &identity,
+            );
+            store_clone
+                .lock()
+                .await
+                .put_manifest(&manifest)
+                .await
+                .unwrap();
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all writers to complete
+    for handle in handles {
+        handle.await.unwrap();
+    }
+
+    // Verify all manifests were written
+    let heads = store.lock().await.get_heads(&graph_id).await.unwrap();
+    assert_eq!(heads.len(), num_threads);
+}

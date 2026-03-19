@@ -10,6 +10,9 @@ pub use walker::{BlockWalker, GraphWalker};
 mod test_auditor;
 
 #[cfg(test)]
+mod test_index_builder;
+
+#[cfg(test)]
 mod test_traversal;
 
 #[cfg(test)]

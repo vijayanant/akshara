@@ -33,3 +33,32 @@ async fn test_prekey_storage_and_consumption() {
     assert!(!final_bundle.pre_keys.contains_key(&2));
     assert!(final_bundle.pre_keys.contains_key(&0));
 }
+
+#[tokio::test]
+async fn test_prekey_reuse_attack_prevention() {
+    let mut store = InMemoryStore::new();
+    let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
+    let master = MasterIdentity::from_mnemonic(&mnemonic, "").unwrap();
+
+    let bundle = master.generate_pre_key_bundle(0, 0, 3).unwrap();
+    let device_key = bundle.device_identity.signing_key().clone();
+
+    store.put_prekey_bundle(&bundle).await.unwrap();
+
+    // Attacker captures prekey at index 0
+    let captured_prekey = store.consume_prekey(&device_key, 0).await.unwrap();
+    assert!(
+        captured_prekey.is_some(),
+        "First consumption should succeed"
+    );
+
+    // Attacker tries to reuse the same prekey (replay attack)
+    let reused_prekey = store.consume_prekey(&device_key, 0).await.unwrap();
+
+    // CRITICAL SECURITY INVARIANT:
+    // Pre-keys MUST be one-time use only - prevents replay attacks
+    assert!(
+        reused_prekey.is_none(),
+        "Pre-key reuse attack succeeded! Same prekey returned twice!"
+    );
+}

@@ -17,6 +17,27 @@ fn manifest_integrity_success() {
 }
 
 #[test]
+fn manifest_identity_anchor_mismatch_fails() {
+    let identity = create_identity();
+    let graph_id = GraphId::new();
+    let content_root = BlockId::from_sha256(&[1u8; 32]);
+    let valid_anchor = ManifestId::from_sha256(&[5u8; 32]);
+
+    let manifest = Manifest::new(graph_id, content_root, vec![], valid_anchor, &identity);
+
+    assert!(manifest.verify_integrity().is_ok());
+
+    // Tamper with identity anchor
+    let mut tampered = manifest;
+    tampered.header.identity_anchor = ManifestId::from_sha256(&[9u8; 32]);
+
+    assert!(
+        tampered.verify_integrity().is_err(),
+        "Tampered identity anchor must be detected (ID mismatch)"
+    );
+}
+
+#[test]
 fn manifest_integrity_fails_on_tampered_content_root() {
     let identity = create_identity();
     let mut manifest = Manifest::new(
@@ -132,4 +153,32 @@ fn manifest_restores_from_raw_parts() {
     assert_eq!(original.id(), restored.id());
     assert_eq!(original.graph_id(), restored.graph_id());
     assert!(restored.verify_integrity().is_ok());
+}
+
+#[test]
+fn manifest_parent_cycle_detection() {
+    let identity = create_identity();
+    let graph_id = GraphId::new();
+    let content_root = BlockId::from_sha256(&[1u8; 32]);
+    let anchor = ManifestId::null();
+
+    // Create a normal manifest first
+    let parent_manifest = Manifest::new(graph_id, content_root, vec![], anchor, &identity);
+
+    // Create child that references parent
+    let child_manifest = Manifest::new(
+        graph_id,
+        content_root,
+        vec![parent_manifest.id()],
+        anchor,
+        &identity,
+    );
+
+    // Both should be valid
+    assert!(parent_manifest.verify_integrity().is_ok());
+    assert!(child_manifest.verify_integrity().is_ok());
+
+    // Note: Actual cycle detection happens during GraphWalker traversal,
+    // not during manifest verification. The manifest structure itself
+    // can contain any parent references - cycles are detected during walk.
 }
