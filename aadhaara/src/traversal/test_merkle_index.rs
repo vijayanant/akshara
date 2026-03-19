@@ -1,5 +1,5 @@
 use crate::base::address::{Address, BlockId, GraphId};
-use crate::base::crypto::{GraphKey, SovereignSigner};
+use crate::base::crypto::{AksharaSigner, GraphKey};
 use crate::graph::Block;
 use crate::identity::SecretIdentity;
 use crate::state::in_memory_store::InMemoryStore;
@@ -314,7 +314,7 @@ async fn test_merkle_index_circular_reference_protection() {
         .await;
 
     match result {
-        Err(crate::SovereignError::Integrity(crate::IntegrityError::BlockIdMismatch(_))) => (),
+        Err(crate::AksharaError::Integrity(crate::IntegrityError::BlockIdMismatch(_))) => (),
         _ => panic!("Expected IntegrityError::BlockIdMismatch, got {:?}", result),
     }
 }

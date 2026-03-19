@@ -2,7 +2,7 @@ use crate::base::address::{Address, BlockId, ManifestId};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum SovereignError {
+pub enum AksharaError {
     #[error("Cryptographic failure: {0}")]
     Crypto(#[from] CryptoError),
 

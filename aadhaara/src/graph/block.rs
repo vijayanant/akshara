@@ -1,6 +1,6 @@
 use crate::base::address::{BlockId, GraphId};
-use crate::base::crypto::{BlockContent, GraphKey, Signature, SigningPublicKey, SovereignSigner};
-use crate::base::error::{CryptoError, IntegrityError, SovereignError};
+use crate::base::crypto::{AksharaSigner, BlockContent, GraphKey, Signature, SigningPublicKey};
+use crate::base::error::{AksharaError, CryptoError, IntegrityError};
 use cid::Cid;
 use hmac::{Hmac, Mac};
 use metrics::counter;
@@ -108,14 +108,14 @@ impl Block {
         block_type: BlockType,
         parents: Vec<BlockId>,
         key: &GraphKey,
-        signer: &impl SovereignSigner,
-    ) -> Result<Self, SovereignError> {
+        signer: &impl AksharaSigner,
+    ) -> Result<Self, AksharaError> {
         // DEDUPLICATION RITUAL:
         // We use a deterministic nonce derived from (Key + Plaintext).
         // This ensures that identical content in the same graph results in the same CID,
         // enabling massive storage and sync savings (Pillar 2: Permanence).
         let mut hmac = Hmac::<Sha256>::new_from_slice(key.as_bytes())
-            .map_err(|e| SovereignError::InternalError(format!("HMAC init failed: {}", e)))?;
+            .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
         hmac.update(&plaintext);
         let hmac_result = hmac.finalize().into_bytes();
         let mut nonce = [0u8; 24];
@@ -132,13 +132,13 @@ impl Block {
         index: BTreeMap<String, Cid>,
         parents: Vec<BlockId>,
         key: &GraphKey,
-        signer: &impl SovereignSigner,
-    ) -> Result<Self, SovereignError> {
+        signer: &impl AksharaSigner,
+    ) -> Result<Self, AksharaError> {
         let plaintext = crate::base::encoding::to_canonical_bytes(&index)?;
 
         // Deterministic Nonce for Index deduplication
         let mut hmac = Hmac::<Sha256>::new_from_slice(key.as_bytes())
-            .map_err(|e| SovereignError::InternalError(format!("HMAC init failed: {}", e)))?;
+            .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
         hmac.update(&plaintext);
         let hmac_result = hmac.finalize().into_bytes();
         let mut nonce = [0u8; 24];
@@ -165,7 +165,7 @@ impl Block {
         content: BlockContent,
         block_type: BlockType,
         parents: Vec<BlockId>,
-        signer: &impl SovereignSigner,
+        signer: &impl AksharaSigner,
     ) -> Self {
         let id = Self::compute_id(&content, &block_type, &parents);
         let signature = signer.sign(id.as_ref());
@@ -183,7 +183,7 @@ impl Block {
         }
     }
 
-    pub fn decrypt(&self, graph_id: &GraphId, key: &GraphKey) -> Result<Vec<u8>, SovereignError> {
+    pub fn decrypt(&self, graph_id: &GraphId, key: &GraphKey) -> Result<Vec<u8>, AksharaError> {
         let ad = Self::compute_ad(graph_id, &self.author, &self.block_type, &self.parents);
         self.content.decrypt(key, &ad)
     }
@@ -232,20 +232,20 @@ impl Block {
         }
     }
 
-    pub fn verify_integrity(&self) -> Result<(), SovereignError> {
+    pub fn verify_integrity(&self) -> Result<(), AksharaError> {
         let span = span!(Level::DEBUG, "block_verify_integrity", block_id = ?self.id);
         let _enter = span.enter();
 
         let calculated_id = Self::compute_id(&self.content, &self.block_type, &self.parents);
         if self.id != calculated_id {
-            return Err(SovereignError::Integrity(IntegrityError::BlockIdMismatch(
+            return Err(AksharaError::Integrity(IntegrityError::BlockIdMismatch(
                 self.id,
             )));
         }
 
         self.author
             .verify(self.id.as_ref(), &self.signature)
-            .map_err(|e| SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
+            .map_err(|e| AksharaError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
 
         Ok(())
     }

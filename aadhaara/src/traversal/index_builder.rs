@@ -1,6 +1,6 @@
 use crate::base::address::{Address, BlockId, GraphId};
-use crate::base::crypto::{GraphKey, SovereignSigner};
-use crate::base::error::SovereignError;
+use crate::base::crypto::{AksharaSigner, GraphKey};
+use crate::base::error::AksharaError;
 use crate::graph::{Block, BlockType};
 use crate::state::store::GraphStore;
 use std::collections::BTreeMap;
@@ -27,14 +27,14 @@ impl IndexBuilder {
     }
 
     /// Inserts an address into the virtual tree at the specified path.
-    pub fn insert(&mut self, path: &str, address: Address) -> Result<(), SovereignError> {
+    pub fn insert(&mut self, path: &str, address: Address) -> Result<(), AksharaError> {
         let segments: Vec<&str> = path
             .trim_matches('/')
             .split('/')
             .filter(|s| !s.is_empty())
             .collect();
         if segments.is_empty() {
-            return Err(SovereignError::InternalError(
+            return Err(AksharaError::InternalError(
                 "Path cannot be empty".to_string(),
             ));
         }
@@ -54,7 +54,7 @@ impl IndexBuilder {
                 match entry {
                     IndexNode::Branch(next_map) => current_map = next_map,
                     IndexNode::Leaf(_) => {
-                        return Err(SovereignError::InternalError(format!(
+                        return Err(AksharaError::InternalError(format!(
                             "Path conflict at segment: {}",
                             segment
                         )));
@@ -73,9 +73,9 @@ impl IndexBuilder {
         &self,
         graph_id: GraphId,
         store: &mut S,
-        signer: &impl SovereignSigner,
+        signer: &impl AksharaSigner,
         key: &GraphKey,
-    ) -> Result<BlockId, SovereignError> {
+    ) -> Result<BlockId, AksharaError> {
         self.materialize_node(graph_id, &self.tree, store, signer, key)
             .await
     }
@@ -85,9 +85,9 @@ impl IndexBuilder {
         graph_id: GraphId,
         map: &BTreeMap<String, IndexNode>,
         store: &mut S,
-        signer: &impl SovereignSigner,
+        signer: &impl AksharaSigner,
         key: &GraphKey,
-    ) -> Result<BlockId, SovereignError> {
+    ) -> Result<BlockId, AksharaError> {
         let mut final_map = BTreeMap::new();
 
         for (name, node) in map {

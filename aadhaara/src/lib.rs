@@ -11,11 +11,11 @@ pub use base::address::{
     Address, BlockId, CODEC_AKSHARA_BLOCK, CODEC_AKSHARA_MANIFEST, GraphId, ManifestId,
 };
 pub use base::crypto::{
-    BlockContent, EncryptionPublicKey, GraphKey, Lockbox, Signature, SigningPublicKey,
-    SovereignSigner,
+    AksharaSigner, BlockContent, EncryptionPublicKey, GraphKey, Lockbox, Signature,
+    SigningPublicKey,
 };
 pub use base::encoding::{from_canonical_bytes, to_canonical_bytes};
-pub use base::error::{IntegrityError, SovereignError};
+pub use base::error::{AksharaError, IntegrityError};
 
 pub use graph::{Block, BlockType, Manifest, ManifestHeader};
 pub use identity::{MasterIdentity, SecretIdentity};

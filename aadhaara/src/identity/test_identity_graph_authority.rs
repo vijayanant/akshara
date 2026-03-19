@@ -1,6 +1,6 @@
 use crate::{
-    Address, Block, BlockType, GraphId, GraphKey, GraphStore, InMemoryStore, IntegrityError,
-    Manifest, ManifestId, SecretIdentity, SovereignError, identity::IdentityGraph,
+    Address, AksharaError, Block, BlockType, GraphId, GraphKey, GraphStore, InMemoryStore,
+    IntegrityError, Manifest, ManifestId, SecretIdentity, identity::IdentityGraph,
     traversal::IndexBuilder,
 };
 
@@ -130,7 +130,7 @@ async fn test_identity_graph_genesis_rejects_wrong_key() {
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
-        SovereignError::Integrity(IntegrityError::UnauthorizedSigner(_))
+        AksharaError::Integrity(IntegrityError::UnauthorizedSigner(_))
     ));
 }
 
@@ -147,7 +147,7 @@ async fn test_identity_graph_missing_anchor() {
         .await;
 
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), SovereignError::Store(_)));
+    assert!(matches!(result.unwrap_err(), AksharaError::Store(_)));
 }
 
 #[tokio::test]
@@ -243,7 +243,7 @@ async fn test_identity_graph_ghost_branch_prevention() {
     );
     assert!(matches!(
         result.unwrap_err(),
-        SovereignError::Integrity(IntegrityError::UnauthorizedSigner(_))
+        AksharaError::Integrity(IntegrityError::UnauthorizedSigner(_))
     ));
 }
 

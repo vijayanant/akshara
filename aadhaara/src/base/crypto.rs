@@ -1,4 +1,4 @@
-use crate::base::error::{CryptoError, SovereignError};
+use crate::base::error::{AksharaError, CryptoError};
 use chacha20poly1305::{
     KeyInit, XChaCha20Poly1305, XNonce,
     aead::{Aead, Payload},
@@ -34,19 +34,19 @@ impl SigningPublicKey {
         self.0.iter().map(|b| format!("{:02x}", b)).collect()
     }
 
-    pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<(), SovereignError> {
+    pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<(), AksharaError> {
         let span = span!(Level::TRACE, "signing_verify");
         let _enter = span.enter();
 
         let verifying_key = VerifyingKey::from_bytes(&self.0).map_err(|e| {
-            SovereignError::Crypto(CryptoError::InvalidKeyFormat(format!(
+            AksharaError::Crypto(CryptoError::InvalidKeyFormat(format!(
                 "Invalid public key: {}",
                 e
             )))
         })?;
 
         let ed_sig = EdSignature::from_slice(sig.as_bytes()).map_err(|e| {
-            SovereignError::Crypto(CryptoError::InvalidKeyFormat(format!(
+            AksharaError::Crypto(CryptoError::InvalidKeyFormat(format!(
                 "Invalid signature format: {}",
                 e
             )))
@@ -54,8 +54,8 @@ impl SigningPublicKey {
 
         verifying_key.verify(msg, &ed_sig).map_err(|e| {
             debug!(error = %e, "Signature verification failed");
-            counter!("sovereign.crypto.verify_failure").increment(1);
-            SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string()))
+            counter!("akshara.crypto.verify_failure").increment(1);
+            AksharaError::Crypto(CryptoError::InvalidSignature(e.to_string()))
         })?;
 
         Ok(())
@@ -166,7 +166,7 @@ impl Signature {
     }
 }
 
-pub trait SovereignSigner {
+pub trait AksharaSigner {
     fn sign(&self, message: &[u8]) -> Signature;
     fn public_key(&self) -> SigningPublicKey;
     fn derivation_path(&self) -> &str;
@@ -190,7 +190,7 @@ impl BlockContent {
         key: &GraphKey,
         nonce_bytes: [u8; 24],
         associated_data: &[u8],
-    ) -> Result<Self, SovereignError> {
+    ) -> Result<Self, AksharaError> {
         let span = span!(Level::TRACE, "content_encrypt");
         let _enter = span.enter();
 
@@ -204,7 +204,7 @@ impl BlockContent {
 
         let ciphertext = cipher.encrypt(nonce, payload).map_err(|e| {
             error!(error = %e, "XChaCha20-Poly1305 encryption failed");
-            SovereignError::Crypto(CryptoError::EncryptionFailed(format!(
+            AksharaError::Crypto(CryptoError::EncryptionFailed(format!(
                 "XChaCha20 failed: {}",
                 e
             )))
@@ -216,11 +216,7 @@ impl BlockContent {
         })
     }
 
-    pub fn decrypt(
-        &self,
-        key: &GraphKey,
-        associated_data: &[u8],
-    ) -> Result<Vec<u8>, SovereignError> {
+    pub fn decrypt(&self, key: &GraphKey, associated_data: &[u8]) -> Result<Vec<u8>, AksharaError> {
         let span = span!(Level::TRACE, "content_decrypt");
         let _enter = span.enter();
 
@@ -234,8 +230,8 @@ impl BlockContent {
 
         let plaintext = cipher.decrypt(nonce, payload).map_err(|e| {
             debug!(error = %e, "XChaCha20-Poly1305 decryption failed (AD or Key mismatch)");
-            counter!("sovereign.crypto.decryption_failure").increment(1);
-            SovereignError::Crypto(CryptoError::DecryptionFailed(format!(
+            counter!("akshara.crypto.decryption_failure").increment(1);
+            AksharaError::Crypto(CryptoError::DecryptionFailed(format!(
                 "XChaCha20 failed: {}",
                 e
             )))
@@ -275,7 +271,7 @@ impl Lockbox {
         recipient_public: &EncryptionPublicKey,
         secret_to_lock: &GraphKey,
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<Self, SovereignError> {
+    ) -> Result<Self, AksharaError> {
         let span = span!(Level::DEBUG, "lockbox_create");
         let _enter = span.enter();
 
@@ -304,7 +300,7 @@ impl Lockbox {
         })
     }
 
-    pub fn open(&self, recipient_secret: &EncryptionSecretKey) -> Result<GraphKey, SovereignError> {
+    pub fn open(&self, recipient_secret: &EncryptionSecretKey) -> Result<GraphKey, AksharaError> {
         let span = span!(Level::DEBUG, "lockbox_open");
         let _enter = span.enter();
 
@@ -326,7 +322,7 @@ impl Lockbox {
 
         let key_bytes: [u8; 32] = decrypted_bytes.try_into().map_err(|_| {
             error!("Decrypted key length mismatch");
-            SovereignError::Crypto(CryptoError::InvalidKeyFormat(
+            AksharaError::Crypto(CryptoError::InvalidKeyFormat(
                 "Decrypted key is not 32 bytes".to_string(),
             ))
         })?;

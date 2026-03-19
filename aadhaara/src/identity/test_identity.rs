@@ -1,7 +1,7 @@
 use rand::rngs::OsRng;
 
 use crate::base::address::GraphId;
-use crate::base::crypto::SovereignSigner;
+use crate::base::crypto::AksharaSigner;
 use crate::identity::SecretIdentity;
 
 // Valid 24-word mnemonic for testing
@@ -71,7 +71,7 @@ fn identity_adversarial_entropy_wall() {
     for m in short_mnemonics {
         let result = SecretIdentity::from_mnemonic(m, "");
         match result {
-            Err(crate::base::error::SovereignError::Identity(
+            Err(crate::base::error::AksharaError::Identity(
                 crate::base::error::IdentityError::MnemonicInvalid(msg),
             )) => {
                 assert!(

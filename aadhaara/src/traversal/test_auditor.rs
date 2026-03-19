@@ -1,7 +1,6 @@
 use crate::{
-    Address, Auditor, Block, BlockType, GraphId, GraphKey, GraphStore, InMemoryStore,
-    IntegrityError, Manifest, ManifestId, SecretIdentity, SovereignError,
-    traversal::create_valid_anchor,
+    Address, AksharaError, Auditor, Block, BlockType, GraphId, GraphKey, GraphStore, InMemoryStore,
+    IntegrityError, Manifest, ManifestId, SecretIdentity, traversal::create_valid_anchor,
 };
 
 async fn create_identity_anchor_manifest(
@@ -65,8 +64,7 @@ async fn test_auditor_rejects_tampered_signature() {
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
-        SovereignError::Integrity(IntegrityError::ManifestIdMismatch(_))
-            | SovereignError::Crypto(_)
+        AksharaError::Integrity(IntegrityError::ManifestIdMismatch(_)) | AksharaError::Crypto(_)
     ));
 }
 
@@ -83,7 +81,7 @@ async fn test_auditor_rejects_genesis_wrong_signer() {
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
-        SovereignError::Integrity(IntegrityError::UnauthorizedSigner(_))
+        AksharaError::Integrity(IntegrityError::UnauthorizedSigner(_))
     ));
 }
 
@@ -202,7 +200,7 @@ async fn test_auditor_rejects_tampered_block() {
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
-        SovereignError::Integrity(IntegrityError::BlockIdMismatch(_))
+        AksharaError::Integrity(IntegrityError::BlockIdMismatch(_))
     ));
 }
 
@@ -257,7 +255,7 @@ async fn test_auditor_verify_existence_missing_manifest() {
     let result = auditor.verify_existence(&Address::from(fake_id)).await;
 
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), SovereignError::Store(_)));
+    assert!(matches!(result.unwrap_err(), AksharaError::Store(_)));
 }
 
 #[tokio::test]
@@ -270,7 +268,7 @@ async fn test_auditor_verify_existence_missing_block() {
     let result = auditor.verify_existence(&Address::from(fake_id)).await;
 
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), SovereignError::Store(_)));
+    assert!(matches!(result.unwrap_err(), AksharaError::Store(_)));
 }
 
 #[tokio::test]

@@ -1,6 +1,6 @@
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::GraphKey;
-use crate::base::error::{IntegrityError, SovereignError};
+use crate::base::error::{AksharaError, IntegrityError};
 use crate::graph::{Block, BlockType, Manifest};
 use crate::identity::SecretIdentity;
 use crate::identity::types::MasterIdentity;
@@ -399,7 +399,7 @@ async fn test_adversarial_ghost_branch_rejection() {
     let result = auditor.audit_manifest(&ghost_manifest).await;
 
     match result {
-        Err(SovereignError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
+        Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
             assert!(
                 msg.contains("revoked in the latest state"),
                 "Error should mention revocation at frontier: {}",

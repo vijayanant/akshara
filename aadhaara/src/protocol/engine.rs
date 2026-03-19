@@ -1,6 +1,6 @@
 use crate::base::address::{Address, BlockId, ManifestId};
 use crate::base::crypto::SigningPublicKey;
-use crate::base::error::{ProtocolError, SovereignError};
+use crate::base::error::{AksharaError, ProtocolError};
 use crate::graph::BlockType;
 use crate::protocol::{Comparison, ConvergenceReport, Delta, Heads, Portion};
 use crate::state::store::GraphStore;
@@ -30,13 +30,13 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
         &self,
         peer_heads: &Heads,
         local_heads: &[ManifestId],
-    ) -> Result<Comparison, SovereignError> {
+    ) -> Result<Comparison, AksharaError> {
         let span = span!(Level::INFO, "reconcile", graph_id = ?peer_heads.graph_id);
         let _enter = span.enter();
 
         // 1. Hardening: Bound check inputs
         if peer_heads.heads().len() > 1024 || local_heads.len() > 1024 {
-            return Err(SovereignError::Protocol(ProtocolError::TooManyHeads(1024)));
+            return Err(AksharaError::Protocol(ProtocolError::TooManyHeads(1024)));
         }
 
         let walker = GraphWalker::new(self.store, self.expected_root_key.clone());
@@ -75,14 +75,14 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
         if peer_surplus_delta.missing().len() > 100_000
             || self_surplus_delta.missing().len() > 100_000
         {
-            return Err(SovereignError::Protocol(ProtocolError::DeltaTooLarge(
+            return Err(AksharaError::Protocol(ProtocolError::DeltaTooLarge(
                 100_000,
             )));
         }
 
-        counter!("sovereign.protocol.reconcile.peer_surplus")
+        counter!("akshara.protocol.reconcile.peer_surplus")
             .increment(peer_surplus_delta.missing().len() as u64);
-        counter!("sovereign.protocol.reconcile.self_surplus")
+        counter!("akshara.protocol.reconcile.self_surplus")
             .increment(self_surplus_delta.missing().len() as u64);
 
         Ok(Comparison {
@@ -95,9 +95,8 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
     fn expand_to_delta<'b>(
         &'b self,
         manifest_ids: &'b [ManifestId],
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Delta, SovereignError>> + Send + 'b>,
-    > {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Delta, AksharaError>> + Send + 'b>>
+    {
         Box::pin(async move {
             let mut addresses = HashSet::new();
             let mut block_queue = VecDeque::new();
@@ -135,13 +134,13 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
     }
 
     /// Fulfills a `Delta` by yielding an iterator of raw `Portion` units.
-    pub async fn fulfill(&self, delta: &Delta) -> Result<Vec<Portion>, SovereignError> {
+    pub async fn fulfill(&self, delta: &Delta) -> Result<Vec<Portion>, AksharaError> {
         let mut portions = Vec::new();
         for addr in delta.missing() {
             if addr.codec() == crate::base::address::CODEC_AKSHARA_MANIFEST {
                 let id = ManifestId::try_from(*addr)?;
                 let manifest = self.store.get_manifest(&id).await?.ok_or_else(|| {
-                    SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
+                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
                         "Manifest {}",
                         id
                     )))
@@ -151,7 +150,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
             } else {
                 let id = BlockId::try_from(*addr)?;
                 let block = self.store.get_block(&id).await?.ok_or_else(|| {
-                    SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
+                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
                         "Block {}",
                         id
                     )))
@@ -171,7 +170,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
         &self,
         delta: &Delta,
         dest: &mut Dest,
-    ) -> Result<ConvergenceReport, SovereignError> {
+    ) -> Result<ConvergenceReport, AksharaError> {
         let mut report = ConvergenceReport::default();
 
         for portion in self.fulfill(delta).await? {

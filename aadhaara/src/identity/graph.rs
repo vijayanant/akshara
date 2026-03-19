@@ -1,6 +1,6 @@
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::{GraphKey, SigningPublicKey};
-use crate::base::error::{IntegrityError, SovereignError};
+use crate::base::error::{AksharaError, IntegrityError};
 use crate::graph::BlockType;
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
@@ -26,7 +26,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         anchor: &ManifestId,
         expected_root_key: &SigningPublicKey,
         latest_identity: Option<&ManifestId>,
-    ) -> Result<(), SovereignError> {
+    ) -> Result<(), AksharaError> {
         let span = span!(Level::DEBUG, "verify_authority", signer = ?signer, anchor = ?anchor, latest = ?latest_identity);
         let _enter = span.enter();
 
@@ -35,11 +35,9 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
             if signer == expected_root_key {
                 return Ok(());
             } else {
-                return Err(SovereignError::Integrity(
-                    IntegrityError::UnauthorizedSigner(
-                        "Genesis manifest must be signed by the Master Root Key".to_string(),
-                    ),
-                ));
+                return Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(
+                    "Genesis manifest must be signed by the Master Root Key".to_string(),
+                )));
             }
         }
 
@@ -55,13 +53,10 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
                 .await
             {
                 Ok(_) => { /* Still valid at frontier */ }
-                Err(SovereignError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
-                    return Err(SovereignError::Integrity(
-                        IntegrityError::UnauthorizedSigner(format!(
-                            "Signer is revoked in the latest state {}: {}",
-                            latest, msg
-                        )),
-                    ));
+                Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
+                    return Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(
+                        format!("Signer is revoked in the latest state {}: {}", latest, msg),
+                    )));
                 }
                 Err(e) => return Err(e),
             }
@@ -76,9 +71,9 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         signer: &SigningPublicKey,
         anchor: &ManifestId,
         expected_root_key: &SigningPublicKey,
-    ) -> Result<(), SovereignError> {
+    ) -> Result<(), AksharaError> {
         let manifest = self.store.get_manifest(anchor).await?.ok_or_else(|| {
-            SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
+            AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
                 "Identity Anchor {}",
                 anchor
             )))
@@ -116,26 +111,24 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
             }
         }
 
-        Err(SovereignError::Integrity(
-            IntegrityError::UnauthorizedSigner(
-                "Signer not found in authorized credentials or shadow list".to_string(),
-            ),
-        ))
+        Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(
+            "Signer not found in authorized credentials or shadow list".to_string(),
+        )))
     }
 
-    async fn verify_block_is_not_revocation(&self, addr: &Address) -> Result<(), SovereignError> {
+    async fn verify_block_is_not_revocation(&self, addr: &Address) -> Result<(), AksharaError> {
         let block_id = BlockId::try_from(*addr)?;
         let block = self.store.get_block(&block_id).await?.ok_or_else(|| {
-            SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
+            AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
                 "Credential Block {}",
                 block_id
             )))
         })?;
 
         if *block.block_type() == BlockType::AksharaRevocationV1 {
-            return Err(SovereignError::Integrity(
-                IntegrityError::UnauthorizedSigner("Signer has been revoked".to_string()),
-            ));
+            return Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(
+                "Signer has been revoked".to_string(),
+            )));
         }
         Ok(())
     }
@@ -168,7 +161,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         _graph_id: &GraphId,
         _root: BlockId,
         _key: &GraphKey,
-    ) -> Result<Vec<SigningPublicKey>, SovereignError> {
+    ) -> Result<Vec<SigningPublicKey>, AksharaError> {
         // TODO: Implement a real O(N) traversal of the /credentials directory.
         // For now, we return an empty list to prevent compile errors.
         // This will be completed in the next "Karma" update.

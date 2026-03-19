@@ -1,6 +1,6 @@
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::{GraphKey, SigningPublicKey};
-use crate::base::error::{IntegrityError, SovereignError, StoreError};
+use crate::base::error::{AksharaError, IntegrityError, StoreError};
 use crate::state::store::GraphStore;
 use crate::traversal::auditor::Auditor;
 use metrics::{counter, histogram};
@@ -48,7 +48,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         root: BlockId,
         path: &str,
         key: &GraphKey,
-    ) -> Result<Address, SovereignError> {
+    ) -> Result<Address, AksharaError> {
         let span = span!(Level::DEBUG, "resolve_path", path = %path, root = ?root);
         let _enter = span.enter();
 
@@ -56,10 +56,10 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
 
         if segments.len() > MANIFEST_DEPTH_LIMIT {
             debug!("Path resolution failed: Depth limit exceeded");
-            counter!("sovereign.walker.error", "reason" => "depth_limit").increment(1);
-            return Err(SovereignError::Integrity(
-                IntegrityError::DepthLimitExceeded(MANIFEST_DEPTH_LIMIT),
-            ));
+            counter!("akshara.walker.error", "reason" => "depth_limit").increment(1);
+            return Err(AksharaError::Integrity(IntegrityError::DepthLimitExceeded(
+                MANIFEST_DEPTH_LIMIT,
+            )));
         }
 
         let mut current_addr = Address::from(root);
@@ -77,7 +77,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
             let block_id = BlockId::try_from(current_addr)?;
             let block = self.store.get_block(&block_id).await?.ok_or_else(|| {
                 debug!(block_id = ?block_id, "Block not found during resolution");
-                SovereignError::Store(StoreError::NotFound(format!("Block {}", block_id)))
+                AksharaError::Store(StoreError::NotFound(format!("Block {}", block_id)))
             })?;
 
             // 2. Audit the block before looking inside
@@ -91,7 +91,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
             // 4. Find the next segment
             current_addr = index.get(segment).cloned().ok_or_else(|| {
                 trace!(segment = %segment, "Segment not found in index");
-                SovereignError::Store(StoreError::NotFound(format!(
+                AksharaError::Store(StoreError::NotFound(format!(
                     "Path segment '{}' not found",
                     segment
                 )))
@@ -100,8 +100,8 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
             // 5. CYCLE DETECTION: Prevents infinite resolution loops.
             if !visited.insert(current_addr) {
                 debug!(addr = ?current_addr, "Cycle detected in graph traversal");
-                counter!("sovereign.walker.error", "reason" => "cycle_detected").increment(1);
-                return Err(SovereignError::Integrity(IntegrityError::CycleDetected(
+                counter!("akshara.walker.error", "reason" => "cycle_detected").increment(1);
+                return Err(AksharaError::Integrity(IntegrityError::CycleDetected(
                     current_addr,
                 )));
             }
@@ -113,8 +113,8 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         self.auditor.verify_existence(&current_addr).await?;
 
         let elapsed = start_time.elapsed();
-        histogram!("sovereign.walker.resolve_latency").record(elapsed);
-        counter!("sovereign.walker.resolve_success").increment(1);
+        histogram!("akshara.walker.resolve_latency").record(elapsed);
+        counter!("akshara.walker.resolve_success").increment(1);
 
         Ok(current_addr)
     }
@@ -123,7 +123,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
     pub async fn get_ancestors(
         &self,
         start: &ManifestId,
-    ) -> Result<HashSet<ManifestId>, SovereignError> {
+    ) -> Result<HashSet<ManifestId>, AksharaError> {
         let span = span!(Level::DEBUG, "get_ancestors", start = ?start);
         let _enter = span.enter();
 
@@ -168,7 +168,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         &self,
         a: &ManifestId,
         b: &ManifestId,
-    ) -> Result<Option<ManifestId>, SovereignError> {
+    ) -> Result<Option<ManifestId>, AksharaError> {
         let span = span!(Level::DEBUG, "find_lca", a = ?a, b = ?b);
         let _enter = span.enter();
 
@@ -219,7 +219,7 @@ impl<'a, S: GraphStore + ?Sized> BlockWalker<'a, S> {
         &self,
         descendant: &BlockId,
         ancestor: &BlockId,
-    ) -> Result<bool, SovereignError> {
+    ) -> Result<bool, AksharaError> {
         let span = span!(Level::DEBUG, "block_is_ancestor", descendant = ?descendant, ancestor = ?ancestor);
         let _enter = span.enter();
 

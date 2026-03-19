@@ -99,7 +99,7 @@ fn signing_verify_fails_on_malformed_signature() {
 
 #[test]
 fn signature_verify_fails_on_truncated_message() {
-    use crate::base::crypto::SovereignSigner;
+    use crate::base::crypto::AksharaSigner;
     use rand::rngs::OsRng;
 
     let identity = crate::identity::SecretIdentity::generate(&mut OsRng);

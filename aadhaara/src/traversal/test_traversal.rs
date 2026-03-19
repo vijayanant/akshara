@@ -1,6 +1,6 @@
 use crate::{
     BlockId, GraphId, ManifestId,
-    base::crypto::SovereignSigner,
+    base::crypto::AksharaSigner,
     graph::Manifest,
     state::{GraphStore, in_memory_store::InMemoryStore},
     traversal::{
@@ -171,7 +171,7 @@ async fn walker_handles_manifest_cycles_gracefully() {
     // Should fail integrity check before it even finishes the walk
     let result = walker.get_ancestors(&cycle_id).await;
     match result {
-        Err(crate::SovereignError::Integrity(crate::IntegrityError::ManifestIdMismatch(_))) => (),
+        Err(crate::AksharaError::Integrity(crate::IntegrityError::ManifestIdMismatch(_))) => (),
         _ => panic!("Expected ManifestIdMismatch, got {:?}", result),
     }
 }

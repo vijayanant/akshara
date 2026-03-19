@@ -1,6 +1,6 @@
 use akshara_aadhaara::{
     Address, Block, BlockId, GraphId, GraphKey, GraphStore, Heads, InMemoryStore, IndexBuilder,
-    Manifest, ManifestId, MasterIdentity, Reconciler, SecretIdentity, SovereignSigner,
+    Manifest, ManifestId, MasterIdentity, Reconciler, SecretIdentity,
 };
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
@@ -48,7 +48,7 @@ async fn test_sync_recursive_index_structure() {
     )
     .await;
 
-    let reconciler_phone = Reconciler::new(&relay_store, identity.public_key());
+    let reconciler_phone = Reconciler::new(&relay_store, identity.public().signing_key().clone());
     let heads_relay = relay_store.get_heads(&graph_id).await.unwrap();
 
     let comp_pull = reconciler_phone
@@ -136,7 +136,7 @@ async fn test_identity_rebirth_bootstrap() {
         .derive_discovery_id(&identity_graph_base_id)
         .unwrap();
 
-    let reconciler = Reconciler::new(&relay_store, reborn_identity.public_key());
+    let reconciler = Reconciler::new(&relay_store, reborn_identity.public().signing_key().clone());
     let heads = relay_store.get_heads(&derived_id_gid).await.unwrap();
     assert!(
         !heads.is_empty(),
@@ -248,7 +248,7 @@ async fn test_full_lifecycle_stateless_journey() {
 
     // --- Phase 3: Phone Rebirth ---
     let alice_phone = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
-    let reconciler = Reconciler::new(&relay_store, alice_phone.public_key());
+    let reconciler = Reconciler::new(&relay_store, alice_phone.public().signing_key().clone());
 
     // 1. Reconstruct Identity Graph from Words
     let heads = relay_store.get_heads(&id_gid).await.unwrap();

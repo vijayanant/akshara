@@ -1,7 +1,7 @@
 use crate::graph::Manifest;
 use crate::graph::manifest::ManifestHeader;
 use crate::traversal::create_identity;
-use crate::{BlockId, GraphId, ManifestId, SovereignSigner};
+use crate::{AksharaSigner, BlockId, GraphId, ManifestId};
 
 #[test]
 fn manifest_integrity_success() {

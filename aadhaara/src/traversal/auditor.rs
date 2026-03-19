@@ -1,6 +1,6 @@
 use crate::base::address::{Address, BlockId, ManifestId};
 use crate::base::crypto::SigningPublicKey;
-use crate::base::error::SovereignError;
+use crate::base::error::AksharaError;
 use crate::graph::{Block, Manifest};
 use crate::identity::IdentityGraph;
 use crate::state::store::GraphStore;
@@ -36,7 +36,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
     }
 
     /// Performs a full audit of a Manifest, including mathematical and social integrity.
-    pub async fn audit_manifest(&self, manifest: &Manifest) -> Result<(), SovereignError> {
+    pub async fn audit_manifest(&self, manifest: &Manifest) -> Result<(), AksharaError> {
         let span = span!(Level::DEBUG, "audit_manifest", id = ?manifest.id());
         let _enter = span.enter();
 
@@ -48,7 +48,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         if manifest.identity_anchor() == ManifestId::null()
             && !crate::identity::paths::is_legislator_path(manifest.signer_path())
         {
-            return Err(crate::base::error::SovereignError::Integrity(
+            return Err(crate::base::error::AksharaError::Integrity(
                 crate::base::error::IntegrityError::UnauthorizedSigner(format!(
                     "Administrative action requires Legislator branch, but signed by {}",
                     manifest.signer_path()
@@ -76,7 +76,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
     }
 
     /// Performs a full audit of a Block.
-    pub fn audit_block(&self, block: &Block) -> Result<(), SovereignError> {
+    pub fn audit_block(&self, block: &Block) -> Result<(), AksharaError> {
         let span = span!(Level::DEBUG, "audit_block", id = ?block.id());
         let _enter = span.enter();
 
@@ -88,12 +88,12 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
     }
 
     /// Verifies that an Address matches the expected type and exists in the store.
-    pub async fn verify_existence(&self, addr: &Address) -> Result<(), SovereignError> {
+    pub async fn verify_existence(&self, addr: &Address) -> Result<(), AksharaError> {
         if addr.codec() == crate::base::address::CODEC_AKSHARA_MANIFEST {
             let id = ManifestId::try_from(*addr)?;
             self.store.get_manifest(&id).await.and_then(|opt| {
                 opt.ok_or_else(|| {
-                    SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
+                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
                         "Manifest {}",
                         id
                     )))
@@ -104,7 +104,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
             let id = BlockId::try_from(*addr)?;
             self.store.get_block(&id).await.and_then(|opt| {
                 opt.ok_or_else(|| {
-                    SovereignError::Store(crate::base::error::StoreError::NotFound(format!(
+                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
                         "Block {}",
                         id
                     )))

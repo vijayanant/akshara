@@ -1,9 +1,9 @@
 use crate::base::address::GraphId;
 use crate::base::crypto::{
-    EncryptionPublicKey, EncryptionSecretKey, GraphKey, Signature, SigningPublicKey,
-    SigningSecretKey, SovereignSigner,
+    AksharaSigner, EncryptionPublicKey, EncryptionSecretKey, GraphKey, Signature, SigningPublicKey,
+    SigningSecretKey,
 };
-use crate::base::error::SovereignError;
+use crate::base::error::AksharaError;
 use crate::identity::{derivation, mnemonic, paths};
 use ed25519_dalek::{Signer, SigningKey};
 use hmac::{Hmac, Mac};
@@ -86,7 +86,7 @@ pub struct PreKeyBundle {
 }
 
 impl MasterIdentity {
-    pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, SovereignError> {
+    pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, AksharaError> {
         let seed = mnemonic::mnemonic_to_seed(phrase, passphrase)?;
         Ok(Self { seed })
     }
@@ -95,7 +95,7 @@ impl MasterIdentity {
         &self,
         path: &str,
         graph_id: Option<&GraphId>,
-    ) -> Result<SecretIdentity, SovereignError> {
+    ) -> Result<SecretIdentity, AksharaError> {
         let mut signing_key = derivation::derive_slip0010_key(&self.seed, path)?;
 
         // SHADOW IDENTITY RITUAL (Privacy Preservation):
@@ -104,7 +104,7 @@ impl MasterIdentity {
         // where a Relay can link the same author across different graphs.
         if let Some(gid) = graph_id {
             let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(&signing_key.to_bytes())
-                .map_err(|e| SovereignError::InternalError(format!("HMAC init failed: {}", e)))?;
+                .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
             hmac.update(b"akshara.v1.shadow_identity");
             hmac.update(gid.as_bytes());
             let result = hmac.finalize().into_bytes();
@@ -122,7 +122,7 @@ impl MasterIdentity {
     }
 
     /// Derives a 32-byte shared vault secret for the Internal Keyring (Branch 4).
-    pub fn derive_keyring_secret(&self, version: u32) -> Result<[u8; 32], SovereignError> {
+    pub fn derive_keyring_secret(&self, version: u32) -> Result<[u8; 32], AksharaError> {
         let path = crate::identity::paths::format_keyring_path(version);
         let signing_key = derivation::derive_slip0010_key(&self.seed, &path)?;
         Ok(signing_key.to_bytes())
@@ -133,7 +133,7 @@ impl MasterIdentity {
     /// Matches Spec v0.1.0-alpha (Hardened):
     /// 1. Derive DiscoveryMasterKey from Branch 5 (m/44'/999'/0'/5'/0').
     /// 2. DiscoveryId = HMAC-SHA256(DiscoveryMasterKey, "akshara.v1.discovery" + GraphId).
-    pub fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<GraphId, SovereignError> {
+    pub fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<GraphId, AksharaError> {
         // 1. Derive the stable Branch 5 Discovery Key
         let path = crate::identity::paths::format_akshara_path(
             crate::identity::paths::BRANCH_DISCOVERY,
@@ -144,7 +144,7 @@ impl MasterIdentity {
         // 2. Derive the isolated Discovery ID via HMAC-SHA256
         let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(&discovery_master_key.to_bytes())
             .map_err(|e| {
-                SovereignError::InternalError(format!("HMAC initialization failed: {}", e))
+                AksharaError::InternalError(format!("HMAC initialization failed: {}", e))
             })?;
 
         hmac.update(b"akshara.v1.discovery");
@@ -163,7 +163,7 @@ impl MasterIdentity {
         device_index: u32,
         start_index: u32,
         count: u32,
-    ) -> Result<PreKeyBundle, SovereignError> {
+    ) -> Result<PreKeyBundle, AksharaError> {
         let device_path = paths::format_akshara_path(paths::BRANCH_EXECUTIVE, device_index);
         let device_secret = self.derive_child(&device_path, None)?;
 
@@ -207,16 +207,16 @@ impl SecretIdentity {
         phrase: &str,
         passphrase: &str,
         version: u32,
-    ) -> Result<[u8; 32], SovereignError> {
+    ) -> Result<[u8; 32], AksharaError> {
         let master = MasterIdentity::from_mnemonic(phrase, passphrase)?;
         master.derive_keyring_secret(version)
     }
 
-    pub fn generate_mnemonic() -> Result<String, SovereignError> {
+    pub fn generate_mnemonic() -> Result<String, AksharaError> {
         mnemonic::generate_mnemonic()
     }
 
-    pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, SovereignError> {
+    pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, AksharaError> {
         Self::from_mnemonic_at_path(phrase, passphrase, "m/44'/999'/0'/0'/0'")
     }
 
@@ -224,7 +224,7 @@ impl SecretIdentity {
         phrase: &str,
         passphrase: &str,
         path: &str,
-    ) -> Result<Self, SovereignError> {
+    ) -> Result<Self, AksharaError> {
         let master = MasterIdentity::from_mnemonic(phrase, passphrase)?;
         master.derive_child(path, None)
     }
@@ -252,10 +252,10 @@ impl SecretIdentity {
         Self::from_signing_key_at_path(signing_key, "unknown".to_string())
     }
 
-    pub fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey, SovereignError> {
+    pub fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey, AksharaError> {
         let mut hmac =
             Hmac::<Sha512>::new_from_slice(self.signing_key.as_bytes()).map_err(|e| {
-                SovereignError::InternalError(format!("HMAC initialization failed: {}", e))
+                AksharaError::InternalError(format!("HMAC initialization failed: {}", e))
             })?;
 
         hmac.update(b"akshara.v1.graph_key");
@@ -283,7 +283,7 @@ impl SecretIdentity {
 
 impl PreKeyBundle {
     /// Verifies the integrity and authority of the bundle.
-    pub fn verify(&self) -> Result<(), SovereignError> {
+    pub fn verify(&self) -> Result<(), AksharaError> {
         let mut data_to_verify = crate::base::encoding::to_canonical_bytes(&self.device_identity)?;
         data_to_verify.extend(crate::base::encoding::to_canonical_bytes(&self.pre_keys)?);
 
@@ -293,7 +293,7 @@ impl PreKeyBundle {
     }
 }
 
-impl SovereignSigner for SecretIdentity {
+impl AksharaSigner for SecretIdentity {
     fn sign(&self, message: &[u8]) -> Signature {
         let key = SigningKey::from_bytes(self.signing_key.as_bytes());
         let sig = key.sign(message);

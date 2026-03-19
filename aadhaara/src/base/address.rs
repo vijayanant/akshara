@@ -8,7 +8,7 @@ use cid::Cid;
 use multihash_codetable::{Code, MultihashDigest};
 use serde::{Deserialize, Serialize};
 
-use crate::base::error::{IntegrityError, SovereignError};
+use crate::base::error::{AksharaError, IntegrityError};
 
 /// The global Multicodec for an opaque Data Block (Encrypted-then-Signed).
 ///
@@ -64,20 +64,20 @@ impl fmt::Display for Address {
 }
 
 impl TryFrom<&[u8]> for Address {
-    type Error = SovereignError;
+    type Error = AksharaError;
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let mut cursor = std::io::Cursor::new(bytes);
         let cid = Cid::read_bytes(&mut cursor)
-            .map_err(|_| SovereignError::Integrity(IntegrityError::MalformedId))?;
+            .map_err(|_| AksharaError::Integrity(IntegrityError::MalformedId))?;
 
         // THE FORTRESS RULE: Entire buffer must be consumed
         if cursor.position() != bytes.len() as u64 {
-            return Err(SovereignError::Integrity(IntegrityError::MalformedId));
+            return Err(AksharaError::Integrity(IntegrityError::MalformedId));
         }
 
         // AKSHARA MANDATE: Only CIDv1 is permitted for algorithm agility
         if cid.version() != cid::Version::V1 {
-            return Err(SovereignError::Integrity(IntegrityError::MalformedId));
+            return Err(AksharaError::Integrity(IntegrityError::MalformedId));
         }
 
         Ok(Self(cid))
@@ -85,10 +85,10 @@ impl TryFrom<&[u8]> for Address {
 }
 
 impl FromStr for Address {
-    type Err = SovereignError;
+    type Err = AksharaError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let cid =
-            Cid::from_str(s).map_err(|_| SovereignError::Integrity(IntegrityError::MalformedId))?;
+            Cid::from_str(s).map_err(|_| AksharaError::Integrity(IntegrityError::MalformedId))?;
         Ok(Self(cid))
     }
 }
@@ -128,10 +128,10 @@ impl From<BlockId> for Address {
 }
 
 impl TryFrom<Address> for BlockId {
-    type Error = SovereignError;
+    type Error = AksharaError;
     fn try_from(addr: Address) -> Result<Self, Self::Error> {
         if addr.codec() != CODEC_AKSHARA_BLOCK {
-            return Err(SovereignError::Integrity(IntegrityError::TypeMismatch(
+            return Err(AksharaError::Integrity(IntegrityError::TypeMismatch(
                 addr, "BlockId",
             )));
         }
@@ -152,7 +152,7 @@ impl fmt::Display for BlockId {
 }
 
 impl FromStr for BlockId {
-    type Err = SovereignError;
+    type Err = AksharaError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let addr = Address::from_str(s)?;
         BlockId::try_from(addr)
@@ -160,7 +160,7 @@ impl FromStr for BlockId {
 }
 
 impl TryFrom<&[u8]> for BlockId {
-    type Error = SovereignError;
+    type Error = AksharaError;
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let addr = Address::try_from(bytes)?;
         BlockId::try_from(addr)
@@ -210,10 +210,10 @@ impl From<ManifestId> for Address {
 }
 
 impl TryFrom<Address> for ManifestId {
-    type Error = SovereignError;
+    type Error = AksharaError;
     fn try_from(addr: Address) -> Result<Self, Self::Error> {
         if addr.codec() != CODEC_AKSHARA_MANIFEST {
-            return Err(SovereignError::Integrity(IntegrityError::TypeMismatch(
+            return Err(AksharaError::Integrity(IntegrityError::TypeMismatch(
                 addr,
                 "ManifestId",
             )));
@@ -235,7 +235,7 @@ impl fmt::Display for ManifestId {
 }
 
 impl FromStr for ManifestId {
-    type Err = SovereignError;
+    type Err = AksharaError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let addr = Address::from_str(s)?;
         ManifestId::try_from(addr)
@@ -243,7 +243,7 @@ impl FromStr for ManifestId {
 }
 
 impl TryFrom<&[u8]> for ManifestId {
-    type Error = SovereignError;
+    type Error = AksharaError;
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let addr = Address::try_from(bytes)?;
         ManifestId::try_from(addr)

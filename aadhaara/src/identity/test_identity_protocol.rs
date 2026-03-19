@@ -9,7 +9,7 @@ use crate::traversal::walker::GraphWalker;
 use crate::identity::types::MasterIdentity;
 
 #[test]
-fn test_sovereign_blind_discovery_derivation() {
+fn test_akshara_blind_discovery_derivation() {
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let graph_id_1 = GraphId::new();
     let graph_id_2 = GraphId::new();
@@ -46,7 +46,7 @@ fn test_sovereign_blind_discovery_derivation() {
 }
 
 #[tokio::test]
-async fn test_sovereign_full_authority_chain_verification() {
+async fn test_akshara_full_authority_chain_verification() {
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let passphrase = "pass";
     let mut relay_store = InMemoryStore::new();

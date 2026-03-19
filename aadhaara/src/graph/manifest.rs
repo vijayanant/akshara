@@ -1,6 +1,6 @@
 use crate::base::address::{BlockId, GraphId, ManifestId};
-use crate::base::crypto::{Signature, SigningPublicKey, SovereignSigner};
-use crate::base::error::{CryptoError, IntegrityError, SovereignError};
+use crate::base::crypto::{AksharaSigner, Signature, SigningPublicKey};
+use crate::base::error::{AksharaError, CryptoError, IntegrityError};
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -32,7 +32,7 @@ impl Manifest {
         content_root: BlockId,
         parents: Vec<ManifestId>,
         identity_anchor: ManifestId,
-        signer: &impl SovereignSigner,
+        signer: &impl AksharaSigner,
     ) -> Self {
         let span = span!(Level::INFO, "manifest_new", graph_id = ?graph_id);
         let _enter = span.enter();
@@ -116,20 +116,20 @@ impl Manifest {
         }
     }
 
-    pub fn verify_integrity(&self) -> Result<(), SovereignError> {
+    pub fn verify_integrity(&self) -> Result<(), AksharaError> {
         let span = span!(Level::DEBUG, "manifest_verify_integrity", manifest_id = ?self.id);
         let _enter = span.enter();
 
         let calculated_id = Self::compute_id(&self.header, &self.author);
         if self.id != calculated_id {
-            return Err(SovereignError::Integrity(
-                IntegrityError::ManifestIdMismatch(self.id),
-            ));
+            return Err(AksharaError::Integrity(IntegrityError::ManifestIdMismatch(
+                self.id,
+            )));
         }
 
         self.author
             .verify(self.id.as_ref(), &self.signature)
-            .map_err(|e| SovereignError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
+            .map_err(|e| AksharaError::Crypto(CryptoError::InvalidSignature(e.to_string())))?;
 
         Ok(())
     }
