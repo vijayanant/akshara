@@ -144,7 +144,12 @@ impl Manifest {
         }
         hasher.update(header.identity_anchor.as_ref());
         hasher.update(author.as_bytes());
-        hasher.update(header.signer_path.as_bytes());
+
+        // PATH OBFUSCATION: Hash the signer path to prevent Relay-side analysis
+        let mut path_hasher = Sha256::new();
+        path_hasher.update(header.signer_path.as_bytes());
+        hasher.update(path_hasher.finalize());
+
         hasher.update(header.created_at.to_le_bytes());
 
         ManifestId::from_sha256(&hasher.finalize())

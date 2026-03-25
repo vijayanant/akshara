@@ -27,7 +27,7 @@ pub fn mnemonic_to_seed(
     if words.len() != 24 {
         return Err(AksharaError::Identity(IdentityError::MnemonicInvalid(
             format!(
-                "Akshara requires exactly 24 words for 256-bit entropy, but found {}",
+                "Akshara requires exactly 24 words for 256-bit entropy, but found {}. 12-word phrases are not permitted.",
                 words.len()
             ),
         )));

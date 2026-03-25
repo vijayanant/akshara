@@ -16,11 +16,11 @@ pub fn create_identity() -> SecretIdentity {
 
 #[tokio::test]
 async fn can_find_manifest_lca() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
     let root = create_dummy_root();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
 
     // 1. Root A
     let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity);
@@ -45,10 +45,10 @@ async fn can_find_manifest_lca() {
 
 #[tokio::test]
 async fn can_diff_forked_manifests() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
 
     // Common Ancestor A
     let m_a = Manifest::new(graph_id, create_dummy_root(), vec![], anchor, &identity);

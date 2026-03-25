@@ -6,7 +6,7 @@ use crate::{
 
 /// Helper: Create credential block
 async fn create_credential_block(
-    store: &mut InMemoryStore,
+    store: &InMemoryStore,
     graph_id: GraphId,
     identity_key: &GraphKey,
     signer: &SecretIdentity,
@@ -25,7 +25,7 @@ async fn create_credential_block(
 }
 
 /// Helper: Create Identity Graph with credentials
-async fn create_identity_graph(store: &mut InMemoryStore, identity: &SecretIdentity) -> Manifest {
+async fn create_identity_graph(store: &InMemoryStore, identity: &SecretIdentity) -> Manifest {
     let graph_id = GraphId::new();
     let identity_key = GraphKey::new([0u8; 32]);
     let signer_hex = identity.public().signing_key().to_hex();
@@ -58,7 +58,7 @@ async fn create_identity_graph(store: &mut InMemoryStore, identity: &SecretIdent
 
 /// Helper: Create revocation block
 async fn create_revocation_block(
-    store: &mut InMemoryStore,
+    store: &InMemoryStore,
     graph_id: GraphId,
     identity_key: &GraphKey,
     signer: &SecretIdentity,
@@ -82,11 +82,11 @@ async fn create_revocation_block(
 
 #[tokio::test]
 async fn test_identity_graph_verify_authority_valid() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let master_pubkey = identity.public().signing_key().clone();
 
-    let manifest = create_identity_graph(&mut store, &identity).await;
+    let manifest = create_identity_graph(&store, &identity).await;
     let identity_graph = IdentityGraph::new(&store);
 
     let result = identity_graph
@@ -152,12 +152,12 @@ async fn test_identity_graph_missing_anchor() {
 
 #[tokio::test]
 async fn test_identity_graph_with_latest_identity_valid() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let master_pubkey = identity.public().signing_key().clone();
 
-    let manifest_v1 = create_identity_graph(&mut store, &identity).await;
-    let manifest_v2 = create_identity_graph(&mut store, &identity).await;
+    let manifest_v1 = create_identity_graph(&store, &identity).await;
+    let manifest_v2 = create_identity_graph(&store, &identity).await;
 
     let identity_graph = IdentityGraph::new(&store);
 
@@ -178,14 +178,14 @@ async fn test_identity_graph_with_latest_identity_valid() {
 
 #[tokio::test]
 async fn test_identity_graph_ghost_branch_prevention() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let master_pubkey = identity.public().signing_key().clone();
     let graph_id = GraphId::new();
     let identity_key = GraphKey::new([0u8; 32]);
 
     let signer_hex = identity.public().signing_key().to_hex();
-    let auth_block = create_credential_block(&mut store, graph_id, &identity_key, &identity).await;
+    let auth_block = create_credential_block(&store, graph_id, &identity_key, &identity).await;
 
     let mut builder_v1 = IndexBuilder::new();
     builder_v1
@@ -196,14 +196,14 @@ async fn test_identity_graph_ghost_branch_prevention() {
         .unwrap();
 
     let root_v1 = builder_v1
-        .build(graph_id, &mut store, &identity, &identity_key)
+        .build(graph_id, &store, &identity, &identity_key)
         .await
         .unwrap();
     let manifest_v1 = Manifest::new(graph_id, root_v1, vec![], ManifestId::null(), &identity);
     store.put_manifest(&manifest_v1).await.unwrap();
 
     let revocation_block =
-        create_revocation_block(&mut store, graph_id, &identity_key, &identity).await;
+        create_revocation_block(&store, graph_id, &identity_key, &identity).await;
 
     let mut builder_v2 = IndexBuilder::new();
     builder_v2
@@ -214,7 +214,7 @@ async fn test_identity_graph_ghost_branch_prevention() {
         .unwrap();
 
     let root_v2 = builder_v2
-        .build(graph_id, &mut store, &identity, &identity_key)
+        .build(graph_id, &store, &identity, &identity_key)
         .await
         .unwrap();
     let manifest_v2 = Manifest::new(
@@ -249,14 +249,14 @@ async fn test_identity_graph_ghost_branch_prevention() {
 
 #[tokio::test]
 async fn test_identity_graph_revocation_scenario() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let master_pubkey = identity.public().signing_key().clone();
     let graph_id = GraphId::new();
     let identity_key = GraphKey::new([0u8; 32]);
 
     let signer_hex = identity.public().signing_key().to_hex();
-    let auth_block = create_credential_block(&mut store, graph_id, &identity_key, &identity).await;
+    let auth_block = create_credential_block(&store, graph_id, &identity_key, &identity).await;
 
     let mut builder_v1 = IndexBuilder::new();
     builder_v1
@@ -267,14 +267,14 @@ async fn test_identity_graph_revocation_scenario() {
         .unwrap();
 
     let root_v1 = builder_v1
-        .build(graph_id, &mut store, &identity, &identity_key)
+        .build(graph_id, &store, &identity, &identity_key)
         .await
         .unwrap();
     let manifest_v1 = Manifest::new(graph_id, root_v1, vec![], ManifestId::null(), &identity);
     store.put_manifest(&manifest_v1).await.unwrap();
 
     let revocation_block_id =
-        create_revocation_block(&mut store, graph_id, &identity_key, &identity).await;
+        create_revocation_block(&store, graph_id, &identity_key, &identity).await;
     let _revocation_addr = Address::from(revocation_block_id);
 
     let mut builder_v2 = IndexBuilder::new();
@@ -286,7 +286,7 @@ async fn test_identity_graph_revocation_scenario() {
         .unwrap();
 
     let root_v2 = builder_v2
-        .build(graph_id, &mut store, &identity, &identity_key)
+        .build(graph_id, &store, &identity, &identity_key)
         .await
         .unwrap();
     let manifest_v2 = Manifest::new(

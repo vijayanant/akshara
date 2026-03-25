@@ -101,7 +101,7 @@ A Manifest is encoded using **Canonical DAG-CBOR** and consists of:
     "content_root": <BlockId>,          // CID of root block
     "parents": [<ManifestId>, ...],     // Previous manifests (empty for genesis)
     "identity_anchor": <ManifestId>,    // Identity Graph CID (0x00...00 for genesis)
-    "signer_path": <string>,            // BIP-32 derivation path of signer
+    "signer_path": <bytes>,             // SHA2-256 hash of the BIP-32 path
     "created_at": <u64>                 // Unix timestamp (metadata only)
   },
   "author": <SigningPublicKey>,         // Ed25519 public key
@@ -117,7 +117,7 @@ A Manifest is encoded using **Canonical DAG-CBOR** and consists of:
 | `content_root` | BlockId | Yes | CID of the top-level block |
 | `parents` | array | Yes | Previous ManifestIds (empty = genesis) |
 | `identity_anchor` | ManifestId | Yes | Identity Graph CID (null = 0x00...00) |
-| `signer_path` | string | Yes | The BIP-32 path used to derive the author key |
+| `signer_path` | bytes | Yes | **Obfuscated Path:** SHA2-256 hash of the BIP-32 path used to derive the author key |
 | `created_at` | u64 | Yes | Unix timestamp (informational only) |
 | `author` | bytes | Yes | The **Shadow Signing Key** (Graph-Isolated) |
 | `signature` | bytes | Yes | Signature over header CID |
@@ -200,7 +200,7 @@ Output: Manifest (with CID and signature)
        content_root: content_root_cid,
        parents: parent_manifest_ids,
        identity_anchor: identity_anchor_cid,
-       signer_path: author_signer.derivation_path(),
+       signer_path: SHA2-256(author_signer.derivation_path()),
        created_at: unix_timestamp()  // Informational only
    }
 

@@ -10,7 +10,7 @@ use rand::rngs::OsRng;
 #[tokio::test]
 async fn test_identity_temporal_forgery_rejection() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let master = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -37,7 +37,7 @@ async fn test_identity_temporal_forgery_rejection() {
         .insert("phone", Address::from(auth_block.id()))
         .unwrap();
     let root_index_v1_id = builder
-        .build(graph_id, &mut store, &master, &key)
+        .build(graph_id, &store, &master, &key)
         .await
         .unwrap();
 
@@ -48,7 +48,7 @@ async fn test_identity_temporal_forgery_rejection() {
     // Revocation is simulated by removing the entry from the index
     let builder_v2 = crate::traversal::IndexBuilder::new();
     let root_index_v2_id = builder_v2
-        .build(graph_id, &mut store, &master, &key)
+        .build(graph_id, &store, &master, &key)
         .await
         .unwrap();
 

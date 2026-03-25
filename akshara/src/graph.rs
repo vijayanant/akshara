@@ -23,6 +23,7 @@ use crate::vault::Vault;
 pub struct Graph {
     graph_id: GraphId,
     graph_key: GraphKey,
+    identity_anchor: ManifestId,
     vault: Arc<dyn Vault>,
     store: InMemoryStore,
     staging: Arc<Mutex<Box<dyn StagingStore>>>,
@@ -36,6 +37,7 @@ impl Graph {
     ///
     /// * `graph_id` - The graph identifier
     /// * `graph_key` - The symmetric encryption key for this graph
+    /// * `identity_anchor` - The latest known identity state CID
     /// * `vault` - Reference to the vault (holds secret keys securely)
     /// * `store` - Storage backend for blocks and manifests
     /// * `staging` - Staging store for buffering operations
@@ -43,6 +45,7 @@ impl Graph {
     pub fn new(
         graph_id: GraphId,
         graph_key: GraphKey,
+        identity_anchor: ManifestId,
         vault: Arc<dyn Vault>,
         store: InMemoryStore,
         staging: Arc<Mutex<Box<dyn StagingStore>>>,
@@ -51,6 +54,7 @@ impl Graph {
         Self {
             graph_id,
             graph_key,
+            identity_anchor,
             vault,
             store,
             staging,
@@ -353,7 +357,10 @@ impl Graph {
         }
 
         // Get identity from vault
-        let identity = self.vault.get_identity().await?;
+        let master_identity = self.vault.get_identity().await?;
+
+        // SHADOW IDENTITY RITUAL: Derive a graph-isolated identity for signing
+        let identity = master_identity.derive_shadow_identity(&self.graph_id)?;
 
         // Create blocks for each path in merged state
         let mut index_builder = IndexBuilder::new();
@@ -401,7 +408,7 @@ impl Graph {
             self.graph_id,
             root_index_id,
             parents,
-            ManifestId::null(), // TODO: Get identity anchor
+            self.identity_anchor,
             &identity,
         );
 

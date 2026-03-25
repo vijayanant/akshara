@@ -81,7 +81,7 @@ fn test_byzantine_manifest_corruption() {
 #[ignore]
 async fn test_byzantine_walker_robustness() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let master = SecretIdentity::generate(&mut rng);
     let key = GraphKey::generate(&mut rng);
 
@@ -164,7 +164,7 @@ async fn store_rwlock_torture_test() {
 
                 {
                     // No need for Mutex here as InMemoryStore is thread-safe internally
-                    let mut store_mut = (*store_ref).clone();
+                    let store_mut = (*store_ref).clone();
                     store_mut.put_block(&block).await.unwrap();
                 }
 
@@ -212,7 +212,7 @@ async fn test_async_storm_manifest_heads() {
 
                 // 3. Put manifest
                 {
-                    let mut s = store_ref.write().await;
+                    let s = store_ref.write().await;
                     s.put_manifest(&m).await.unwrap();
                 }
             }

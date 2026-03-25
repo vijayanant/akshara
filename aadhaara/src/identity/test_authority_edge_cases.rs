@@ -61,13 +61,13 @@ async fn test_negative_imposter_genesis_hijack() {
 #[tokio::test]
 async fn test_negative_identity_graph_swap() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
 
     let alice = SecretIdentity::generate(&mut rng);
     let bob = SecretIdentity::generate(&mut rng);
 
     // 1. Setup Alice's real anchor (Alice is authorized in her own graph)
-    let alice_anchor = create_valid_anchor(&mut store, &alice).await;
+    let alice_anchor = create_valid_anchor(&store, &alice).await;
 
     // 2. Bob tries to sign a manifest but points to ALICE'S identity graph
     let graph_id = GraphId::new();
@@ -105,12 +105,12 @@ async fn test_negative_identity_graph_swap() {
 #[tokio::test]
 async fn test_negative_identity_stale_authority() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let alice = SecretIdentity::generate(&mut rng);
     let master_key = alice.public().signing_key().clone();
 
     // 1. Genesis State (Master Key only)
-    let genesis_anchor = create_valid_anchor(&mut store, &alice).await;
+    let genesis_anchor = create_valid_anchor(&store, &alice).await;
 
     // 2. Device A is added in a NEW identity snapshot
     let device_a_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
@@ -140,7 +140,7 @@ async fn test_negative_identity_stale_authority() {
         .unwrap();
 
     let root_index_id = builder
-        .build(GraphId::new(), &mut store, &alice, &identity_key)
+        .build(GraphId::new(), &store, &alice, &identity_key)
         .await
         .unwrap();
 
@@ -181,7 +181,7 @@ async fn test_negative_identity_stale_authority() {
 /// possesses administrative authority.
 #[tokio::test]
 async fn test_negative_executive_cannot_sign_administrative_action() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let alice_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
 
     // 1. Legislator Key (m/0')
@@ -194,7 +194,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
         SecretIdentity::from_mnemonic_at_path(&alice_mnemonic, "", "m/44'/999'/0'/1'/0'").unwrap();
 
     // 3. Setup: Authorize the Phone via the Legislator
-    let anchor_1 = create_valid_anchor(&mut store, &alice_legislator).await;
+    let anchor_1 = create_valid_anchor(&store, &alice_legislator).await;
 
     // Explicitly authorize the Phone in a second identity snapshot
     let identity_key = GraphKey::new([0u8; 32]);
@@ -220,7 +220,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
         .unwrap();
 
     let root_index_id = builder
-        .build(GraphId::new(), &mut store, &alice_legislator, &identity_key)
+        .build(GraphId::new(), &store, &alice_legislator, &identity_key)
         .await
         .unwrap();
 
@@ -271,7 +271,7 @@ async fn test_negative_invalid_derivation_paths() {
 
 #[tokio::test]
 async fn test_negative_path_hijack_prefix() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let alice_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let alice_legislator =
         SecretIdentity::from_mnemonic_at_path(&alice_mnemonic, "", "m/44'/999'/0'/0'/0'").unwrap();
@@ -283,7 +283,7 @@ async fn test_negative_path_hijack_prefix() {
         SecretIdentity::from_mnemonic_at_path(&alice_mnemonic, "", "m/44'/999'/0'/1'/0'/0'")
             .unwrap();
 
-    let anchor = create_valid_anchor(&mut store, &alice_legislator).await;
+    let anchor = create_valid_anchor(&store, &alice_legislator).await;
     let malicious_manifest = Manifest::new(
         GraphId::new(),
         crate::traversal::create_dummy_root(),
@@ -304,7 +304,7 @@ async fn test_negative_path_hijack_prefix() {
 
 #[tokio::test]
 async fn test_adversarial_ghost_branch_rejection() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
     let master = MasterIdentity::from_mnemonic(mnemonic, "").unwrap();
     let master_pub = master
@@ -341,7 +341,7 @@ async fn test_adversarial_ghost_branch_rejection() {
             auth_block.id().into(),
         )
         .unwrap();
-    let id_root = builder.build(gid, &mut store, &alice, &gkey).await.unwrap();
+    let id_root = builder.build(gid, &store, &alice, &gkey).await.unwrap();
 
     let id_manifest_v1 = Manifest::new(gid, id_root, vec![], ManifestId::null(), &alice);
     store.put_manifest(&id_manifest_v1).await.unwrap();
@@ -365,10 +365,7 @@ async fn test_adversarial_ghost_branch_rejection() {
             revoke_block.id().into(),
         )
         .unwrap();
-    let id_root_v2 = builder_v2
-        .build(gid, &mut store, &alice, &gkey)
-        .await
-        .unwrap();
+    let id_root_v2 = builder_v2.build(gid, &store, &alice, &gkey).await.unwrap();
 
     let id_manifest_v2 = Manifest::new(
         gid,

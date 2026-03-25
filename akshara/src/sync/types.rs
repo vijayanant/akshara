@@ -16,10 +16,11 @@ pub struct Conflict {
 }
 
 /// Strategy for resolving sync conflicts.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum MergeStrategy {
     /// Keep the manifest with the lexicographically lower CID.
     /// Deterministic, all peers converge to same result.
+    #[default]
     KeepLatest,
 
     /// Keep the local manifest (our version wins).
@@ -35,10 +36,4 @@ pub enum MergeStrategy {
         /// Resolver identifier (application-specific).
         resolver_name: String,
     },
-}
-
-impl Default for MergeStrategy {
-    fn default() -> Self {
-        Self::KeepLatest
-    }
 }

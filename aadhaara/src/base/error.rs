@@ -20,6 +20,9 @@ pub enum AksharaError {
 
     #[error("Internal system error: {0}")]
     InternalError(String),
+
+    #[error("Too many concurrent heads (max: {0})")]
+    TooManyHeads(usize),
 }
 
 #[derive(Error, Debug)]

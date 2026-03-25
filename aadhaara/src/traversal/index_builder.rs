@@ -72,7 +72,7 @@ impl IndexBuilder {
     pub async fn build<S: GraphStore + ?Sized>(
         &self,
         graph_id: GraphId,
-        store: &mut S,
+        store: &S,
         signer: &impl AksharaSigner,
         key: &GraphKey,
     ) -> Result<BlockId, AksharaError> {
@@ -84,7 +84,7 @@ impl IndexBuilder {
         &self,
         graph_id: GraphId,
         map: &BTreeMap<String, IndexNode>,
-        store: &mut S,
+        store: &S,
         signer: &impl AksharaSigner,
         key: &GraphKey,
     ) -> Result<BlockId, AksharaError> {

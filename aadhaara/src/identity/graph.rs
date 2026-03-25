@@ -158,13 +158,48 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
     async fn list_authorized_executives(
         &self,
-        _graph_id: &GraphId,
-        _root: BlockId,
-        _key: &GraphKey,
+        graph_id: &GraphId,
+        root: BlockId,
+        key: &GraphKey,
     ) -> Result<Vec<SigningPublicKey>, AksharaError> {
-        // TODO: Implement a real O(N) traversal of the /credentials directory.
-        // For now, we return an empty list to prevent compile errors.
-        // This will be completed in the next "Karma" update.
-        Ok(vec![])
+        let walker = GraphWalker::new(self.store, SigningPublicKey::new([0u8; 32])); // Root not used for read-only index walk
+
+        // 1. Resolve the /credentials directory
+        let creds_dir_addr = match walker
+            .resolve_path(graph_id, root, "credentials", key)
+            .await
+        {
+            Ok(addr) => addr,
+            Err(_) => return Ok(vec![]), // No credentials dir means no executives
+        };
+
+        let creds_dir_id = BlockId::try_from(creds_dir_addr)?;
+        let creds_block = self.store.get_block(&creds_dir_id).await?.ok_or_else(|| {
+            AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                "Credentials Directory Block {}",
+                creds_dir_id
+            )))
+        })?;
+
+        // 2. Parse the index block
+        let plaintext = creds_block.decrypt(graph_id, key)?;
+        let index: std::collections::BTreeMap<String, Address> =
+            crate::base::encoding::from_canonical_bytes(&plaintext).map_err(|_| {
+                AksharaError::Integrity(IntegrityError::TypeMismatch(creds_dir_addr, "Index Map"))
+            })?;
+
+        // 3. Extract all public keys from the index paths
+        let mut keys = Vec::new();
+        for (hex_key, _) in index {
+            if let Some(key) = hex::decode(&hex_key)
+                .ok()
+                .and_then(|b| b.try_into().ok())
+                .map(SigningPublicKey::new)
+            {
+                keys.push(key);
+            }
+        }
+
+        Ok(keys)
     }
 }

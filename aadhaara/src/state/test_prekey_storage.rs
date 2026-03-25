@@ -5,7 +5,7 @@ use crate::state::store::GraphStore;
 
 #[tokio::test]
 async fn test_prekey_storage_and_consumption() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let master = MasterIdentity::from_mnemonic(&mnemonic, "").unwrap();
 
@@ -36,7 +36,7 @@ async fn test_prekey_storage_and_consumption() {
 
 #[tokio::test]
 async fn test_prekey_reuse_attack_prevention() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let master = MasterIdentity::from_mnemonic(&mnemonic, "").unwrap();
 

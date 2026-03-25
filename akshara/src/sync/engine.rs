@@ -4,10 +4,12 @@
 //! to synchronize graphs with relays or peers.
 
 use akshara_aadhaara::{GraphId, GraphStore, InMemoryStore, Reconciler, SigningPublicKey};
+use std::sync::Arc;
 
 use super::transport::SyncTransport;
 use crate::error::{Error, Result};
 use crate::graph::SyncReport;
+use crate::vault::Vault;
 
 /// SyncEngine orchestrates graph synchronization.
 ///
@@ -17,13 +19,18 @@ use crate::graph::SyncReport;
 /// - Storage layer (local graph state)
 pub struct SyncEngine<T: SyncTransport> {
     transport: T,
+    vault: Arc<dyn Vault>,
     root_key: SigningPublicKey,
 }
 
 impl<T: SyncTransport> SyncEngine<T> {
     /// Create a new sync engine with the given transport.
-    pub fn new(transport: T, root_key: SigningPublicKey) -> Self {
-        Self { transport, root_key }
+    pub fn new(transport: T, vault: Arc<dyn Vault>, root_key: SigningPublicKey) -> Self {
+        Self {
+            transport,
+            vault,
+            root_key,
+        }
     }
 
     /// Synchronize a single graph with the remote peer.
@@ -35,11 +42,7 @@ impl<T: SyncTransport> SyncEngine<T> {
     /// 4. Request missing portions
     /// 5. Converge (apply portions to local store)
     /// 6. Return sync report
-    pub async fn sync_graph(
-        &self,
-        graph_id: GraphId,
-        store: &InMemoryStore,
-    ) -> Result<SyncReport> {
+    pub async fn sync_graph(&self, graph_id: GraphId, store: &InMemoryStore) -> Result<SyncReport> {
         // 1. Get local heads
         let local_heads = store
             .get_heads(&graph_id)
@@ -88,16 +91,84 @@ impl<T: SyncTransport> SyncEngine<T> {
             .await?;
 
         // 5. Converge (apply portions to local store)
-        // For now, we just consume the stream
-        // TODO: Actually apply portions to store
         let mut manifests_received = 0;
         let mut blocks_received = 0;
         let mut bytes_transferred = 0;
 
         use futures::StreamExt;
-        while let Some(_portion_result) = portions_stream.next().await {
-            // TODO: Handle portion and apply to store
-            manifests_received += 1;
+        while let Some(portion_result) = portions_stream.next().await {
+            let portion = portion_result
+                .map_err(|e| Error::SyncFailed(format!("Portion stream error: {}", e)))?;
+
+            // THE BLIND VERIFICATION MANDATE:
+            // Recalculate CID before ingestion to prevent Relay-side poisoning.
+            let bytes = portion.data();
+
+            // Check codec from the portion's ID
+            let expected_cid = portion.id();
+            let actual_cid = akshara_aadhaara::Address::try_from(bytes).map_err(|_| {
+                Error::SyncFailed(format!("Malformed data in portion for {}", expected_cid))
+            })?;
+            if actual_cid != *expected_cid {
+                return Err(Error::SyncFailed(format!(
+                    "CID mismatch: expected {}, got {}",
+                    expected_cid, actual_cid
+                )));
+            }
+
+            // Ingest into store
+            if expected_cid.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
+                let manifest =
+                    akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Manifest>(bytes)
+                        .map_err(|e| {
+                            Error::SyncFailed(format!("Failed to parse manifest: {}", e))
+                        })?;
+
+                // THE AUTHORITY AUDIT: Verify the author's right to speak before ingestion
+                let latest_id = self.vault.latest_identity_anchor();
+                let mut auditor = akshara_aadhaara::Auditor::new(store, self.root_key.clone());
+                if latest_id != akshara_aadhaara::ManifestId::null() {
+                    auditor = auditor.with_latest_identity(latest_id);
+                }
+
+                auditor.audit_manifest(&manifest).await.map_err(|e| {
+                    Error::SyncFailed(format!(
+                        "Authority audit failed for {}: {}",
+                        expected_cid, e
+                    ))
+                })?;
+
+                store
+                    .put_manifest(&manifest)
+                    .await
+                    .map_err(|e| Error::SyncFailed(format!("Failed to store manifest: {}", e)))?;
+                manifests_received += 1;
+
+                // UPDATE ANCHOR: If this is an identity graph update, track the new anchor
+                // We identify the identity graph by checking if it matches the user's discovery ID
+                let identity = self.vault.get_identity().await?;
+                // The identity graph's Lakshana is derived without a GraphId context
+                let id_lakshana =
+                    identity.derive_discovery_id(&akshara_aadhaara::GraphId::null())?;
+
+                // For now, we assume graph_id mapping is active (prototype simplification)
+                // In a full implementation, we'd check against the actual Lakshana being synced.
+                if graph_id == akshara_aadhaara::GraphId::from(id_lakshana) {
+                    self.vault.update_identity_anchor(manifest.id());
+                }
+            } else {
+                let block =
+                    akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Block>(bytes)
+                        .map_err(|e| Error::SyncFailed(format!("Failed to parse block: {}", e)))?;
+
+                store
+                    .put_block(&block)
+                    .await
+                    .map_err(|e| Error::SyncFailed(format!("Failed to store block: {}", e)))?;
+                blocks_received += 1;
+            }
+
+            bytes_transferred += bytes.len() as u64;
         }
 
         // TODO: Push our surplus to peer if needed

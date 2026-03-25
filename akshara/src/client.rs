@@ -1,8 +1,9 @@
 //! The Akshara client - main entry point for the API.
 
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
-use akshara_aadhaara::{GraphId, InMemoryStore, SigningPublicKey};
+use akshara_aadhaara::{GraphId, InMemoryStore, Lakshana, SigningPublicKey};
 
 use crate::config::ClientConfig;
 use crate::config::TuningConfig;
@@ -53,15 +54,19 @@ impl Client {
     ///
     /// The graph ID is randomly generated. The graph is encrypted with a unique key
     /// derived from your identity.
-    pub async fn create_graph(&self) -> Result<Graph> {
+    pub async fn create_graph(&self, _name: &str) -> Result<Graph> {
         let graph_id = GraphId::new();
 
         // Get graph key from vault
         let graph_key = self.vault.derive_graph_key(&graph_id).await?;
 
+        // Get current identity anchor
+        let identity_anchor = self.vault.latest_identity_anchor();
+
         Ok(Graph::new(
             graph_id,
             graph_key,
+            identity_anchor,
             self.vault.clone(),
             self.store.clone(),
             self.staging.clone(),
@@ -70,19 +75,25 @@ impl Client {
     }
 
     /// Open an existing graph by its Lakshana.
-    pub async fn open_graph(&self, lakshana: &str) -> Result<Graph> {
-        // TODO: Resolve Lakshana to GraphId
-        // For now, parse as GraphId directly
-        let graph_id: GraphId = lakshana
+    pub async fn open_graph(&self, lakshana_str: &str) -> Result<Graph> {
+        let lakshana: Lakshana = lakshana_str
             .parse()
-            .map_err(|_| Error::GraphNotFound(lakshana.to_string()))?;
+            .map_err(|_| Error::GraphNotFound(lakshana_str.to_string()))?;
+
+        // TODO: Resolve Lakshana to actual GraphId via Relay
+        // For now, we perform a deterministic truncation for the demo/prototype
+        let graph_id = GraphId::from(lakshana);
 
         // Get graph key from vault
         let graph_key = self.vault.derive_graph_key(&graph_id).await?;
 
+        // Get current identity anchor
+        let identity_anchor = self.vault.latest_identity_anchor();
+
         Ok(Graph::new(
             graph_id,
             graph_key,
+            identity_anchor,
             self.vault.clone(),
             self.store.clone(),
             self.staging.clone(),
@@ -100,7 +111,7 @@ impl Client {
     pub async fn sync(&self) -> Result<SyncReport> {
         // Use mock transport for demos (no real network)
         let transport = MockTransport::new();
-        let engine = SyncEngine::new(transport, self.root_key.clone());
+        let engine = SyncEngine::new(transport, self.vault.clone(), self.root_key.clone());
         engine.sync_all(&self.store).await
     }
 
@@ -108,7 +119,7 @@ impl Client {
     pub async fn sync_graph(&self, graph_id: GraphId) -> Result<SyncReport> {
         // Use mock transport for demos (no real network)
         let transport = MockTransport::new();
-        let engine = SyncEngine::new(transport, self.root_key.clone());
+        let engine = SyncEngine::new(transport, self.vault.clone(), self.root_key.clone());
         engine.sync_graph(graph_id, &self.store).await
     }
 }

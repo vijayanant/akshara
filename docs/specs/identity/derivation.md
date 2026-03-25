@@ -47,7 +47,7 @@ Keys derived from this branch possess "Executive Authority." They are assigned t
 
 *   **Graph-Isolated Signing (Shadow Identities):** To prevent the Relay from clustering different graphs belonging to the same device, an Executive MUST NOT sign manifests using this long-term key. 
 *   **Shadow Derivation:** For a specific graph, the device derives a **Shadow Signing Key**:
-    `Shadow_Key = HMAC-SHA512(Executive_Branch_Key, "akshara.v1.shadow" || GraphId)`
+    `Shadow_Key = HMAC-SHA256(Executive_Branch_Key, "akshara.v1.shadow_identity" || GraphId)`
 *   **Verification:** The `Auditor` verifies the Shadow Key by performing an HMAC check against the authorized Executive Key registered in the Identity Graph. This allows for total anonymity on the Relay while preserving the ability to revoke the physical device.
 
 ### 4.3 Branch 2: Secret (Symmetric Keys)
@@ -81,6 +81,23 @@ This branch is used to derive **Discovery Master Keys** for anonymous graph disc
 | **One-Way Derivation** | MUST be mathematically impossible to derive parent key from child |
 | **Branch Isolation** | Compromise of Branch 1 key MUST NOT reveal Branch 0 or Master |
 | **Static Seeds** | Master Seed MUST be zeroized after derivation |
+| **Branch Storage** | Each branch key MUST be stored separately for independent revocation |
+| **Seed Never Stored** | The mnemonic/seed MUST NEVER be stored - only derived branch keys |
+
+## 5.1. Key Storage Requirements
+
+After derivation from the master seed, branch keys are stored for daily use:
+
+| Key | Storage Location | Reason |
+|-----|-----------------|--------|
+| **Mnemonic (24 words)** | Never stored | User recovery only |
+| **Seed (64 bytes)** | Never stored | Zeroized after derivation |
+| **Branch 0-5 keys** | OS Keychain / Secure Enclave | Daily operations |
+| **GraphKeys** | Derived on-demand | Per-graph isolation |
+
+**Storage Format:** Each branch is stored as a 64-byte blob (32-byte signing key + 32-byte encryption key), encoded as CBOR or JSON for keychain storage.
+
+**Compartmentalization:** Branches MUST be stored in separate keychain entries to enable independent revocation. A single keychain dump should not reveal all branches.
 
 ---
 

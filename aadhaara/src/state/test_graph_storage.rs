@@ -34,7 +34,7 @@ async fn store_can_save_and_load_manifest() {
     let anchor = create_dummy_anchor();
     let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
 
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     store.put_manifest(&manifest).await.expect("Save failed");
 
     let loaded = store
@@ -48,7 +48,7 @@ async fn store_can_save_and_load_manifest() {
 
 #[tokio::test]
 async fn store_tracks_single_head_linear_history() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
     let root = create_dummy_root();
     let anchor = create_dummy_anchor();
@@ -72,7 +72,7 @@ async fn store_tracks_single_head_linear_history() {
 
 #[tokio::test]
 async fn store_tracks_multiple_heads_on_fork() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
     let root = create_dummy_root();
     let anchor = create_dummy_anchor();
@@ -116,7 +116,7 @@ async fn store_tracks_multiple_heads_on_fork() {
 
 #[tokio::test]
 async fn store_merges_heads() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
     let root = create_dummy_root();
     let anchor = create_dummy_anchor();
@@ -160,7 +160,7 @@ async fn store_merges_heads() {
 
 #[tokio::test]
 async fn store_handles_out_of_order_insertion() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let (identity, graph_id) = (create_identity(), Uuid::new_v4().into());
     let root = create_dummy_root();
     let anchor = create_dummy_anchor();
@@ -181,7 +181,7 @@ async fn store_handles_out_of_order_insertion() {
 
 #[tokio::test]
 async fn store_isolates_different_graph_ids() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let anchor = create_dummy_anchor();
 

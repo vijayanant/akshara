@@ -4,7 +4,7 @@ use crate::{
 };
 
 async fn create_identity_anchor_manifest(
-    store: &mut InMemoryStore,
+    store: &InMemoryStore,
     identity: &SecretIdentity,
 ) -> Manifest {
     let anchor_id = create_valid_anchor(store, identity).await;
@@ -12,7 +12,7 @@ async fn create_identity_anchor_manifest(
 }
 
 async fn create_data_manifest(
-    store: &mut InMemoryStore,
+    store: &InMemoryStore,
     identity: &SecretIdentity,
     graph_key: &GraphKey,
     content: Vec<u8>,
@@ -36,10 +36,10 @@ async fn create_data_manifest(
 
 #[tokio::test]
 async fn test_auditor_accepts_valid_genesis_manifest() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let master_pubkey = identity.public().signing_key().clone();
-    let genesis = create_identity_anchor_manifest(&mut store, &identity).await;
+    let genesis = create_identity_anchor_manifest(&store, &identity).await;
 
     let auditor = Auditor::new(&store, master_pubkey);
     assert!(auditor.audit_manifest(&genesis).await.is_ok());
@@ -47,9 +47,9 @@ async fn test_auditor_accepts_valid_genesis_manifest() {
 
 #[tokio::test]
 async fn test_auditor_rejects_tampered_signature() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
-    let genesis = create_identity_anchor_manifest(&mut store, &identity).await;
+    let genesis = create_identity_anchor_manifest(&store, &identity).await;
 
     let tampered_manifest = Manifest::from_raw_parts(
         genesis.id(),
@@ -70,10 +70,10 @@ async fn test_auditor_rejects_tampered_signature() {
 
 #[tokio::test]
 async fn test_auditor_rejects_genesis_wrong_signer() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let wrong_identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
-    let wrong_genesis = create_identity_anchor_manifest(&mut store, &wrong_identity).await;
+    let wrong_genesis = create_identity_anchor_manifest(&store, &wrong_identity).await;
 
     let auditor = Auditor::new(&store, identity.public().signing_key().clone());
     let result = auditor.audit_manifest(&wrong_genesis).await;
@@ -87,10 +87,10 @@ async fn test_auditor_rejects_genesis_wrong_signer() {
 
 #[tokio::test]
 async fn test_auditor_accepts_valid_data_manifest() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let master_pubkey = identity.public().signing_key().clone();
-    let anchor = create_identity_anchor_manifest(&mut store, &identity).await;
+    let anchor = create_identity_anchor_manifest(&store, &identity).await;
     let graph_key = identity.derive_graph_key(&GraphId::new()).unwrap();
 
     let data_graph_id = GraphId::new();
@@ -114,13 +114,13 @@ async fn test_auditor_accepts_valid_data_manifest() {
 
 #[tokio::test]
 async fn test_auditor_rejects_invalid_anchor() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
-    let anchor = create_identity_anchor_manifest(&mut store, &identity).await;
+    let anchor = create_identity_anchor_manifest(&store, &identity).await;
     let graph_key = identity.derive_graph_key(&GraphId::new()).unwrap();
 
     let data_manifest = create_data_manifest(
-        &mut store,
+        &store,
         &identity,
         &graph_key,
         b"test data".to_vec(),
@@ -150,7 +150,7 @@ async fn test_auditor_rejects_invalid_anchor() {
 
 #[tokio::test]
 async fn test_auditor_accepts_valid_block() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let graph_key = GraphKey::generate(&mut rand::rngs::OsRng);
 
@@ -206,9 +206,9 @@ async fn test_auditor_rejects_tampered_block() {
 
 #[tokio::test]
 async fn test_auditor_verify_existence_manifest() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
-    let genesis = create_identity_anchor_manifest(&mut store, &identity).await;
+    let genesis = create_identity_anchor_manifest(&store, &identity).await;
 
     let auditor = Auditor::new(&store, identity.public().signing_key().clone());
     assert!(
@@ -221,7 +221,7 @@ async fn test_auditor_verify_existence_manifest() {
 
 #[tokio::test]
 async fn test_auditor_verify_existence_block() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let graph_key = GraphKey::generate(&mut rand::rngs::OsRng);
 
@@ -273,9 +273,9 @@ async fn test_auditor_verify_existence_missing_block() {
 
 #[tokio::test]
 async fn test_auditor_with_latest_identity() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
-    let genesis = create_identity_anchor_manifest(&mut store, &identity).await;
+    let genesis = create_identity_anchor_manifest(&store, &identity).await;
 
     let auditor = Auditor::new(&store, identity.public().signing_key().clone())
         .with_latest_identity(genesis.id());
@@ -285,7 +285,7 @@ async fn test_auditor_with_latest_identity() {
 
 #[tokio::test]
 async fn test_auditor_rejects_admin_non_legislator() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let executive_identity =
         SecretIdentity::from_mnemonic_at_path(&mnemonic, "", "m/44'/999'/0'/1'/0'").unwrap();

@@ -10,10 +10,10 @@ use crate::{
 
 #[tokio::test]
 async fn walker_with_corrupted_index_block() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
     let root = create_dummy_root();
 
     // Create a valid manifest first
@@ -31,10 +31,10 @@ async fn walker_with_corrupted_index_block() {
 
 #[tokio::test]
 async fn walker_handles_missing_blocks_gracefully() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
     let root = create_dummy_root();
 
     let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
@@ -51,8 +51,8 @@ async fn walker_handles_missing_blocks_gracefully() {
 
 #[tokio::test]
 async fn can_find_ancestors_in_chain() {
-    let mut store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(3, &mut store).await; // A -> B -> C
+    let store = InMemoryStore::new();
+    let (chain, master_key) = create_chain(3, &store).await; // A -> B -> C
 
     let walker = GraphWalker::new(&store, master_key);
     let ancestors = walker.get_ancestors(&chain[2]).await.unwrap();
@@ -64,11 +64,11 @@ async fn can_find_ancestors_in_chain() {
 
 #[tokio::test]
 async fn walker_handles_diamond_graph() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
     let root = create_dummy_root();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
 
     // 1. Root A
     let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity);
@@ -100,11 +100,11 @@ async fn walker_handles_diamond_graph() {
 
 #[tokio::test]
 async fn walker_handles_missing_parent() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
     let root = create_dummy_root();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
 
     // Manifest B pointing to A, but A is not in store
     let a_id = ManifestId::from_sha256(&[0xEE; 32]);
@@ -120,13 +120,13 @@ async fn walker_handles_missing_parent() {
 
 #[tokio::test]
 async fn walker_respects_graph_boundaries() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
 
     // Chain 1: A -> B
-    let (chain1, _master1) = create_chain(2, &mut store).await;
+    let (chain1, _master1) = create_chain(2, &store).await;
 
     // Chain 2: X -> Y
-    let (chain2, master2) = create_chain(2, &mut store).await;
+    let (chain2, master2) = create_chain(2, &store).await;
     let head2 = chain2[1];
 
     let walker = GraphWalker::new(&store, master2);
@@ -139,15 +139,15 @@ async fn walker_respects_graph_boundaries() {
 
 #[tokio::test]
 async fn walker_handles_manifest_cycles_gracefully() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
     let root = create_dummy_root();
 
     // To test cycles in ancestors, we must use from_raw_parts to force a self-pointer
     let cycle_id = ManifestId::from_sha256(&[0x99; 32]);
-    let header = crate::graph::ManifestHeader {
+    let header = crate::graph::manifest::ManifestHeader {
         graph_id,
         content_root: root,
         parents: vec![cycle_id], // Point to self!

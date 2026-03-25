@@ -13,7 +13,7 @@ async fn create_test_client() -> Client {
 }
 
 async fn create_test_graph_with_data(client: &Client) -> (Graph, GraphId) {
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
     let graph_id = graph.id();
 
     // Insert some test data
@@ -41,7 +41,7 @@ async fn create_test_graph_with_data(client: &Client) -> (Graph, GraphId) {
 #[tokio::test]
 async fn graph_get_nonexistent_path() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     let result = graph.get("/nonexistent").await;
     assert!(result.is_err());
@@ -53,7 +53,7 @@ async fn graph_get_nonexistent_path() {
 #[tokio::test]
 async fn graph_get_after_insert_before_seal() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph.insert("/test", b"hello".to_vec()).await.unwrap();
 
@@ -65,7 +65,7 @@ async fn graph_get_after_insert_before_seal() {
 #[tokio::test]
 async fn graph_get_after_seal() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph
         .insert("/test", b"hello world".to_vec())
@@ -81,7 +81,7 @@ async fn graph_get_after_seal() {
 #[tokio::test]
 async fn graph_get_nested_path() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph
         .insert("/folder/subfolder/file", b"nested content".to_vec())
@@ -96,7 +96,7 @@ async fn graph_get_nested_path() {
 #[tokio::test]
 async fn graph_get_binary_data() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     let binary_data = vec![0u8, 1, 2, 3, 255, 254, 253];
     graph.insert("/binary", binary_data.clone()).await.unwrap();
@@ -109,7 +109,7 @@ async fn graph_get_binary_data() {
 #[tokio::test]
 async fn graph_get_empty_content() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph.insert("/empty", vec![]).await.unwrap();
     graph.seal().await.unwrap();
@@ -121,7 +121,7 @@ async fn graph_get_empty_content() {
 #[tokio::test]
 async fn graph_get_large_content() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     // Create 500KB of data
     let large_data = vec![0x42u8; 500 * 1024];
@@ -139,7 +139,7 @@ async fn graph_get_large_content() {
 #[tokio::test]
 async fn graph_exists_nonexistent_path() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     let exists = graph.exists("/nonexistent").await.unwrap();
     assert!(!exists);
@@ -148,7 +148,7 @@ async fn graph_exists_nonexistent_path() {
 #[tokio::test]
 async fn graph_exists_after_seal() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph.insert("/test", b"content".to_vec()).await.unwrap();
 
@@ -169,7 +169,7 @@ async fn graph_exists_after_seal() {
 #[tokio::test]
 async fn graph_list_empty_graph() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     let paths = graph.list("").await.unwrap();
     assert!(paths.is_empty());
@@ -207,7 +207,7 @@ async fn graph_list_with_prefix_no_matches() {
 #[tokio::test]
 async fn graph_list_nested_prefix() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph.insert("/a/b/c/d", b"deep".to_vec()).await.unwrap();
     graph.seal().await.unwrap();
@@ -219,7 +219,7 @@ async fn graph_list_nested_prefix() {
 #[tokio::test]
 async fn graph_list_after_multiple_seals() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     // First seal
     graph.insert("/doc1", b"first".to_vec()).await.unwrap();
@@ -238,7 +238,7 @@ async fn graph_list_after_multiple_seals() {
 #[tokio::test]
 async fn graph_list_after_update() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph.insert("/test", b"original".to_vec()).await.unwrap();
     graph.seal().await.unwrap();
@@ -258,7 +258,7 @@ async fn graph_list_after_update() {
 #[tokio::test]
 async fn graph_list_after_delete() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph
         .insert("/to-delete", b"content".to_vec())
@@ -282,7 +282,7 @@ async fn graph_list_after_delete() {
 #[tokio::test]
 async fn graph_get_with_unicode_path() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph
         .insert("/日本語/ファイル", b"unicode content".to_vec())
@@ -297,7 +297,7 @@ async fn graph_get_with_unicode_path() {
 #[tokio::test]
 async fn graph_get_with_spaces_in_path() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     graph
         .insert("/path with spaces/file", b"spaces content".to_vec())
@@ -316,7 +316,7 @@ async fn graph_get_with_spaces_in_path() {
 #[tokio::test]
 async fn graph_get_multiple_reads() {
     let client = create_test_client().await;
-    let graph = client.create_graph().await.unwrap();
+    let graph = client.create_graph("test").await.unwrap();
 
     // Insert multiple documents
     for i in 0..10 {

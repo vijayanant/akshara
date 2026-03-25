@@ -10,7 +10,7 @@ use rand::rngs::OsRng;
 #[tokio::test]
 async fn test_identity_graph_device_resolution() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -34,7 +34,7 @@ async fn test_identity_graph_device_resolution() {
         .insert("credentials/laptop_1", Address::from(device_block.id()))
         .unwrap();
     let root_index_id = builder
-        .build(graph_id, &mut store, &identity, &key)
+        .build(graph_id, &store, &identity, &key)
         .await
         .unwrap();
 
@@ -66,7 +66,7 @@ async fn test_identity_graph_device_resolution() {
 #[tokio::test]
 async fn test_identity_graph_missing_device_failure() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -80,7 +80,7 @@ async fn test_identity_graph_missing_device_failure() {
         )
         .unwrap();
     let root_index_id = builder
-        .build(graph_id, &mut store, &identity, &key)
+        .build(graph_id, &store, &identity, &key)
         .await
         .unwrap();
 
@@ -113,7 +113,7 @@ async fn test_identity_graph_unauthorized_traversal_failure() {
 #[tokio::test]
 async fn test_identity_graph_revocation() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let master = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -138,7 +138,7 @@ async fn test_identity_graph_revocation() {
         .unwrap();
 
     let root_index_id = builder
-        .build(graph_id, &mut store, &master, &key)
+        .build(graph_id, &store, &master, &key)
         .await
         .unwrap();
 
@@ -162,7 +162,7 @@ async fn test_identity_graph_revocation() {
     // 2. Revocation: phone is removed from the index
     let builder_v2 = crate::traversal::IndexBuilder::new();
     let root_index_v2 = builder_v2
-        .build(graph_id, &mut store, &master, &key)
+        .build(graph_id, &store, &master, &key)
         .await
         .unwrap();
 

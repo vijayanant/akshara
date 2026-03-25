@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 #[tokio::test]
 async fn test_merkle_index_path_resolution() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -35,7 +35,7 @@ async fn test_merkle_index_path_resolution() {
         .insert("/title", Address::from(data_block.id()))
         .unwrap();
     let index_id = builder
-        .build(graph_id, &mut store, &identity, &key)
+        .build(graph_id, &store, &identity, &key)
         .await
         .unwrap();
 
@@ -52,7 +52,7 @@ async fn test_merkle_index_path_resolution() {
 #[tokio::test]
 async fn test_merkle_index_nested_resolution() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -75,7 +75,7 @@ async fn test_merkle_index_nested_resolution() {
         .insert("nested/file", Address::from(data_block.id()))
         .unwrap();
     let root_index_id = builder
-        .build(graph_id, &mut store, &identity, &key)
+        .build(graph_id, &store, &identity, &key)
         .await
         .unwrap();
 
@@ -91,7 +91,7 @@ async fn test_merkle_index_nested_resolution() {
 #[tokio::test]
 async fn test_merkle_index_path_normalization() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -112,7 +112,7 @@ async fn test_merkle_index_path_normalization() {
         .insert("file", Address::from(data_block.id()))
         .unwrap();
     let root_index_id = builder
-        .build(graph_id, &mut store, &identity, &key)
+        .build(graph_id, &store, &identity, &key)
         .await
         .unwrap();
 
@@ -131,7 +131,7 @@ async fn test_merkle_index_path_normalization() {
 #[tokio::test]
 async fn test_merkle_index_missing_path_failures() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -141,7 +141,7 @@ async fn test_merkle_index_missing_path_failures() {
         .insert("exists", Address::from(BlockId::from_sha256(&[1u8; 32])))
         .unwrap();
     let root_index_id = builder
-        .build(graph_id, &mut store, &identity, &key)
+        .build(graph_id, &store, &identity, &key)
         .await
         .unwrap();
 
@@ -164,7 +164,7 @@ async fn test_merkle_index_missing_path_failures() {
 #[tokio::test]
 async fn test_merkle_index_wrong_key_failure() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -193,7 +193,7 @@ async fn test_merkle_index_wrong_key_failure() {
 #[tokio::test]
 async fn test_merkle_index_malformed_cbor_failure() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -215,7 +215,7 @@ async fn test_merkle_index_malformed_cbor_failure() {
         .insert("not_a_folder", Address::from(data_block.id()))
         .unwrap();
     let root_index_id = builder
-        .build(graph_id, &mut store, &identity, &key)
+        .build(graph_id, &store, &identity, &key)
         .await
         .unwrap();
 
@@ -232,7 +232,7 @@ async fn test_merkle_index_malformed_cbor_failure() {
 #[tokio::test]
 async fn test_merkle_index_type_mismatch_failure() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
@@ -246,7 +246,7 @@ async fn test_merkle_index_type_mismatch_failure() {
         )
         .unwrap();
     let root_index_id = builder
-        .build(graph_id, &mut store, &identity, &key)
+        .build(graph_id, &store, &identity, &key)
         .await
         .unwrap();
 
@@ -263,7 +263,7 @@ async fn test_merkle_index_type_mismatch_failure() {
 #[tokio::test]
 async fn test_merkle_index_circular_reference_protection() {
     let mut rng = OsRng;
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = SecretIdentity::generate(&mut rng);
     let _graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);

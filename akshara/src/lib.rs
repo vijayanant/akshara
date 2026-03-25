@@ -16,7 +16,7 @@
 //! let client = Client::init(config).await?;
 //!
 //! // Create a graph
-//! let notes = client.create_graph().await?;
+//! let notes = client.create_graph("my-notes").await?;
 //!
 //! // Write data
 //! notes.insert("meeting-notes", b"Today we discussed...").await?;

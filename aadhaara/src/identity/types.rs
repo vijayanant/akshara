@@ -1,4 +1,4 @@
-use crate::base::address::GraphId;
+use crate::base::address::{GraphId, Lakshana};
 use crate::base::crypto::{
     AksharaSigner, EncryptionPublicKey, EncryptionSecretKey, GraphKey, Signature, SigningPublicKey,
     SigningSecretKey,
@@ -103,7 +103,9 @@ impl MasterIdentity {
         // isolate the key to this specific graph. This prevents "clustering" attacks
         // where a Relay can link the same author across different graphs.
         if let Some(gid) = graph_id {
-            let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(&signing_key.to_bytes())
+            // AKSHARA RITUAL: Use the public key as the salt so the Auditor can verify the shadow
+            let public_key = signing_key.verifying_key();
+            let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(public_key.as_bytes())
                 .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
             hmac.update(b"akshara.v1.shadow_identity");
             hmac.update(gid.as_bytes());
@@ -128,12 +130,12 @@ impl MasterIdentity {
         Ok(signing_key.to_bytes())
     }
 
-    /// Derives an isolated, anonymous Discovery ID for a specific graph.
+    /// Derives an isolated, anonymous Discovery ID (Lakshana) for a specific graph.
     ///
     /// Matches Spec v0.1.0-alpha (Hardened):
     /// 1. Derive DiscoveryMasterKey from Branch 5 (m/44'/999'/0'/5'/0').
-    /// 2. DiscoveryId = HMAC-SHA256(DiscoveryMasterKey, "akshara.v1.discovery" + GraphId).
-    pub fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<GraphId, AksharaError> {
+    /// 2. Lakshana = HMAC-SHA256(DiscoveryMasterKey, "akshara.v1.discovery" + GraphId).
+    pub fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<Lakshana, AksharaError> {
         // 1. Derive the stable Branch 5 Discovery Key
         let path = crate::identity::paths::format_akshara_path(
             crate::identity::paths::BRANCH_DISCOVERY,
@@ -151,10 +153,10 @@ impl MasterIdentity {
         hmac.update(graph_id.as_bytes());
 
         let result = hmac.finalize().into_bytes();
-        let mut uuid_bytes = [0u8; 16];
-        uuid_bytes.copy_from_slice(&result[..16]);
+        let mut lakshana_bytes = [0u8; 32];
+        lakshana_bytes.copy_from_slice(&result[..32]);
 
-        Ok(GraphId::from_bytes(uuid_bytes))
+        Ok(Lakshana::new(lakshana_bytes))
     }
 
     /// Generates a Pre-Key Bundle for a specific device index.
@@ -229,6 +231,59 @@ impl SecretIdentity {
         master.derive_child(path, None)
     }
 
+    /// Derive a branch at a specific index from mnemonic.
+    ///
+    /// Branch indices:
+    /// - 0: Legislator (authorize/revoke devices)
+    /// - 1: Executive (sign manifests)
+    /// - 2: Secret (derive GraphKeys)
+    /// - 3: Handshake (pre-key bundles)
+    /// - 4: Keyring (cross-device sync)
+    /// - 5: Discovery (anonymous discovery)
+    pub fn derive_branch_from_mnemonic(
+        phrase: &str,
+        passphrase: &str,
+        branch_index: u32,
+    ) -> Result<Self, AksharaError> {
+        let path = format!("m/44'/999'/0'/0'/{}'", branch_index);
+        Self::from_mnemonic_at_path(phrase, passphrase, &path)
+    }
+
+    /// Serialize the identity to bytes (64 bytes: 32-byte signing key + 32-byte encryption key).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(64);
+        bytes.extend_from_slice(self.signing_key.as_bytes());
+        bytes.extend_from_slice(self.encryption_key.as_bytes());
+        bytes
+    }
+
+    /// Deserialize an identity from bytes (64 bytes).
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, AksharaError> {
+        if bytes.len() != 64 {
+            return Err(AksharaError::Crypto(
+                crate::base::error::CryptoError::InvalidKeyFormat(format!(
+                    "Invalid identity bytes length: {}",
+                    bytes.len()
+                )),
+            ));
+        }
+
+        let mut signing_bytes = [0u8; 32];
+        let mut encryption_bytes = [0u8; 32];
+        signing_bytes.copy_from_slice(&bytes[0..32]);
+        encryption_bytes.copy_from_slice(&bytes[32..64]);
+
+        Ok(Self {
+            signing_key: SigningSecretKey::new(signing_bytes),
+            encryption_key: EncryptionSecretKey::new(encryption_bytes),
+            public: Identity {
+                signing_key: SigningPublicKey::new(signing_bytes),
+                encryption_key: EncryptionPublicKey::new(encryption_bytes),
+            },
+            derivation_path: "m/44'/999'/0'/0'/branch".to_string(),
+        })
+    }
+
     pub(crate) fn from_signing_key_at_path(signing_key: SigningKey, path: String) -> Self {
         let signing_public = signing_key.verifying_key();
         let encryption_secret = StaticSecret::from(signing_key.to_bytes());
@@ -278,6 +333,55 @@ impl SecretIdentity {
 
     pub fn encryption_key(&self) -> &EncryptionSecretKey {
         &self.encryption_key
+    }
+
+    pub fn derivation_path(&self) -> &str {
+        &self.derivation_path
+    }
+
+    /// Derives a Graph-Isolated Shadow Identity for a specific graph.
+    ///
+    /// This prevents "Clustering" attacks on the Relay by ensuring the signer's
+    /// public key is unique to this specific graph.
+    pub fn derive_shadow_identity(&self, graph_id: &GraphId) -> Result<Self, AksharaError> {
+        // AKSHARA RITUAL: Use the public key as the salt so the Auditor can verify the shadow
+        let mut hmac =
+            Hmac::<sha2::Sha256>::new_from_slice(self.public.signing_key().as_bytes())
+                .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
+        hmac.update(b"akshara.v1.shadow_identity");
+        hmac.update(graph_id.as_bytes());
+        let result = hmac.finalize().into_bytes();
+        let mut shadow_seed = [0u8; 32];
+        shadow_seed.copy_from_slice(&result[..32]);
+
+        let shadow_signing_key = SigningKey::from_bytes(&shadow_seed);
+
+        // The shadow identity inherits the same derivation path string but is marked as shadowed
+        let path = format!("{}#shadow({})", self.derivation_path, graph_id);
+
+        Ok(Self::from_signing_key_at_path(shadow_signing_key, path))
+    }
+
+    /// Derives an isolated, anonymous Discovery ID (Lakshana) for a specific graph.
+    ///
+    /// This method is for use by an authorized device (Tier 3) that does not
+    /// possess the Master Seed but has its own derived Branch 5 key.
+    pub fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<Lakshana, AksharaError> {
+        // AKSHARA RITUAL: For a device, we use its own signing key as the HMAC salt
+        // This isolates discovery to the specific device-graph pair.
+        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(self.public.signing_key().as_bytes())
+            .map_err(|e| {
+            AksharaError::InternalError(format!("HMAC initialization failed: {}", e))
+        })?;
+
+        hmac.update(b"akshara.v1.discovery");
+        hmac.update(graph_id.as_bytes());
+
+        let result = hmac.finalize().into_bytes();
+        let mut lakshana_bytes = [0u8; 32];
+        lakshana_bytes.copy_from_slice(&result[..32]);
+
+        Ok(Lakshana::new(lakshana_bytes))
     }
 }
 

@@ -39,7 +39,7 @@ pub(crate) fn create_dummy_root() -> crate::base::address::BlockId {
 
 #[cfg(test)]
 pub(crate) async fn create_valid_anchor(
-    store: &mut crate::state::in_memory_store::InMemoryStore,
+    store: &crate::state::in_memory_store::InMemoryStore,
     identity: &crate::identity::SecretIdentity,
 ) -> crate::base::address::ManifestId {
     use crate::graph::BlockType;
@@ -92,7 +92,7 @@ pub(crate) async fn create_valid_anchor(
 #[cfg(test)]
 pub(crate) async fn create_chain(
     length: usize,
-    store: &mut crate::state::in_memory_store::InMemoryStore,
+    store: &crate::state::in_memory_store::InMemoryStore,
 ) -> (
     Vec<crate::base::address::ManifestId>,
     crate::base::crypto::SigningPublicKey,

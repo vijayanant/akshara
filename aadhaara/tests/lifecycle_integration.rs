@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 /// SCENARIO 1: Deep Tree Synchronization
 #[tokio::test]
 async fn test_sync_recursive_index_structure() {
-    let mut laptop_store = InMemoryStore::new();
-    let mut relay_store = InMemoryStore::new();
-    let mut phone_store = InMemoryStore::new();
+    let laptop_store = InMemoryStore::new();
+    let relay_store = InMemoryStore::new();
+    let phone_store = InMemoryStore::new();
 
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let identity = SecretIdentity::from_mnemonic(&mnemonic, "").unwrap();
@@ -25,7 +25,7 @@ async fn test_sync_recursive_index_structure() {
         .insert("folder/sub/file.txt", Address::from(leaf.id()))
         .unwrap();
     let root_index_id = builder
-        .build(graph_id, &mut laptop_store, &identity, &graph_key)
+        .build(graph_id, &laptop_store, &identity, &graph_key)
         .await
         .unwrap();
 
@@ -44,7 +44,7 @@ async fn test_sync_recursive_index_structure() {
         root_index_id,
         &graph_key,
         &laptop_store,
-        &mut relay_store,
+        &relay_store,
     )
     .await;
 
@@ -56,7 +56,7 @@ async fn test_sync_recursive_index_structure() {
         .await
         .unwrap();
     reconciler_phone
-        .converge(&comp_pull.peer_surplus, &mut phone_store)
+        .converge(&comp_pull.peer_surplus, &phone_store)
         .await
         .unwrap();
 
@@ -65,7 +65,7 @@ async fn test_sync_recursive_index_structure() {
         root_index_id,
         &graph_key,
         &relay_store,
-        &mut phone_store,
+        &phone_store,
     )
     .await;
 
@@ -89,8 +89,8 @@ async fn test_sync_recursive_index_structure() {
 /// NO variables are passed between the two scopes except the mnemonic string.
 #[tokio::test]
 async fn test_identity_rebirth_bootstrap() {
-    let mut relay_store = InMemoryStore::new();
-    let mut phone_store = InMemoryStore::new();
+    let relay_store = InMemoryStore::new();
+    let phone_store = InMemoryStore::new();
 
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let passphrase = "salt";
@@ -107,7 +107,7 @@ async fn test_identity_rebirth_bootstrap() {
 
         let id_key = GraphKey::new([0u8; 32]);
         let id_root = Block::new(
-            id_gid,
+            id_gid.into(),
             vec![],
             akshara_aadhaara::BlockType::AksharaAuthV1,
             vec![],
@@ -116,7 +116,7 @@ async fn test_identity_rebirth_bootstrap() {
         )
         .unwrap();
         let id_manifest = Manifest::new(
-            id_gid,
+            id_gid.into(),
             id_root.id(),
             vec![],
             ManifestId::null(),
@@ -137,25 +137,25 @@ async fn test_identity_rebirth_bootstrap() {
         .unwrap();
 
     let reconciler = Reconciler::new(&relay_store, reborn_identity.public().signing_key().clone());
-    let heads = relay_store.get_heads(&derived_id_gid).await.unwrap();
+    let heads = relay_store.get_heads(&derived_id_gid.into()).await.unwrap();
     assert!(
         !heads.is_empty(),
         "Phone could not find Identity Graph on Relay via Discovery ID"
     );
 
     let comp = reconciler
-        .reconcile(&Heads::new(derived_id_gid, heads), &[])
+        .reconcile(&Heads::new(derived_id_gid.into(), heads), &[])
         .await
         .unwrap();
     reconciler
-        .converge(&comp.peer_surplus, &mut phone_store)
+        .converge(&comp.peer_surplus, &phone_store)
         .await
         .unwrap();
 
     // PROOF: Phone has successfully recovered Alice's Identity Graph frontier.
     assert!(
         !phone_store
-            .get_heads(&derived_id_gid)
+            .get_heads(&derived_id_gid.into())
             .await
             .unwrap()
             .is_empty()
@@ -165,9 +165,9 @@ async fn test_identity_rebirth_bootstrap() {
 /// SCENARIO 3: The Complete Stateless Journey (Type-Safe)
 #[tokio::test]
 async fn test_full_lifecycle_stateless_journey() {
-    let mut laptop_store = InMemoryStore::new();
-    let mut relay_store = InMemoryStore::new();
-    let mut phone_store = InMemoryStore::new();
+    let laptop_store = InMemoryStore::new();
+    let relay_store = InMemoryStore::new();
+    let phone_store = InMemoryStore::new();
 
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let passphrase = "vault";
@@ -218,7 +218,7 @@ async fn test_full_lifecycle_stateless_journey() {
             )
             .unwrap();
         let id_root_id = builder
-            .build(id_graph_id, &mut laptop_store, &alice_laptop, &id_key)
+            .build(id_graph_id, &laptop_store, &alice_laptop, &id_key)
             .await
             .unwrap();
 
@@ -239,7 +239,7 @@ async fn test_full_lifecycle_stateless_journey() {
             id_root_id,
             &id_key,
             &laptop_store,
-            &mut relay_store,
+            &relay_store,
         )
         .await;
 
@@ -257,7 +257,7 @@ async fn test_full_lifecycle_stateless_journey() {
         .await
         .unwrap();
     reconciler
-        .converge(&comp.peer_surplus, &mut phone_store)
+        .converge(&comp.peer_surplus, &phone_store)
         .await
         .unwrap();
 
@@ -278,7 +278,7 @@ async fn test_full_lifecycle_stateless_journey() {
         id_manifest.content_root(),
         &id_key,
         &relay_store,
-        &mut phone_store,
+        &phone_store,
     )
     .await;
 
@@ -290,7 +290,7 @@ async fn test_full_lifecycle_stateless_journey() {
         .await
         .unwrap();
     reconciler
-        .converge(&p_comp.peer_surplus, &mut phone_store)
+        .converge(&p_comp.peer_surplus, &phone_store)
         .await
         .unwrap();
 
@@ -322,7 +322,7 @@ async fn sync_recursive_closure<S: GraphStore + ?Sized, D: GraphStore + ?Sized>(
     root_id: BlockId,
     key: &GraphKey,
     source: &S,
-    dest: &mut D,
+    dest: &D,
 ) {
     let mut queue = VecDeque::new();
     queue.push_back(root_id);

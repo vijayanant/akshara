@@ -9,7 +9,6 @@ use multihash_codetable::{Code, MultihashDigest};
 use serde::{Deserialize, Serialize};
 
 use crate::base::error::{AksharaError, IntegrityError};
-
 /// The global Multicodec for an opaque Data Block (Encrypted-then-Signed).
 ///
 /// Ref: https://github.com/multiformats/multicodec/blob/master/table.csv
@@ -261,6 +260,10 @@ impl GraphId {
         GraphId(Uuid::new_v4())
     }
 
+    pub fn null() -> Self {
+        GraphId(Uuid::nil())
+    }
+
     /// Creates a GraphId from raw 16-byte UUID bytes.
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         GraphId(Uuid::from_bytes(bytes))
@@ -292,8 +295,68 @@ impl FromStr for GraphId {
     }
 }
 
+impl From<Lakshana> for GraphId {
+    fn from(lak: Lakshana) -> Self {
+        // Truncate the 32-byte HMAC to a 16-byte UUID
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&lak.as_bytes()[..16]);
+        GraphId::from_bytes(bytes)
+    }
+}
+
 impl fmt::Display for GraphId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+/// `Lakshana` (ಲಕ್ಷಣ) is the anonymous, content-addressed identifier for network discovery.
+///
+/// It is derived via HMAC-SHA256 from an identity's Discovery Branch and a GraphId.
+/// The Relay uses this as an opaque bucket key to prevent graph clustering.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Lakshana([u8; 32]);
+
+impl Lakshana {
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub fn to_hex(self) -> String {
+        self.0.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+}
+
+impl core::fmt::Display for Lakshana {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "lakshana:{}", self.to_hex())
+    }
+}
+
+impl core::fmt::Debug for Lakshana {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Redact Lakshana in debug logs to prevent side-channel clustering
+        write!(f, "Lakshana(<REDACTED>)")
+    }
+}
+
+impl FromStr for Lakshana {
+    type Err = AksharaError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.strip_prefix("lakshana:").unwrap_or(s);
+        let bytes = hex::decode(s).map_err(|_| {
+            AksharaError::Integrity(crate::base::error::IntegrityError::MalformedId)
+        })?;
+
+        let array: [u8; 32] = bytes.try_into().map_err(|_| {
+            AksharaError::Integrity(crate::base::error::IntegrityError::MalformedId)
+        })?;
+
+        Ok(Self(array))
     }
 }

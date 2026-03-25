@@ -11,7 +11,7 @@ use futures::stream::{self, Stream};
 use tokio::time::sleep;
 
 use super::transport::SyncTransport;
-use crate::error::{Result, Error};
+use crate::error::{Error, Result};
 
 /// Mock transport that simulates a peer for testing.
 ///
@@ -68,7 +68,7 @@ impl SyncTransport for MockTransport {
     async fn exchange_heads(
         &self,
         _graph_id: akshara_aadhaara::GraphId,
-        local_heads: Vec<ManifestId>,
+        _local_heads: Vec<ManifestId>,
     ) -> Result<Heads> {
         self.simulate_delay().await;
         self.simulate_failure()?;

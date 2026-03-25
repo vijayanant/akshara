@@ -97,7 +97,7 @@ nonce = random_24_bytes()  // Cryptographically secure RNG
 
 // Bind context via Associated Data (AD)
 associated_data = Hash(
-    "AKSHARA_V1_AD" || 
+    "AKSHARA_V1_BLOCK_AD" || 
     graph_id || 
     author_pubkey || 
     block_type || 
@@ -185,7 +185,7 @@ Input:  plaintext, graph_key, graph_id, block_type, parent_ids, author_signer
 Output: Block (with CID and signature)
 
 1. nonce = random_24_bytes()
-2. associated_data = Hash("AKSHARA_V1_AD" || graph_id || author_signer.public_key() || block_type || parent_ids)
+2. associated_data = Hash("AKSHARA_V1_BLOCK_AD" || graph_id || author_signer.public_key() || block_type || parent_ids)
 3. content = XChaCha20-Poly1305-Encrypt(plaintext, graph_key, nonce, associated_data)
 4. block = {
        content: content,

@@ -14,8 +14,8 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use akshara_aadhaara::{AksharaSigner, GraphId, GraphKey, SecretIdentity};
-use zeroize::Zeroize;
+use akshara_aadhaara::{AksharaSigner, GraphId, GraphKey, ManifestId, SecretIdentity};
+use zeroize::Zeroizing;
 
 use crate::error::{Result, VaultError};
 
@@ -61,6 +61,12 @@ pub trait Vault: Send + Sync {
     /// This returns a NEW identity instance each time, derived from the stored branch key.
     /// The seed itself is never exposed.
     async fn get_identity(&self) -> Result<SecretIdentity>;
+
+    /// Get the latest known identity anchor CID.
+    fn latest_identity_anchor(&self) -> ManifestId;
+
+    /// Update the latest known identity anchor CID.
+    fn update_identity_anchor(&self, anchor: ManifestId);
 
     /// Clear sensitive data from memory.
     ///
@@ -115,6 +121,7 @@ pub fn create_vault(config: VaultConfig) -> Result<Arc<dyn Vault>> {
 /// - Uses hex encoding for cross-platform compatibility
 pub struct PlatformVault {
     service: String,
+    anchor: Mutex<ManifestId>,
 }
 
 impl PlatformVault {
@@ -122,6 +129,7 @@ impl PlatformVault {
     pub fn new() -> Result<Self> {
         Ok(Self {
             service: "akshara".to_string(),
+            anchor: Mutex::new(ManifestId::null()),
         })
     }
 
@@ -167,8 +175,9 @@ impl PlatformVault {
     /// This is used when a branch is compromised. The branch is re-derived
     /// from the master seed (which the user must provide) and stored.
     pub async fn revoke_branch(&mut self, branch_index: u32, mnemonic: &str) -> Result<()> {
+        let mnemonic = Zeroizing::new(mnemonic.to_string());
         // Verify the mnemonic is valid and derive new branch
-        let new_branch = SecretIdentity::derive_branch_from_mnemonic(mnemonic, "", branch_index)?;
+        let new_branch = SecretIdentity::derive_branch_from_mnemonic(&mnemonic, "", branch_index)?;
         let new_branch_bytes = new_branch.to_bytes();
 
         // Save the new branch
@@ -201,9 +210,12 @@ impl Vault for PlatformVault {
         }
 
         // Get seed phrase from user (for initial setup or recovery)
-        let mnemonic = mnemonic.unwrap_or_else(|| {
-            SecretIdentity::generate_mnemonic().expect("Failed to generate mnemonic")
-        });
+        let mnemonic = match mnemonic {
+            Some(m) => Zeroizing::new(m),
+            None => Zeroizing::new(SecretIdentity::generate_mnemonic().map_err(|e| {
+                VaultError::Keychain(format!("Failed to generate mnemonic: {}", e))
+            })?),
+        };
 
         // Derive ALL 6 branches from mnemonic and store each separately
         for i in 0..=5 {
@@ -265,6 +277,19 @@ impl Vault for PlatformVault {
         Ok(identity)
     }
 
+    fn latest_identity_anchor(&self) -> ManifestId {
+        match self.anchor.try_lock() {
+            Ok(anchor) => *anchor,
+            Err(_) => ManifestId::null(),
+        }
+    }
+
+    fn update_identity_anchor(&self, anchor: ManifestId) {
+        if let Ok(mut stored) = self.anchor.try_lock() {
+            *stored = anchor;
+        }
+    }
+
     fn clear(&self) {
         // Note: This doesn't delete from keychain, just clears any in-memory cache
         // To fully reset, user must delete the keychain entry manually or use reset()
@@ -282,7 +307,8 @@ impl Vault for PlatformVault {
 /// This vault stores the mnemonic in plain memory.
 /// **DO NOT use in production.**
 pub struct EphemeralVault {
-    mnemonic: Mutex<Option<String>>,
+    mnemonic: Mutex<Option<Zeroizing<String>>>,
+    anchor: Mutex<ManifestId>,
 }
 
 impl EphemeralVault {
@@ -290,6 +316,7 @@ impl EphemeralVault {
     pub fn new() -> Self {
         Self {
             mnemonic: Mutex::new(None),
+            anchor: Mutex::new(ManifestId::null()),
         }
     }
 }
@@ -312,7 +339,7 @@ impl Vault for EphemeralVault {
             SecretIdentity::generate_mnemonic().expect("Failed to generate mnemonic")
         });
 
-        *stored = Some(mnemonic);
+        *stored = Some(Zeroizing::new(mnemonic));
         Ok("created".to_string())
     }
 
@@ -329,6 +356,7 @@ impl Vault for EphemeralVault {
             .as_ref()
             .ok_or_else(|| VaultError::KeyNotFound("Vault not initialized".to_string()))?;
 
+        // Mnemonic is already Zeroizing<String>, so it will be scrubbed on drop
         let identity = SecretIdentity::from_mnemonic(mnemonic, "")
             .map_err(|e| VaultError::KeyNotFound(format!("Derivation failed: {}", e)))?;
 
@@ -352,19 +380,28 @@ impl Vault for EphemeralVault {
         })
     }
 
+    fn latest_identity_anchor(&self) -> ManifestId {
+        match self.anchor.try_lock() {
+            Ok(anchor) => *anchor,
+            Err(_) => ManifestId::null(),
+        }
+    }
+
+    fn update_identity_anchor(&self, anchor: ManifestId) {
+        if let Ok(mut stored) = self.anchor.try_lock() {
+            *stored = anchor;
+        }
+    }
+
     fn clear(&self) {
-        // Note: Can't zeroize in Mutex, but the mnemonic will be cleared on drop
-        *self.mnemonic.try_lock().unwrap() = None;
+        if let Ok(mut stored) = self.mnemonic.try_lock() {
+            *stored = None;
+        }
     }
 }
 
 impl Drop for EphemeralVault {
     fn drop(&mut self) {
-        // Zeroize on drop
-        if let Ok(mut stored) = self.mnemonic.try_lock()
-            && let Some(ref mut mnemonic) = *stored
-        {
-            mnemonic.zeroize();
-        }
+        // Zeroize on drop is now automatic via Zeroizing<String> wrapper
     }
 }

@@ -9,5 +9,5 @@ pub mod types;
 
 pub use engine::SyncEngine;
 pub use mock_transport::MockTransport;
-pub use transport::{SyncTransport, SessionId};
+pub use transport::{SessionId, SyncTransport};
 pub use types::{Conflict, MergeStrategy};

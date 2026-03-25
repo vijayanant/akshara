@@ -1,5 +1,6 @@
 //! Integration tests for sync module.
 
+use akshara::VaultConfig;
 use akshara::sync::{MockTransport, SyncEngine, SyncTransport};
 use akshara_aadhaara::{GraphId, InMemoryStore, SecretIdentity};
 
@@ -61,7 +62,8 @@ async fn sync_engine_new() {
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
     let root_key = identity.public().signing_key().clone();
 
-    let _engine = SyncEngine::new(transport, root_key);
+    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
+    let _engine = SyncEngine::new(transport, vault, root_key);
     // Test that engine can be created
 }
 
@@ -72,7 +74,8 @@ async fn sync_engine_sync_graph_empty_store() {
     let root_key = identity.public().signing_key().clone();
     let store = InMemoryStore::new();
 
-    let engine = SyncEngine::new(transport, root_key);
+    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
+    let engine = SyncEngine::new(transport, vault, root_key);
     let graph_id = GraphId::new();
 
     let report = engine.sync_graph(graph_id, &store).await.unwrap();
@@ -91,7 +94,8 @@ async fn sync_engine_sync_all_empty_store() {
     let root_key = identity.public().signing_key().clone();
     let store = InMemoryStore::new();
 
-    let engine = SyncEngine::new(transport, root_key);
+    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
+    let engine = SyncEngine::new(transport, vault, root_key);
 
     let report = engine.sync_all(&store).await.unwrap();
 

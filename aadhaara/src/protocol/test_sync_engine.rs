@@ -40,11 +40,11 @@ pub async fn create_chain(
 
 #[tokio::test]
 async fn reconciler_handles_empty_heads() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
 
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
     let root = create_dummy_root();
     let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
     store.put_manifest(&manifest).await.unwrap();
@@ -87,10 +87,10 @@ async fn reconciler_handles_one_empty_one_with_heads() {
 
 #[tokio::test]
 async fn reconciler_rejects_too_many_heads() {
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
     let root = create_dummy_root();
 
     // Create 1025 heads (exceeds limit of 1024)
@@ -188,7 +188,7 @@ async fn reconciler_handles_symmetric_forks() {
 
     let identity = create_identity();
     let graph_id = GraphId::new();
-    let anchor = create_valid_anchor(&mut store, &identity).await;
+    let anchor = create_valid_anchor(&store, &identity).await;
 
     // Create two DIFFERENT content roots to force different CIDs
     let root_b = BlockId::from_sha256(&[0xB1; 32]);
@@ -252,14 +252,14 @@ async fn test_converge_returns_detailed_report() {
     let (chain, master_key) = create_chain(2, &mut store).await; // A -> B
 
     // We create a second store to converge INTO
-    let mut dest_store = InMemoryStore::new();
+    let dest_store = InMemoryStore::new();
     let reconciler = Reconciler::new(&store, master_key);
 
     // We create a delta for the entire chain
     let delta = crate::protocol::Delta::new(vec![Address::from(chain[0]), Address::from(chain[1])]);
 
     let report = reconciler
-        .converge(&delta, &mut dest_store)
+        .converge(&delta, &dest_store)
         .await
         .expect("Convergence failed");
 
@@ -277,7 +277,7 @@ async fn test_converge_empty_delta() {
 
     let delta = crate::protocol::Delta::default();
     let report = reconciler
-        .converge(&delta, &mut InMemoryStore::new())
+        .converge(&delta, &InMemoryStore::new())
         .await
         .unwrap();
 
@@ -292,13 +292,13 @@ async fn test_converge_idempotency_with_duplicates() {
     let (chain, master_key) = create_chain(1, &mut store).await;
     let m_id = chain[0];
 
-    let mut dest_store = InMemoryStore::new();
+    let dest_store = InMemoryStore::new();
     let reconciler = Reconciler::new(&store, master_key);
 
     // Delta contains the SAME manifest twice
     let delta = crate::protocol::Delta::new(vec![Address::from(m_id), Address::from(m_id)]);
 
-    let report = reconciler.converge(&delta, &mut dest_store).await.unwrap();
+    let report = reconciler.converge(&delta, &dest_store).await.unwrap();
 
     // Telemetry reflects the work done: 2 items processed (even if redundant at storage layer)
     // Note: This matches the 'fulfill' iterator logic which yields for every entry in the Delta.
@@ -310,7 +310,7 @@ async fn test_converge_fails_on_first_error() {
     let mut store = InMemoryStore::new();
     let (chain, master_key) = create_chain(2, &mut store).await;
 
-    let mut dest_store = InMemoryStore::new();
+    let dest_store = InMemoryStore::new();
     let reconciler = Reconciler::new(&store, master_key);
 
     // We add a non-existent address to the middle of the delta
@@ -320,7 +320,7 @@ async fn test_converge_fails_on_first_error() {
         Address::from(chain[1]),
     ]);
 
-    let result = reconciler.converge(&delta, &mut dest_store).await;
+    let result = reconciler.converge(&delta, &dest_store).await;
 
     // Must return an error, and the process stops
     assert!(result.is_err());

@@ -49,7 +49,7 @@ fn test_akshara_blind_discovery_derivation() {
 async fn test_akshara_full_authority_chain_verification() {
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let passphrase = "pass";
-    let mut relay_store = InMemoryStore::new();
+    let relay_store = InMemoryStore::new();
 
     // --- ACTOR 1: Alice's Laptop (The Authorizer) ---
     let (id_root_index, alice_master_pub, id_graph_id) = {
@@ -86,7 +86,7 @@ async fn test_akshara_full_authority_chain_verification() {
             )
             .unwrap();
         let root_index_id = builder
-            .build(id_graph_id, &mut relay_store, &alice_master, &graph_key)
+            .build(id_graph_id, &relay_store, &alice_master, &graph_key)
             .await
             .unwrap();
 
