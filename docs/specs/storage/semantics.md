@@ -25,7 +25,10 @@ When `put_manifest(M)` is called, the store MUST perform the following atomic tr
 4.  **Result:** The `Heads` registry now accurately represents the unmerged tips of the graph.
 
 ### 2.2 Convergence Integrity
-To prevent "Head Explosion" (where a malicious actor pushes many unrelated manifests to one graph), implementations MAY enforce a limit on the number of concurrent heads allowed per `graph_id`. Any manifest that would exceed this limit MUST be rejected until a merge manifest is produced.
+To prevent "Head Explosion" (where a malicious actor pushes many unrelated manifests to one graph), implementations MUST enforce a limit on the number of concurrent heads allowed per `graph_id`.
+
+*   **MAX_HEADS:** 50
+*   **Enforcement:** Any manifest that would cause the number of concurrent heads to exceed 50 MUST be rejected until a merge manifest is produced. This protects the `Reconciler` from CPU and memory exhaustion during graph traversal.
 
 ## 3. Resource Discovery (Blind Handshakes)
 Resource discovery is the mechanism by which one identity shares access with another without a centralized registry.

@@ -48,6 +48,20 @@ Keys derived from this branch possess "Executive Authority." They are assigned t
 *   **Graph-Isolated Signing (Shadow Identities):** To prevent the Relay from clustering different graphs belonging to the same device, an Executive MUST NOT sign manifests using this long-term key. 
 *   **Shadow Derivation:** For a specific graph, the device derives a **Shadow Signing Key**:
     `Shadow_Key = HMAC-SHA256(Executive_Branch_Key, "akshara.v1.shadow_identity" || GraphId)`
+
+```text
+SHADOW IDENTITY RITUAL
+──────────────────────
+[Master Seed]
+      │
+      ▼ (SLIP-0010)
+[Executive Key (Branch 1)] ──┐
+      │                      │ (HMAC-SHA256)
+      │                      ├───────────────────► [Shadow Signing Key]
+[GraphId (UUID)] ────────────┘                        (Unique per Graph)
+                                                      (Visible to Relay)
+```
+
 *   **Verification:** The `Auditor` verifies the Shadow Key by performing an HMAC check against the authorized Executive Key registered in the Identity Graph. This allows for total anonymity on the Relay while preserving the ability to revoke the physical device.
 
 ### 4.3 Branch 2: Secret (Symmetric Keys)

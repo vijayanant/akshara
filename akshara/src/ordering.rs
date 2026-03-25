@@ -1,6 +1,17 @@
 //! Fractional indexing for ordered sequences.
 //!
 //! This module provides a simple wrapper around the `fractional_index` crate.
+//!
+//! # Purpose
+//!
+//! In a content-addressed DAG, renaming items in a list (e.g., using integer
+//! indices like `/1`, `/2`) is expensive because it changes the CIDs of all
+//! subsequent items.
+//!
+//! Fractional indexing allows for arbitrary insertions between existing items
+//! by generating a lexicographical "midpoint" string. This ensures that only
+//! the inserted item receives a new CID, enabling perfect structural sharing
+//! for the rest of the list.
 
 use crate::error::{Error, Result};
 pub use fractional_index::FractionalIndex;
@@ -27,7 +38,7 @@ pub fn midpoint(prev: Option<&str>, next: Option<&str>) -> Result<String> {
 }
 
 /// Helper to parse a string back into a FractionalIndex.
-pub fn parse_index(s: &str) -> Result<FractionalIndex> {
+pub(crate) fn parse_index(s: &str) -> Result<FractionalIndex> {
     FractionalIndex::from_string(s).map_err(|e| {
         Error::Protocol(akshara_aadhaara::AksharaError::InternalError(format!(
             "Invalid index format ({}): {}",

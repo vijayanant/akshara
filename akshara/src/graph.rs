@@ -432,6 +432,11 @@ impl Graph {
     ///
     /// This implements the CRDT-style state reconstruction by reading
     /// the current index and loading all data blocks.
+    ///
+    /// # Performance
+    ///
+    /// TODO: This is currently O(N) where N is the number of blocks in the graph.
+    /// For v0.2, we should implement incremental state loading or an LRU cache.
     async fn load_current_state(&self) -> Result<std::collections::BTreeMap<String, Vec<u8>>> {
         // Get current heads
         let heads = self
