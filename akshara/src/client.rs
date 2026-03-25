@@ -1,15 +1,15 @@
 //! The Akshara client - main entry point for the API.
 
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
-use akshara_aadhaara::{GraphId, InMemoryStore};
+use akshara_aadhaara::{GraphId, InMemoryStore, SigningPublicKey};
 
 use crate::config::ClientConfig;
 use crate::config::TuningConfig;
 use crate::error::{Error, Result};
 use crate::graph::{Graph, SyncReport};
 use crate::staging::{InMemoryStagingStore, StagingStore};
+use crate::sync::{MockTransport, SyncEngine};
 use crate::vault::{Vault, create_vault};
 
 /// The main Akshara client.
@@ -18,6 +18,7 @@ pub struct Client {
     store: InMemoryStore,
     staging: Arc<Mutex<Box<dyn StagingStore>>>,
     tuning: TuningConfig,
+    root_key: SigningPublicKey,
 }
 
 impl Client {
@@ -28,6 +29,10 @@ impl Client {
 
         // Initialize vault (generates mnemonic if not exists)
         let _result = vault.initialize(None).await?;
+
+        // Get root key for sync verification
+        let identity = vault.get_identity().await?;
+        let root_key = identity.public().signing_key().clone();
 
         // Create in-memory store
         let store = InMemoryStore::new();
@@ -40,6 +45,7 @@ impl Client {
             store,
             staging: Arc::new(Mutex::new(staging)),
             tuning: config.tuning,
+            root_key,
         })
     }
 
@@ -92,26 +98,18 @@ impl Client {
 
     /// Synchronize all graphs with the relay.
     pub async fn sync(&self) -> Result<SyncReport> {
-        // TODO: Implement full sync orchestration
-        Ok(SyncReport {
-            graphs_synced: 0,
-            manifests_received: 0,
-            blocks_received: 0,
-            bytes_transferred: 0,
-            conflicts_detected: 0,
-        })
+        // Use mock transport for demos (no real network)
+        let transport = MockTransport::new();
+        let engine = SyncEngine::new(transport, self.root_key.clone());
+        engine.sync_all(&self.store).await
     }
 
     /// Synchronize a specific graph.
-    pub async fn sync_graph(&self, _graph_id: GraphId) -> Result<SyncReport> {
-        // TODO: Implement
-        Ok(SyncReport {
-            graphs_synced: 1,
-            manifests_received: 0,
-            blocks_received: 0,
-            bytes_transferred: 0,
-            conflicts_detected: 0,
-        })
+    pub async fn sync_graph(&self, graph_id: GraphId) -> Result<SyncReport> {
+        // Use mock transport for demos (no real network)
+        let transport = MockTransport::new();
+        let engine = SyncEngine::new(transport, self.root_key.clone());
+        engine.sync_graph(graph_id, &self.store).await
     }
 }
 

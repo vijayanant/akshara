@@ -53,6 +53,7 @@ pub use error::Error;
 pub use graph::{Graph, SealReport, SyncReport};
 pub use staging::{StagedOperation, StagingStore};
 pub use store::InMemoryStore;
+pub use sync::{Conflict, MergeStrategy, SyncTransport};
 pub use vault::{Vault, VaultConfig};
 
 // Re-export commonly used aadhaara types
