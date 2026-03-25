@@ -112,9 +112,73 @@ impl Graph {
     // ========================================================================
 
     /// Get content at the specified path.
-    pub async fn get(&self, _path: &str) -> Result<Vec<u8>> {
-        // TODO: Implement path resolution through Merkle-Index
-        Err(Error::PathNotFound("not implemented yet".to_string()))
+    pub async fn get(&self, path: &str) -> Result<Vec<u8>> {
+        // Get current heads from store
+        let heads = self
+            .store
+            .get_heads(&self.graph_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get heads: {}", e)))?;
+
+        if heads.is_empty() {
+            return Err(Error::PathNotFound(format!(
+                "No data sealed yet for path: {}",
+                path
+            )));
+        }
+
+        // Use the first head (for now, single-head assumption)
+        let manifest_id = heads[0];
+
+        // Get the manifest
+        let manifest = self
+            .store
+            .get_manifest(&manifest_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
+            .ok_or_else(|| Error::Internal("Manifest not found".to_string()))?;
+
+        // Get identity from vault for path resolution
+        let identity = self.vault.get_identity().await?;
+
+        // Use GraphWalker to resolve the path
+        let walker = akshara_aadhaara::GraphWalker::new(
+            &self.store,
+            identity.public().signing_key().clone(),
+        );
+
+        // Resolve path to get the block address
+        let address = walker
+            .resolve_path(
+                &self.graph_id,
+                manifest.content_root(),
+                path,
+                &self.graph_key,
+            )
+            .await
+            .map_err(|e| {
+                Error::PathNotFound(format!("Path resolution failed for '{}': {}", path, e))
+            })?;
+
+        // Convert Address to BlockId
+        let block_id: akshara_aadhaara::BlockId = address
+            .try_into()
+            .map_err(|e| Error::Internal(format!("Address to BlockId conversion failed: {}", e)))?;
+
+        // Get the block
+        let block = self
+            .store
+            .get_block(&block_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get block: {}", e)))?
+            .ok_or_else(|| Error::PathNotFound(format!("Block not found for path: {}", path)))?;
+
+        // Decrypt and return content
+        let content = block
+            .decrypt(&self.graph_id, &self.graph_key)
+            .map_err(|e| Error::Internal(format!("Decryption failed: {}", e)))?;
+
+        Ok(content)
     }
 
     /// Check if content exists at the specified path.
@@ -127,9 +191,123 @@ impl Graph {
     }
 
     /// List all paths with the given prefix.
-    pub async fn list(&self, _prefix: &str) -> Result<Vec<String>> {
-        // TODO: Implement
+    pub async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+        // Get current heads from store
+        let heads = self
+            .store
+            .get_heads(&self.graph_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get heads: {}", e)))?;
+
+        if heads.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Use the first head
+        let manifest_id = heads[0];
+
+        // Get the manifest
+        let manifest = self
+            .store
+            .get_manifest(&manifest_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
+            .ok_or_else(|| Error::Internal("Manifest not found".to_string()))?;
+
+        // If prefix is empty, collect from root
+        if prefix.is_empty() || prefix == "/" {
+            let mut paths = Vec::new();
+            self.collect_paths(manifest.content_root(), "", &mut paths)
+                .await?;
+            return Ok(paths);
+        }
+
+        // Otherwise, navigate to the prefix path first
+        let identity = self.vault.get_identity().await?;
+        let walker = akshara_aadhaara::GraphWalker::new(
+            &self.store,
+            identity.public().signing_key().clone(),
+        );
+
+        // Try to resolve the prefix path
+        match walker
+            .resolve_path(
+                &self.graph_id,
+                manifest.content_root(),
+                prefix,
+                &self.graph_key,
+            )
+            .await
+        {
+            Ok(address) => {
+                // Convert to BlockId and collect paths from there
+                if let Ok(index_id) = akshara_aadhaara::BlockId::try_from(address) {
+                    let mut paths = Vec::new();
+                    self.collect_paths(index_id, prefix, &mut paths).await?;
+                    return Ok(paths);
+                }
+            }
+            Err(_) => {
+                // Prefix path doesn't exist - return empty
+                return Ok(Vec::new());
+            }
+        }
+
         Ok(Vec::new())
+    }
+
+    /// Recursively collect paths from the index tree.
+    async fn collect_paths(
+        &self,
+        index_id: akshara_aadhaara::BlockId,
+        prefix: &str,
+        paths: &mut Vec<String>,
+    ) -> Result<()> {
+        // Get the index block
+        let block = self
+            .store
+            .get_block(&index_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get index block: {}", e)))?
+            .ok_or_else(|| Error::Internal("Index block not found".to_string()))?;
+
+        // Decrypt the index content
+        let content = block
+            .decrypt(&self.graph_id, &self.graph_key)
+            .map_err(|e| Error::Internal(format!("Decryption failed: {}", e)))?;
+
+        // Parse as BTreeMap<String, Address>
+        let index_map: std::collections::BTreeMap<String, akshara_aadhaara::Address> =
+            akshara_aadhaara::from_canonical_bytes(&content)
+                .map_err(|e| Error::Internal(format!("Failed to parse index: {}", e)))?;
+
+        for (key, address) in index_map {
+            let full_path = if prefix.is_empty() {
+                format!("/{}", key)
+            } else {
+                format!("{}/{}", prefix, key)
+            };
+
+            // Check if this is a data block or another index by trying to convert to BlockId
+            // and checking the block type
+            if let Ok(block_id) = akshara_aadhaara::BlockId::try_from(address) {
+                // Get the block to check its type
+                if let Ok(Some(child_block)) = self.store.get_block(&block_id).await {
+                    match child_block.block_type() {
+                        akshara_aadhaara::BlockType::AksharaIndexV1 => {
+                            // Index block - recurse with Box::pin to avoid infinite size
+                            Box::pin(self.collect_paths(block_id, &full_path, paths)).await?;
+                        }
+                        _ => {
+                            // Data block - add to paths
+                            paths.push(full_path);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     // ========================================================================
@@ -141,10 +319,12 @@ impl Graph {
     /// This is the core operation that:
     /// 1. Fetches pending operations
     /// 2. Coalesces operations by path
-    /// 3. Creates blocks for each unique path
-    /// 4. Builds a Merkle-Index tree
-    /// 5. Creates and signs a manifest
-    /// 6. Persists everything to storage
+    /// 3. Loads current state from latest manifest (CRDT-style merge)
+    /// 4. Applies staged operations to current state
+    /// 5. Creates blocks for each unique path
+    /// 6. Builds a Merkle-Index tree
+    /// 7. Creates and signs a manifest
+    /// 8. Persists everything to storage
     pub async fn seal(&self) -> Result<SealReport> {
         let staging = self.staging.lock().await;
         let operations = staging.fetch_pending().await?;
@@ -156,44 +336,51 @@ impl Graph {
         // Coalesce operations by path
         let coalesced = crate::staging::coalesce_operations(operations);
 
-        // Get identity from vault
-        let identity = self.vault.get_identity().await?;
+        // CRDT-style: Load current state from latest manifest
+        let mut current_state = self.load_current_state().await?;
 
-        // Create blocks for each operation
-        let mut index_builder = IndexBuilder::new();
-        let mut blocks_created = 0;
-        let mut bytes_sealed = 0;
-
+        // Apply staged operations to current state (CRDT merge)
         for op in &coalesced {
             match op {
                 StagedOperation::Insert { path, data, .. }
                 | StagedOperation::Update { path, data, .. } => {
-                    // Check if we need to chunk
-                    if data.len() > self.tuning.max_block_size {
-                        // Chunk large payload - TODO: implement
-                        return Err(Error::ChunkingFailed("not implemented yet".to_string()));
-                    } else {
-                        // Single block
-                        let block = Block::new(
-                            self.graph_id,
-                            data.clone(),
-                            BlockType::AksharaDataV1,
-                            vec![],
-                            &self.graph_key,
-                            &identity,
-                        )?;
-
-                        self.store.put_block(&block).await?;
-                        blocks_created += 1;
-                        bytes_sealed += data.len();
-
-                        index_builder.insert(path, akshara_aadhaara::Address::from(block.id()))?;
-                    }
+                    current_state.insert(path.clone(), data.clone());
                 }
-                StagedOperation::Delete { .. } => {
-                    // TODO: Handle deletes (tombstones)
-                    continue;
+                StagedOperation::Delete { path, .. } => {
+                    current_state.remove(path);
                 }
+            }
+        }
+
+        // Get identity from vault
+        let identity = self.vault.get_identity().await?;
+
+        // Create blocks for each path in merged state
+        let mut index_builder = IndexBuilder::new();
+        let mut blocks_created = 0;
+        let mut bytes_sealed = 0;
+
+        for (path, data) in current_state {
+            // Check if we need to chunk
+            if data.len() > self.tuning.max_block_size {
+                // Chunk large payload - TODO: implement
+                return Err(Error::ChunkingFailed("not implemented yet".to_string()));
+            } else {
+                // Single block
+                let block = Block::new(
+                    self.graph_id,
+                    data.clone(),
+                    BlockType::AksharaDataV1,
+                    vec![],
+                    &self.graph_key,
+                    &identity,
+                )?;
+
+                self.store.put_block(&block).await?;
+                blocks_created += 1;
+                bytes_sealed += data.len();
+
+                index_builder.insert(&path, akshara_aadhaara::Address::from(block.id()))?;
             }
         }
 
@@ -232,6 +419,90 @@ impl Graph {
             bytes_sealed: bytes_sealed as u64,
             operations_coalesced: coalesced.len(),
         })
+    }
+
+    /// Load current state from the latest manifest.
+    ///
+    /// This implements the CRDT-style state reconstruction by reading
+    /// the current index and loading all data blocks.
+    async fn load_current_state(&self) -> Result<std::collections::BTreeMap<String, Vec<u8>>> {
+        // Get current heads
+        let heads = self
+            .store
+            .get_heads(&self.graph_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get heads: {}", e)))?;
+
+        if heads.is_empty() {
+            // No previous state - start fresh
+            return Ok(std::collections::BTreeMap::new());
+        }
+
+        // Use the first head (latest manifest)
+        let manifest_id = heads[0];
+        let manifest = self
+            .store
+            .get_manifest(&manifest_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
+            .ok_or_else(|| Error::Internal("Latest manifest not found".to_string()))?;
+
+        // Load all paths from the index
+        let mut state = std::collections::BTreeMap::new();
+        self.load_state_from_index(manifest.content_root(), &mut state)
+            .await?;
+
+        Ok(state)
+    }
+
+    /// Recursively load state from index tree.
+    async fn load_state_from_index(
+        &self,
+        index_id: akshara_aadhaara::BlockId,
+        state: &mut std::collections::BTreeMap<String, Vec<u8>>,
+    ) -> Result<()> {
+        // Get the index block
+        let block = self
+            .store
+            .get_block(&index_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get index block: {}", e)))?
+            .ok_or_else(|| Error::Internal("Index block not found".to_string()))?;
+
+        // Decrypt the index content
+        let content = block
+            .decrypt(&self.graph_id, &self.graph_key)
+            .map_err(|e| Error::Internal(format!("Decryption failed: {}", e)))?;
+
+        // Parse as BTreeMap<String, Address>
+        let index_map: std::collections::BTreeMap<String, akshara_aadhaara::Address> =
+            akshara_aadhaara::from_canonical_bytes(&content)
+                .map_err(|e| Error::Internal(format!("Failed to parse index: {}", e)))?;
+
+        for (key, address) in index_map {
+            let full_path = format!("/{}", key);
+
+            // Try to convert to BlockId and load the block
+            if let Ok(block_id) = akshara_aadhaara::BlockId::try_from(address)
+                && let Ok(Some(child_block)) = self.store.get_block(&block_id).await
+            {
+                match child_block.block_type() {
+                    akshara_aadhaara::BlockType::AksharaIndexV1 => {
+                        // Index block - recurse with Box::pin to avoid infinite size
+                        Box::pin(self.load_state_from_index(block_id, state)).await?;
+                    }
+                    _ => {
+                        // Data block - decrypt and add to state
+                        let data = child_block
+                            .decrypt(&self.graph_id, &self.graph_key)
+                            .map_err(|e| Error::Internal(format!("Decryption failed: {}", e)))?;
+                        state.insert(full_path, data);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     // ========================================================================
