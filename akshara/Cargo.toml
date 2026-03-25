@@ -33,6 +33,7 @@ hex = "0.4"
 
 # Storage
 rusqlite = { workspace = true }
+fractional_index = { version = "2.0", features = ["serde"] }
 
 # Logging
 tracing = { workspace = true }
