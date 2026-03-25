@@ -1,37 +1,47 @@
 [package]
 name = "akshara-aadhaara"
 version = "0.1.0-alpha.1"
-edition = "2024"
+edition.workspace = true
 
 [features]
 wire = []
 
 [dependencies]
+# Workspace
+rand = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+
+# Cryptography
 sha2 = "0.10"
 hmac = "0.12"
-serde = { version = "1.0", features = ["derive"] }
-uuid = { version = "1.8", features = ["v4", "serde"] }
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
-rand = "0.8"
 bip39 = "2.0"
-thiserror = "1.0"
-zeroize = { version = "1.8", features = ["derive"] }
-tracing = "0.1"
-metrics = "0.23"
+chacha20poly1305 = "0.10.1"
+
+# Content addressing
 cid = { version = "0.11", features = ["serde"] }
 multihash = "0.19"
 multihash-codetable = { version = "0.1", features = ["blake3", "sha2", "sha3"] }
 serde_ipld_dagcbor = "0.6"
-async-trait = "0.1"
-chacha20poly1305 = "0.10.1"
+
+# Utilities
+uuid = { version = "1.8", features = ["v4", "serde"] }
+metrics = "0.23"
+hex = "0.4"
 
 [dev-dependencies]
+# Workspace
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Local
 criterion = "0.8"
-hex = "0.4"
 proptest = "1.1"
-tokio = { version = "1.40", features = ["full"] }
-tracing-subscriber = "0.3"
 
 [[bench]]
 name = "sync_bench"

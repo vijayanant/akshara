@@ -10,7 +10,7 @@ fn bench_fulfillment(c: &mut Criterion) {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng);
     let key = GraphKey::generate(&mut rng);
-    let mut store = InMemoryStore::new();
+    let store = InMemoryStore::new();
 
     // 1. Pre-fill the store with 1000 blocks
     let mut addresses = Vec::new();

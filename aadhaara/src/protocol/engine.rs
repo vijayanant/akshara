@@ -134,31 +134,53 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
     }
 
     /// Fulfills a `Delta` by yielding an iterator of raw `Portion` units.
+    ///
+    /// # Ordering
+    ///
+    /// This method MUST yield portions in **Reverse Topological Order** (Heads first).
+    /// This allows the receiver to verify the authority of a manifest before
+    /// ingesting the data blocks it references.
     pub async fn fulfill(&self, delta: &Delta) -> Result<Vec<Portion>, AksharaError> {
         let mut portions = Vec::new();
+
+        // 1. Separate manifests and blocks
+        let mut manifests = Vec::new();
+        let mut blocks = Vec::new();
+
         for addr in delta.missing() {
             if addr.codec() == crate::base::address::CODEC_AKSHARA_MANIFEST {
-                let id = ManifestId::try_from(*addr)?;
-                let manifest = self.store.get_manifest(&id).await?.ok_or_else(|| {
-                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
-                        "Manifest {}",
-                        id
-                    )))
-                })?;
-                let data = crate::base::encoding::to_canonical_bytes(&manifest)?;
-                portions.push(Portion::new(*addr, data));
+                manifests.push(addr);
             } else {
-                let id = BlockId::try_from(*addr)?;
-                let block = self.store.get_block(&id).await?.ok_or_else(|| {
-                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
-                        "Block {}",
-                        id
-                    )))
-                })?;
-                let data = crate::base::encoding::to_canonical_bytes(&block)?;
-                portions.push(Portion::new(*addr, data));
+                blocks.push(addr);
             }
         }
+
+        // 2. Yield Manifests FIRST (Heads-First Ritual)
+        for addr in manifests {
+            let id = ManifestId::try_from(*addr)?;
+            let manifest = self.store.get_manifest(&id).await?.ok_or_else(|| {
+                AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                    "Manifest {}",
+                    id
+                )))
+            })?;
+            let data = crate::base::encoding::to_canonical_bytes(&manifest)?;
+            portions.push(Portion::new(*addr, data));
+        }
+
+        // 3. Yield Data Blocks SECOND
+        for addr in blocks {
+            let id = BlockId::try_from(*addr)?;
+            let block = self.store.get_block(&id).await?.ok_or_else(|| {
+                AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                    "Block {}",
+                    id
+                )))
+            })?;
+            let data = crate::base::encoding::to_canonical_bytes(&block)?;
+            portions.push(Portion::new(*addr, data));
+        }
+
         Ok(portions)
     }
 
@@ -169,7 +191,7 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
     pub async fn converge<Dest: GraphStore + ?Sized>(
         &self,
         delta: &Delta,
-        dest: &mut Dest,
+        dest: &Dest,
     ) -> Result<ConvergenceReport, AksharaError> {
         let mut report = ConvergenceReport::default();
 

@@ -1,10 +1,10 @@
 [package]
 name = "akshara-relay"
-version = "0.1.0"
-edition = "2024"
+version = "0.1.0-alpha.1"
+edition.workspace = true
 
 [lib]
-name = "sovereign_relay"
+name = "akshara_relay"
 path = "src/lib.rs"
 
 [[bin]]
@@ -12,20 +12,24 @@ name = "akshara-relay"
 path = "src/bin/server.rs"
 
 [dependencies]
-sovereign-core = { path = "../core" }
-sovereign-wire = { path = "../sovereign-wire" }
+# Internal
+akshara-aadhaara = { workspace = true }
 
-tonic = "0.12.1"
-prost = "0.13.1"
-tokio = { version = "1.38.0", features = ["full"] }
-tokio-stream = { version = "0.1.15", features = ["net"] }
-async-trait = "0.1.80"
-serde = { version = "1.0.203", features = ["derive"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+# Workspace
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+async-trait = { workspace = true }
+async-stream = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+rand = { workspace = true }
+
+# Local
 uuid = { version = "1.8.0", features = ["v4"] }
-async-stream = "0.3.5"
-thiserror = "1.0.61"
 
 [dev-dependencies]
-rand = "0.8.5"
+tempfile = { workspace = true }

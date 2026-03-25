@@ -1,5 +1,53 @@
 [workspace]
 members = [
     "aadhaara",
+    "akshara",
+    # "relay",  # TODO: Fix dependencies on sovereign_core and sovereign_wire
 ]
 resolver = "2"
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+# Internal
+akshara-aadhaara = { version = "0.1.0-alpha.1", path = "./aadhaara" }
+
+# Async runtime
+tokio = { version = "1.38.0", features = ["full"] }
+tokio-stream = { version = "0.1.15", features = ["net"] }
+async-trait = "0.1.80"
+async-stream = "0.3.5"
+
+# Error handling
+thiserror = "1.0.61"
+
+# Serialization
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.116"
+prost = "0.13.1"
+serde_ipld_dagcbor = "0.6"
+
+# Cryptography
+rand = "0.8.5"
+zeroize = { version = "1.7.0", features = ["derive"] }
+keyring = { version = "3.0", features = ["apple-native", "windows-native"] }
+
+# Storage
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+
+# Logging
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+# Time
+chrono = "0.4.38"
+
+# Networking
+tonic = "0.12.1"
+
+# Testing
+tempfile = "3.10.1"
+tokio-test = "0.4.4"
+proptest = "1.1"
+mockall = "0.12.1"
