@@ -38,7 +38,7 @@ pub fn midpoint(prev: Option<&str>, next: Option<&str>) -> Result<String> {
 }
 
 /// Helper to parse a string back into a FractionalIndex.
-pub(crate) fn parse_index(s: &str) -> Result<FractionalIndex> {
+pub fn parse_index(s: &str) -> Result<FractionalIndex> {
     FractionalIndex::from_string(s).map_err(|e| {
         Error::Protocol(akshara_aadhaara::AksharaError::InternalError(format!(
             "Invalid index format ({}): {}",

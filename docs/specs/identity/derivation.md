@@ -187,7 +187,7 @@ Output: SigningKey (Ed25519)
 |-------|-------|
 | **Mnemonic** | (same as Test Vector 1) |
 | **Graph ID** | `550e8400-e29b-41d4-a716-446655440000` (example UUID) |
-| **Derivation** | `GraphKey = HMAC-SHA256(MasterSeed, "akshara.v1.graph_key" || GraphID)` |
+| **Derivation** | `GraphKey = HMAC-SHA256(Branch_2_Key, "akshara.v1.graph_key" || GraphID)` |
 | **Result** | 32-byte symmetric key for encrypting graph content |
 
 ---

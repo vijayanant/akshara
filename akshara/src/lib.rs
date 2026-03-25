@@ -52,7 +52,7 @@ pub use client::Client;
 pub use config::ClientConfig;
 pub use error::Error;
 pub use graph::{Graph, SealReport, SyncReport};
-pub use ordering::{FractionalIndex, midpoint};
+pub use ordering::{FractionalIndex, midpoint, parse_index};
 pub use staging::{StagedOperation, StagingStore};
 pub use store::InMemoryStore;
 pub use sync::{Conflict, MergeStrategy, SyncTransport};

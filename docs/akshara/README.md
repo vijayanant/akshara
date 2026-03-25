@@ -308,12 +308,14 @@ fn coalesce(ops: Vec<StagedOperation>) -> Vec<StagedOperation> {
     by_path.into_values().collect()
 }
 ```
-
 ### 5.3 Chunking Strategy
+
+> *Note: Automatic chunking is planned for v0.2. In v0.1, payloads larger than 1MB will return a `ChunkingFailed` error.*
 
 ```rust
 const MAX_BLOCK_SIZE: usize = 1024 * 1024;  // 1MB
-
+...
+```
 async fn chunk_data(
     data: &[u8],
     graph_key: &GraphKey,
@@ -322,7 +324,7 @@ async fn chunk_data(
 ) -> Result<Address, Error> {
     if data.len() <= MAX_BLOCK_SIZE {
         // Single block
-        let block = Block::new(data, "data", vec![], graph_key, identity).await?;
+        let block = Block::new(data, BlockType::AksharaDataV1, vec![], graph_key, identity).await?;
         store.put_block(&block).await?;
         return Ok(Address::from(block.id()));
     }
@@ -330,7 +332,7 @@ async fn chunk_data(
     // Chunk into tree
     let mut chunks = Vec::new();
     for chunk in data.chunks(MAX_BLOCK_SIZE) {
-        let block = Block::new(chunk, "data", vec![], graph_key, identity).await?;
+        let block = Block::new(chunk, BlockType::AksharaDataV1, vec![], graph_key, identity).await?;
         store.put_block(&block).await?;
         chunks.push(block);
     }
@@ -345,28 +347,50 @@ async fn chunk_data(
     Ok(Address::from(root_index))
 }
 ```
-
 ### 5.4 Fractional Indexing
 
-```rust
-fn assign_fractional_index(
-    existing_keys: &[String],
-    target_path: &str,
-) -> String {
-    // Find siblings
-    let (prev, next) = find_neighbors(existing_keys, target_path);
-    
-    // Compute midpoint
-    midpoint_string(prev, next)
-}
+Fractional indexing is used to maintain order in sequences (like paragraphs or lists) without the expensive re-indexing common in traditional Merkle-DAGs.
 
-fn midpoint_string(a: &str, b: &str) -> String {
-    // ASCII midpoint algorithm
-    // "a" + "b" → "am"
-    // "am" + "b" → "ar"
-    // etc.
-}
+**Automatic usage (Planned for v0.2):**
+> *Note: In v0.1, developers must manually manage indices using the `midpoint` utility.*
+
+```rust
+// v0.2 Vision:
+graph.insert("/doc1", data1).await?;
+graph.seal().await?;  // Assigned index: "a"
+...
 ```
+graph.insert("/doc3", data3).await?;
+graph.seal().await?;  // Assigned index: "c"
+
+graph.insert("/doc2", data2).await?;
+graph.seal().await?;  // Automatically assigned: "am" (midpoint of "a" and "c")
+```
+
+**Manual usage (advanced):**
+```rust
+use akshara::ordering::{FractionalIndex, midpoint};
+
+// Get existing indices
+let existing = vec!["a".to_string(), "c".to_string()];
+
+// Calculate midpoint for new entry
+let new_index = midpoint(Some("a"), Some("c")).unwrap();
+// new_index = "am"
+
+// Parse index back to FractionalIndex
+let idx = parse_index(&new_index)?;
+```
+
+**API:**
+- `FractionalIndex` type (from `fractional_index` crate v2.0)
+- `midpoint(prev, next)` — calculate midpoint between two indices
+- `parse_index(s)` — parse string back to FractionalIndex
+
+**Properties:**
+- **Dense** — can always insert between any two indices
+- **Stable** — indices don't change when other entries are added/removed
+- **Efficient** — typical index length is 3-10 characters
 
 ### 5.5 Storage Backends
 

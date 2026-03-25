@@ -105,14 +105,16 @@ This document defines the protocols for maintaining a persistent index of a user
 
 ### 3.1. Identity Graph Discovery
 
-To locate the Identity Graph associated with a specific resource on a Relay without revealing the user's global identity, a deterministic **Discovery ID** is utilized.
+To locate the Identity Graph associated with a specific resource on a Relay without revealing the user's global identity, a deterministic **Lakshana** is utilized.
+
+**Note:** The term "Discovery ID" is used interchangeably with `Lakshana` (ಲಕ್ಷಣ). The `Lakshana` type is a 32-byte anonymous identifier.
 
 ```
 // Step 1: Derive the Discovery Master Key (Branch 5)
 DiscoveryMasterKey = SLIP0010_Derive(MasterSeed, "m/44'/999'/0'/5'/0'/")
 
-// Step 2: Derive the isolated Discovery ID via HMAC-SHA256
-DiscoveryId = HMAC-SHA256(
+// Step 2: Derive the isolated Lakshana via HMAC-SHA256
+Lakshana = HMAC-SHA256(
     key: DiscoveryMasterKey,
     message: "akshara.v1.discovery" || GraphId
 )
@@ -122,17 +124,43 @@ DiscoveryId = HMAC-SHA256(
 |----------|---------|
 | **Branch Isolation** | Master Seed is never used as an HMAC key |
 | **Bound to GraphId** | Relay can't cluster graphs by user |
-| **Deterministic** | Same seed + graph_id → same DiscoveryId |
-| **One-way** | Can't derive DiscoveryMasterKey from DiscoveryId |
+| **Deterministic** | Same seed + graph_id → same Lakshana |
+| **One-way** | Can't derive DiscoveryMasterKey from Lakshana |
+| **32 bytes** | Full HMAC-SHA256 output (not truncated) |
 
-### 3.2. Usage
+### 3.2. The Lakshana Type
+
+```rust
+/// `Lakshana` (ಲಕ್ಷಣ) is the anonymous, content-addressed identifier for network discovery.
+///
+/// Properties:
+/// - 32 bytes (full HMAC-SHA256 output)
+/// - Anonymous (cannot be linked to master identity)
+/// - Deterministic (same GraphId → same Lakshana)
+/// - Unlinkable (different GraphIds → uncorrelated Lakshanas)
+pub struct Lakshana([u8; 32]);
+```
+
+**Usage:**
+```rust
+// Derive Lakshana for a graph
+let lakshana = master_identity.derive_discovery_id(&graph_id)?;
+
+// Query relay by Lakshana (not GraphId!)
+let data = relay.query(&lakshana).await?;
+
+// Debug display (redacted to prevent side-channel clustering)
+println!("{:?}", lakshana);  // Prints: Lakshana(<REDACTED>)
+```
+
+### 3.3. Usage Examples
 
 ```
 // Finding your own Identity Graph:
-identity_discovery_id = HMAC-SHA256(DiscoveryMasterKey, "akshara.v1.discovery")
+identity_lakshana = HMAC-SHA256(DiscoveryMasterKey, "akshara.v1.discovery")
 
 // Finding a specific graph:
-graph_discovery_id = HMAC-SHA256(DiscoveryMasterKey, "akshara.v1.discovery" || graph_id)
+graph_lakshana = HMAC-SHA256(DiscoveryMasterKey, "akshara.v1.discovery" || graph_id)
 ```
 
 ---

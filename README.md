@@ -28,6 +28,18 @@ Data is decomposed into encrypted blocks. Each block is signed. Blocks are linke
 
 ---
 
+## Project Topology
+
+We use a strict three-layer architecture to enforce the "Blind Foundation" mandate:
+
+| Crate | Layer | Responsibility | Knowledge |
+| :--- | :--- | :--- | :--- |
+| **`aadhaara`** | L0 | **Kernel:** Pure math, Merkle-DAGs, Identity derivation. | Plaintext, Hashes |
+| **`akshara`** | L1 | **SDK:** Staging pipeline, OS Vault integration, Sync orchestration. | Plaintext, Secret Keys |
+| **`relay`** | L2 | **Infrastructure:** High-performance binary storage and routing. | **Blind:** Ciphertext Only |
+
+---
+
 ## Files vs. Graphs
 
 Akshara uses Graphs, not files.
@@ -35,6 +47,7 @@ Akshara uses Graphs, not files.
 A Graph is a collection of encrypted blocks that share a permission boundary. One contract. One patient record. One project.
 
 **In a Graph:**
+
 - Every edit is tracked and signed
 - Merge conflicts are visible branches (not errors)
 - Your device reconciles semantically (no server deciding)
@@ -45,12 +58,15 @@ A Graph is a collection of encrypted blocks that share a permission boundary. On
 ## How It Works
 
 ### 1. Satyate (ಸತ್ಯತೆ — Integrity)
+
 **The math proves it.** Every piece of data is identified by its hash (CIDv1). Your device checks the math. You never have to "trust" that the sender gave you the right bytes.
 
 ### 2. Aadhaara (ಆಧಾರ — Foundation)
+
 **The Relay is blind.** It hosts encrypted blocks identified only by anonymous **Lakshanas**. It doesn't know what's in the box, who wrote it, or who else has a key.
 
 ### 3. Akshara (ಅಕ್ಷರ — Imperishable)
+
 **Data outlives the host.** Because data is named by what it *is* (content-addressed), not where it *lives*, it's location-independent. It survives provider bankruptcy. Hardware death. Even obsolescence.
 
 ---
@@ -88,6 +104,7 @@ A Graph is a collection of encrypted blocks that share a permission boundary. On
 ### I'm Building an Implementation
 
 **Specifications:**
+
 - **[Identity](./docs/specs/identity/)** — Key derivation, authority, revocation
 - **[Graph Model](./docs/specs/graph-model/)** — Blocks, manifests, CIDs, indices
 - **[Synchronization](./docs/specs/synchronization/)** — Reconciliation, fulfillment
@@ -96,47 +113,61 @@ A Graph is a collection of encrypted blocks that share a permission boundary. On
 
 ### I'm Using the Rust Implementation
 
-- **[akshara-aadhaara](./aadhaara/README.md)** — Core library (v0.1.0-alpha.1)
-- **[akshara-sdk](./sdk/)** — (Coming in v0.2)
-- **[akshara-relay](./relay/)** — (Coming in v0.2)
+- **[akshara-aadhaara](./aadhaara/README.md)** — Core protocol kernel (v0.1.0-alpha.2)
+- **[akshara](./akshara/README.md)** — High-level SDK for apps (v0.1.0-alpha.2)
+- **[akshara-relay](./relay/README.md)** — Blind relay implementation (Coming in v0.2)
 
 ---
 
 ## For Developers
 
-### What Works Now (`aadhaara`)
+### What Works Now (v0.1.0-alpha)
 
-The hard part works. BIP-39 identity. XChaCha20-Poly1305 encryption. Merkle-DAG operations. It's technical, but it's done.
+**Core API (`akshara` crate)**
 
-**See:** [aadhaara README](./aadhaara/README.md) for examples.
+- Client initialization with OS keychain vault (macOS/iOS)
+- Graph creation and access
+- Staged writes (insert, update, delete)
+- CRDT-style sealing with fractional indexing
+- Recursive graph reads (get, exists, list)
+- Mock sync transport for demos
 
-### What's Coming (v0.2 SDK)
+**Security**
 
-We're building an API that feels natural. Master seed stays offline. Daily work uses hardware-bound credentials (FaceID, TouchID).
+- OS keychain integration (branch keys, not seed)
+- Branch key isolation (6 branches)
+- Shadow identities for graph-isolated signatures
+- Verified sync ingestion (CID re-verification)
+- MAX_HEADS limit (50) for DoS protection
 
-```rust
-// 1. Initialize from the device's Secure Enclave
-let client = AksharaClient::init_from_enclave().await?;
+**Protocol Kernel (`aadhaara` crate)**
 
-// 2. Open a document via its anonymous Lakshana
-let mut contract = client.open_graph(contract_lakshana).await?;
+- BIP-39 identity with 24-word recovery
+- XChaCha20-Poly1305 encryption
+- Merkle-DAG operations
+- Sync reconciliation (Reconciler)
+- Auditor for authority verification
 
-// 3. Edit naturally. The SDK handles the Merkle-tree and signing.
-contract.commit("/clauses/1.1", b"The parties agree...").await?;
+**See:** [API Specification](./docs/akshara/README.md) for usage examples.
 
-// 4. Sync is a conversation between peers
-contract.sync(contract_lakshana).await?;
-```
+### What's Coming (v0.2)
+
+- [ ] SQLite persistence
+- [ ] Real relay transport (gRPC)
+- [ ] Conflict detection and resolution
+- [ ] Graph sharing (lockboxes, pre-keys)
+- [ ] WASM support for web apps
 
 ---
 
-## ⚠️ Security Notice
+## Security Notice
 
 **This is alpha. It will break. Don't use it in production.**
 
 Seriously. Get a security audit first.
 
 **The Tech:**
+
 - **Cipher:** XChaCha20-Poly1305 (AEAD)
 - **Signatures:** Ed25519
 - **Key Exchange:** X25519
@@ -145,6 +176,7 @@ Seriously. Get a security audit first.
 ---
 
 ## License
+
 Apache 2.0 / MIT
 
 ---

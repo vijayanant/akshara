@@ -267,11 +267,68 @@ Result:
 
 ---
 
-## 6. The IndexBuilder Primitive
+## 6. State Accumulation (CRDT Pattern)
+
+When sealing, the index is built from **accumulated state**, not just staged operations. This ensures deterministic, commutative state evolution.
+
+### 6.1. Sealing Algorithm
+
+```
+Input:  staged_operations, store, identity, graph_key
+Output: new_manifest_id, error (optional)
+
+// Step 1: Load current state from latest manifest
+1. heads = store.get_heads(graph_id)
+2. if heads.is_empty():
+       current_state = {}  // Fresh graph
+   else:
+       current_state = load_state(heads[0])
+
+// Step 2: Apply staged operations (CRDT merge)
+3. for op in staged_operations:
+       match op:
+           Insert(path, data) => current_state[path] = data
+           Update(path, data) => current_state[path] = data
+           Delete(path)       => current_state.remove(path)
+
+// Step 3: Build index from merged state
+4. index_builder = IndexBuilder::new()
+5. for (path, data) in current_state:
+       block = create_block(data, graph_key, identity)
+       store.put_block(block)
+       index_builder.insert(path, block.id)
+   
+6. root_index = index_builder.build(store, identity, graph_key)
+
+// Step 4: Create manifest
+7. manifest = create_manifest(graph_id, root_index, heads, identity)
+8. store.put_manifest(manifest)
+
+9. Return manifest.id, nil
+```
+
+### 6.2. CRDT Properties
+
+| Property | Guarantee |
+|----------|-----------|
+| **Deterministic** | Same operations → same state |
+| **Commutative** | Operation order doesn't affect final state |
+| **Idempotent** | Duplicate operations are harmless |
+| **Convergent** | All peers reach same state eventually |
+
+### 6.3. Benefits
+
+- **Multiple seals accumulate** — Each seal adds to previous state
+- **No data loss** — Old data persists unless explicitly deleted
+- **Predictable** — Same operations always produce same result
+
+---
+
+## 7. The IndexBuilder Primitive
 
 The **`IndexBuilder`** abstracts the complexity of nested BTreeMap creation and recursive hashing.
 
-### 6.1. API
+### 7.1. API
 
 ```rust
 pub struct IndexBuilder {

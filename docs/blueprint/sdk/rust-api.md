@@ -1,90 +1,142 @@
 # SDK Rust API Specification
 
-This document defines the high-level Rust interface for `sovereign-sdk`. This is the canonical "Spec" we use to implement the platform's Layer 1 logic.
+This document defines the high-level Rust interface for `akshara`. This is the canonical "Spec" we use to implement the platform's Layer 1 logic.
 
 ---
 
-## 1. The Entry Point: `SovereignClient`
-The `SovereignClient` manages the user's Tier 1 Identity, their Keyring (Dashboard), and the global connections to the frontier.
+## 1. The Entry Point: `Client`
+
+The `Client` manages the user's identity, vault, and graph access.
 
 ```rust
-pub struct SovereignClient {
-    pub identity: IdentityManager,
-    pub keyring: KeyringManager,
-    // Internal: Store, Network, etc.
+pub struct Client {
+    // Internal: vault, store, staging
 }
 
-impl SovereignClient {
-    /// Bootstraps the client from a 24-word mnemonic (256-bit seed).
-    /// This performs the "Rebirth Flow" if the local DB is empty.
-    pub async fn init(mnemonic: &str, config: Config) -> Result<Self, SdkError>;
-
-    /// Returns a list of all Graphs the user has access to.
-    /// Uses Blind Discovery to find new projects on the Relay.
-    pub async fn list_graphs(&self) -> Result<Vec<GraphSummary>, SdkError>;
-
-    /// Opens a specific Graph for reading and writing.
-    pub async fn open_graph(&self, id: GraphId) -> Result<GraphHandle, SdkError>;
+impl Client {
+    /// Initializes the client with OS keychain vault.
+    pub async fn init(config: ClientConfig) -> Result<Self, Error>;
 
     /// Creates a brand new Graph.
-    pub async fn create_graph(&self, model: GovernanceModel) -> Result<GraphHandle, SdkError>;
+    pub async fn create_graph(&self) -> Result<Graph, Error>;
+
+    /// Opens an existing Graph by its Lakshana.
+    pub async fn open_graph(&self, lakshana: &str) -> Result<Graph, Error>;
+
+    /// Lists all graphs the user has access to.
+    pub async fn list_graphs(&self) -> Result<Vec<GraphSummary>, Error>;
+
+    /// Synchronizes all graphs with the relay.
+    pub async fn sync(&self) -> Result<SyncReport, Error>;
 }
 ```
 
-## 2. Working with Data: `GraphHandle`
-The `GraphHandle` is the primary tool for application developers. It encapsulates the `GraphKey` and manages the Merkle Index.
+## 2. Working with Data: `Graph`
+
+The `Graph` is the primary interface for reading and writing data.
 
 ```rust
-pub struct GraphHandle {
-    pub id: GraphId,
-    // Internal: Decrypted GraphKey, Local Store reference
+pub struct Graph {
+    // Internal: graph_id, graph_key, vault reference
 }
 
-impl GraphHandle {
-    /// Returns the current "Heads" (most recent Manifests) of the graph.
-    pub async fn heads(&self) -> Result<Vec<Manifest>, SdkError>;
+impl Graph {
+    /// Returns the graph's unique identifier.
+    pub fn id(&self) -> GraphId;
 
-    /// Reads a value from a specific path using recursive Merkle Index resolution.
-    /// Returns the decrypted Plaintext bytes.
-    pub async fn read_path(&self, path: &str) -> Result<Vec<u8>, SdkError>;
+    /// Inserts new content at a path (staged, not sealed).
+    pub async fn insert(&self, path: &str, data: Vec<u8>) -> Result<(), Error>;
 
-    /// Commits new data to a specific path.
-    /// This creates new Data Blocks and updates the hierarchical Merkle Index.
-    pub async fn commit(&mut self, path: &str, content: Vec<u8>) -> Result<CID, SdkError>;
+    /// Updates existing content at a path (staged, not sealed).
+    pub async fn update(&self, path: &str, data: Vec<u8>) -> Result<(), Error>;
 
-    /// Synchronizes this specific graph with the Relay.
-    /// Triggers the incremental Streaming SyncPipeline.
-    pub async fn sync(&self) -> Result<(), SdkError>;
+    /// Deletes content at a path (staged, not sealed).
+    pub async fn delete(&self, path: &str) -> Result<(), Error>;
 
-    /// Shares this graph with another user by creating a Lockbox.
-    pub async fn share_with(&mut self, user_pub_key: SigningPublicKey) -> Result<(), SdkError>;
+    /// Seals all staged operations into the Merkle-DAG.
+    pub async fn seal(&self) -> Result<SealReport, Error>;
+
+    /// Reads content from a path.
+    pub async fn get(&self, path: &str) -> Result<Vec<u8>, Error>;
+
+    /// Checks if content exists at a path.
+    pub async fn exists(&self, path: &str) -> Result<bool, Error>;
+
+    /// Lists all paths with the given prefix.
+    pub async fn list(&self, prefix: &str) -> Result<Vec<String>, Error>;
+
+    /// Synchronizes this graph with the relay.
+    pub async fn sync(&self) -> Result<SyncReport, Error>;
 }
 ```
 
-## 3. Turning Blocks into State: `Projector`
-The SDK provides a standard way to turn a "Mess of Blocks" into a "Usable State."
+## 3. Staging → Sealing Pipeline
+
+The SDK buffers operations and seals them atomically:
 
 ```rust
-pub trait Projector: Send + Sync {
-    type State;
+// Stage operations (not persisted yet)
+graph.insert("/doc1", b"Hello".to_vec()).await?;
+graph.insert("/doc2", b"World".to_vec()).await?;
 
-    /// The "Fold" function. Takes the current state and a new block, 
-    /// returning the updated state.
-    fn project(&self, current: Self::State, block: &Block) -> Self::State;
+// Seal commits everything atomically
+let report = graph.seal().await?;
+println!("Sealed {} bytes in {} blocks", 
+    report.bytes_sealed, report.blocks_created);
+```
+
+**What happens during seal():**
+1. Fetch staged operations
+2. Load current state from latest manifest (CRDT merge)
+3. Apply staged operations to state
+4. Create blocks for each path
+5. Build Merkle-Index tree with fractional indexing
+6. Create and sign manifest
+7. Persist to store
+
+---
+
+## 4. Configuration
+
+```rust
+pub struct ClientConfig {
+    pub vault: VaultConfig,
+    pub tuning: TuningConfig,
 }
 
-// Example usage in an app:
-// let chat_messages: Vec<Message> = graph.project(ChatProjector::default()).await?;
+pub enum VaultConfig {
+    Platform,      // macOS Keychain / iOS Secure Enclave
+    Ephemeral,     // Testing only (in-memory)
+    Custom { backend: Arc<dyn Vault> },
+}
+
+pub struct TuningConfig {
+    pub seal_idle_timeout: Duration,   // Default: 5s
+    pub seal_op_threshold: usize,      // Default: 100 ops
+    pub seal_size_threshold: usize,    // Default: 10MB
+    pub max_block_size: usize,         // Default: 1MB
+}
 ```
 
 ---
 
-## 4. Architectural Constraints (The "No Black Box" Rules)
-1.  **Async by Default:** All IO-bound operations (Read, Commit, Sync) are `async`.
-2.  **Cloneable Handles:** `GraphHandle` and `SovereignClient` use `Arc` internally and are cheap to clone.
-3.  **Atomic Commits:** A `commit` call is atomic locally. It is only pushed to the Relay when `sync()` is called (or if background sync is enabled).
-4.  **Strict Verification:** The `read_path` and `heads` methods perform full integrity and authority audits (including Codec and Cycle checks) before returning data.
+## 5. Error Handling
 
-***
+```rust
+pub enum Error {
+    InvalidMnemonic(String),
+    Vault(VaultError),
+    Storage(StorageError),
+    GraphNotFound(GraphId),
+    PathNotFound(String),
+    NothingToSeal,
+    SyncFailed(String),
+    Protocol(AksharaError),
+    Internal(String),
+}
+```
 
-**Architect’s Note:** *This API is designed for 'Local-First' efficiency. By separating 'Commit' (writing to disk) from 'Sync' (writing to the world), we give the app developer total control over the user experience. No more 'Saving...' spinners.*
+---
+
+**Last Updated:** 2026-03-24
+**Status:** Implemented in `akshara` v0.1.0-alpha.1
