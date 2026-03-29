@@ -260,7 +260,7 @@ impl Block {
         parents: &[BlockId],
     ) -> Vec<u8> {
         let mut hasher = Sha256::new();
-        hasher.update(b"AKSHARA_V1_AD");
+        hasher.update(b"AKSHARA_V1_BLOCK_AD");
         hasher.update(graph_id.as_bytes());
         hasher.update(author.as_bytes());
         hasher.update(block_type.as_str().as_bytes());

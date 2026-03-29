@@ -51,9 +51,10 @@ The `akshara` crate is the **primary interface** for application developers buil
 |-----------|-------------|
 | **You Handle Plaintext, We Handle Vault** | Developers work with strings/bytes. Encryption, signing, key management are automatic. |
 | **Offline is Default** | All writes are local first. Sync is explicit, background, and resumable. |
-| **Paths, Not CIDs** | Humans think `/notes/meeting.md`. The API maps paths to CIDs internally. |
-| **Seal is Explicit** | Buffering is automatic, but committing to the DAG is a conscious choice. |
-| **Conflicts are Events** | Concurrent edits create branches. The app decides merge strategy. |
+| **Blocks as Atomic Units** | Content is stored in immutable **Blocks**. Paths serve as the coordinates for these blocks within the Merkle-Index. |
+| **Fractional Indexing** | The API uses fractional indexing to maintain ordered sequences of blocks without expensive re-indexing of the entire graph. |
+| **Seal is Explicit** | Buffering is automatic, but committing blocks to the DAG via a **Manifest** is a conscious choice. |
+| **Conflicts are Events** | Concurrent edits to the same path create branches. The app decides merge strategy. |
 
 ---
 

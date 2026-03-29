@@ -22,7 +22,7 @@ pub fn mnemonic_to_seed(
     phrase: &str,
     passphrase: &str,
 ) -> Result<Zeroizing<[u8; 64]>, AksharaError> {
-    let normalized = phrase.trim().to_lowercase();
+    let normalized = Zeroizing::new(phrase.trim().to_lowercase());
     let words: Vec<&str> = normalized.split_whitespace().collect();
     if words.len() != 24 {
         return Err(AksharaError::Identity(IdentityError::MnemonicInvalid(
