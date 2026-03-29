@@ -23,7 +23,6 @@ use crate::vault::Vault;
 pub struct Graph {
     graph_id: GraphId,
     graph_key: GraphKey,
-    identity_anchor: ManifestId,
     vault: Arc<dyn Vault>,
     store: InMemoryStore,
     staging: Arc<Mutex<Box<dyn StagingStore>>>,
@@ -37,7 +36,6 @@ impl Graph {
     ///
     /// * `graph_id` - The graph identifier
     /// * `graph_key` - The symmetric encryption key for this graph
-    /// * `identity_anchor` - The latest known identity state CID
     /// * `vault` - Reference to the vault (holds secret keys securely)
     /// * `store` - Storage backend for blocks and manifests
     /// * `staging` - Staging store for buffering operations
@@ -45,7 +43,6 @@ impl Graph {
     pub fn new(
         graph_id: GraphId,
         graph_key: GraphKey,
-        identity_anchor: ManifestId,
         vault: Arc<dyn Vault>,
         store: InMemoryStore,
         staging: Arc<Mutex<Box<dyn StagingStore>>>,
@@ -54,7 +51,6 @@ impl Graph {
         Self {
             graph_id,
             graph_key,
-            identity_anchor,
             vault,
             store,
             staging,
@@ -403,12 +399,16 @@ impl Graph {
             .await
             .unwrap_or_default();
 
+        // AKSHARA SECURITY MANDATE: Always anchor to the LATEST known identity state.
+        // This ensures the manifest respects any revocations in the current frontier.
+        let identity_anchor = self.vault.latest_identity_anchor();
+
         // Create manifest
         let manifest = Manifest::new(
             self.graph_id,
             root_index_id,
             parents,
-            self.identity_anchor,
+            identity_anchor,
             &identity,
         );
 

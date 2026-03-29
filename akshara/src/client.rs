@@ -60,13 +60,9 @@ impl Client {
         // Get graph key from vault
         let graph_key = self.vault.derive_graph_key(&graph_id).await?;
 
-        // Get current identity anchor
-        let identity_anchor = self.vault.latest_identity_anchor();
-
         Ok(Graph::new(
             graph_id,
             graph_key,
-            identity_anchor,
             self.vault.clone(),
             self.store.clone(),
             self.staging.clone(),
@@ -87,13 +83,9 @@ impl Client {
         // Get graph key from vault
         let graph_key = self.vault.derive_graph_key(&graph_id).await?;
 
-        // Get current identity anchor
-        let identity_anchor = self.vault.latest_identity_anchor();
-
         Ok(Graph::new(
             graph_id,
             graph_key,
-            identity_anchor,
             self.vault.clone(),
             self.store.clone(),
             self.staging.clone(),

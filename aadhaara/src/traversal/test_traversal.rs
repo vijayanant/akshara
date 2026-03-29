@@ -7,6 +7,7 @@ use crate::{
         create_chain, create_dummy_root, create_identity, create_valid_anchor, walker::GraphWalker,
     },
 };
+use sha2::Digest;
 
 #[tokio::test]
 async fn walker_with_corrupted_index_block() {
@@ -147,12 +148,17 @@ async fn walker_handles_manifest_cycles_gracefully() {
 
     // To test cycles in ancestors, we must use from_raw_parts to force a self-pointer
     let cycle_id = ManifestId::from_sha256(&[0x99; 32]);
+
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(identity.derivation_path().as_bytes());
+    let signer_path_hash: [u8; 32] = hasher.finalize().into();
+
     let header = crate::graph::manifest::ManifestHeader {
         graph_id,
         content_root: root,
         parents: vec![cycle_id], // Point to self!
         identity_anchor: anchor,
-        signer_path: identity.derivation_path().to_string(),
+        signer_path_hash,
         created_at: 12345,
     };
 

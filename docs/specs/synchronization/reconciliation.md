@@ -96,9 +96,26 @@ Reconciliation is the process of identifying the difference between two separate
 | **Surplus** | `Surplus(A, B) = Known(B) - Known(A)` |
 | **Delta** | `Delta(Surplus) = Surplus ∪ { b ∈ Blocks | b referenced by m ∈ Surplus }` |
 
+## 4. Sync Modes
+
+Akshara supports two reconciliation modes to balance performance and completeness.
+
+### 4.1. Fast Sync (Shallow Reconciliation)
+*   **Purpose:** Rapid state availability for edge devices.
+*   **Logic:** The `Reconciler` recursively identifies missing `Manifests` and their immediate `content_root` blocks. It stops the recursive walk at the **Lowest Common Ancestor (LCA)** of the manifests.
+*   **Invariant:** Only the latest versions of resources (and any concurrent conflicts) are identified. Historical "atoms" (block parents) older than the LCA are ignored.
+
+### 4.2. Full Sync (Deep Reconciliation)
+*   **Purpose:** Archival durability and total history preservation (Relays).
+*   **Logic:** The `Reconciler` recursively identifies EVERY `Manifest` and EVERY `Block` parent in the surplus history.
+*   **Invariant:** Every atom of the graph is identified, ensuring the entire Resource DAG is preserved.
+
+### 4.3. Conflict Identification
+Regardless of the mode, the `Reconciler` MUST identify **concurrent heads** (forks). If multiple manifests share a common ancestor but have no common child, all divergent blocks for a given path MUST be included in the `Delta` to ensure the application layer can surface the conflict to the user.
+
 ---
 
-## 4. Reconciliation Algorithm
+## 5. Reconciliation Algorithm
 
 ### 4.1. Main Algorithm
 

@@ -13,7 +13,7 @@ pub struct ManifestHeader {
     pub(crate) content_root: BlockId,
     pub(crate) parents: Vec<ManifestId>,
     pub(crate) identity_anchor: ManifestId,
-    pub(crate) signer_path: String,
+    pub(crate) signer_path_hash: [u8; 32],
     pub(crate) created_at: i64,
 }
 
@@ -41,12 +41,17 @@ impl Manifest {
         // determinism across different devices (Rebirth invariant).
         let created_at = 0i64;
 
+        // PATH OBFUSCATION: Hash the signer path to prevent Relay-side analysis
+        let mut path_hasher = Sha256::new();
+        path_hasher.update(signer.derivation_path().as_bytes());
+        let signer_path_hash: [u8; 32] = path_hasher.finalize().into();
+
         let header = ManifestHeader {
             graph_id,
             content_root,
             parents,
             identity_anchor,
-            signer_path: signer.derivation_path().to_string(),
+            signer_path_hash,
             created_at,
         };
 
@@ -96,8 +101,8 @@ impl Manifest {
         self.header.created_at
     }
 
-    pub fn signer_path(&self) -> &str {
-        &self.header.signer_path
+    pub fn signer_path_hash(&self) -> &[u8; 32] {
+        &self.header.signer_path_hash
     }
 
     /// Public-Crate API: Used by sibling crates for wire mapping.
@@ -144,12 +149,7 @@ impl Manifest {
         }
         hasher.update(header.identity_anchor.as_ref());
         hasher.update(author.as_bytes());
-
-        // PATH OBFUSCATION: Hash the signer path to prevent Relay-side analysis
-        let mut path_hasher = Sha256::new();
-        path_hasher.update(header.signer_path.as_bytes());
-        hasher.update(path_hasher.finalize());
-
+        hasher.update(header.signer_path_hash);
         hasher.update(header.created_at.to_le_bytes());
 
         ManifestId::from_sha256(&hasher.finalize())

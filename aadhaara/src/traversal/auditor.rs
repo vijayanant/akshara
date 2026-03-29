@@ -4,6 +4,7 @@ use crate::base::error::AksharaError;
 use crate::graph::{Block, Manifest};
 use crate::identity::IdentityGraph;
 use crate::state::store::GraphStore;
+use sha2::Digest;
 use tracing::{Level, debug, span};
 
 /// `Auditor` is the platform's Trust Gatekeeper.
@@ -45,15 +46,18 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
 
         // Tier 2: Path-Aware Purpose Enforcement
         // Genesis manifests (administrative) MUST be signed by a Legislator (m/0')
-        if manifest.identity_anchor() == ManifestId::null()
-            && !crate::identity::paths::is_legislator_path(manifest.signer_path())
-        {
-            return Err(crate::base::error::AksharaError::Integrity(
-                crate::base::error::IntegrityError::UnauthorizedSigner(format!(
-                    "Administrative action requires Legislator branch, but signed by {}",
-                    manifest.signer_path()
-                )),
-            ));
+        if manifest.identity_anchor() == ManifestId::null() {
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(b"m/44'/999'/0'/0'/0'"); // Standard Akshara Legislator path
+            let legislator_hash: [u8; 32] = hasher.finalize().into();
+
+            if manifest.signer_path_hash() != &legislator_hash {
+                return Err(crate::base::error::AksharaError::Integrity(
+                    crate::base::error::IntegrityError::UnauthorizedSigner(
+                        "Administrative action requires Legislator branch (m/0') hash, but found mismatch".to_string()
+                    ),
+                ));
+            }
         }
 
         // Tier 3: Social Authority (Causality)
