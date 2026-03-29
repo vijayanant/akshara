@@ -106,6 +106,11 @@ impl BlockId {
         BlockId(Address(cid))
     }
 
+    /// Returns a null BlockId (all zeros).
+    pub fn null() -> Self {
+        Self::from_sha256(&[0u8; 32])
+    }
+
     /// Returns the raw binary representation of the identifier.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.0.to_bytes()
