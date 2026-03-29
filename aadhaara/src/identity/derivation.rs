@@ -3,6 +3,8 @@ use ed25519_dalek::SigningKey;
 use hmac::{Hmac, Mac};
 use sha2::Sha512;
 
+use zeroize::{Zeroize, Zeroizing};
+
 /// Implements SLIP-0010 Hardened Derivation for Ed25519.
 ///
 /// This is the mathematical engine of the Akshara Identity tree. It follows
@@ -12,12 +14,13 @@ pub fn derive_slip0010_key(seed: &[u8; 64], path: &str) -> Result<SigningKey, Ak
     let mut hmac = Hmac::<Sha512>::new_from_slice(b"ed25519 seed")
         .map_err(|e| AksharaError::InternalError(e.to_string()))?;
     hmac.update(seed);
-    let output = hmac.finalize().into_bytes();
+    let mut output = hmac.finalize().into_bytes();
 
-    let mut current_key = [0u8; 32];
-    let mut current_chain = [0u8; 32];
+    let mut current_key = Zeroizing::new([0u8; 32]);
+    let mut current_chain = Zeroizing::new([0u8; 32]);
     current_key.copy_from_slice(&output[0..32]);
     current_chain.copy_from_slice(&output[32..64]);
+    output.zeroize();
 
     let segments = path.split('/').collect::<Vec<_>>();
     if segments[0] != "m" {
@@ -41,18 +44,21 @@ pub fn derive_slip0010_key(seed: &[u8; 64], path: &str) -> Result<SigningKey, Ak
             )));
         };
 
-        let mut hmac = Hmac::<Sha512>::new_from_slice(&current_chain)
+        let mut hmac = Hmac::<Sha512>::new_from_slice(current_chain.as_slice())
             .map_err(|e| AksharaError::InternalError(e.to_string()))?;
 
         // SLIP-0010 Hardened Step: [0x00] || [ParentKey] || [Index]
         hmac.update(&[0x00]);
-        hmac.update(&current_key);
+        hmac.update(current_key.as_slice());
         hmac.update(&index.to_be_bytes());
-        let output = hmac.finalize().into_bytes();
+        let mut output = hmac.finalize().into_bytes();
 
         current_key.copy_from_slice(&output[0..32]);
         current_chain.copy_from_slice(&output[32..64]);
+        output.zeroize();
     }
 
-    Ok(SigningKey::from_bytes(&current_key))
+    Ok(SigningKey::from_bytes(
+        current_key.as_slice().try_into().unwrap(),
+    ))
 }

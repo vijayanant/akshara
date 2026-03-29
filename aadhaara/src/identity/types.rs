@@ -43,9 +43,11 @@ impl Identity {
 }
 
 /// `SecretIdentity` is a functional credential derived for a specific path.
+#[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub struct SecretIdentity {
     pub(crate) signing_key: SigningSecretKey,
     pub(crate) encryption_key: EncryptionSecretKey,
+    #[zeroize(skip)]
     pub(crate) public: Identity,
     pub(crate) derivation_path: String,
 }
@@ -250,11 +252,11 @@ impl SecretIdentity {
     }
 
     /// Serialize the identity to bytes (64 bytes: 32-byte signing key + 32-byte encryption key).
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
         let mut bytes = Vec::with_capacity(64);
         bytes.extend_from_slice(self.signing_key.as_bytes());
         bytes.extend_from_slice(self.encryption_key.as_bytes());
-        bytes
+        Zeroizing::new(bytes)
     }
 
     /// Deserialize an identity from bytes (64 bytes).

@@ -139,21 +139,22 @@ impl PlatformVault {
     }
 
     /// Load a specific branch from keychain.
-    fn load_branch(&self, index: u32) -> Result<Vec<u8>> {
+    fn load_branch(&self, index: u32) -> Result<Zeroizing<Vec<u8>>> {
         let key = Self::branch_key(index);
         let entry = keyring::Entry::new(&self.service, &key)
             .map_err(|e| VaultError::Keychain(format!("Keychain entry creation failed: {}", e)))?;
 
-        let hex_str = entry
-            .get_password()
-            .map_err(|e| VaultError::KeyNotFound(format!("Branch {} not found: {}", index, e)))?;
+        let hex_str =
+            Zeroizing::new(entry.get_password().map_err(|e| {
+                VaultError::KeyNotFound(format!("Branch {} not found: {}", index, e))
+            })?);
 
-        // Decode from hex
-        let bytes = hex::decode(&hex_str).map_err(|e| {
+        // Decode from hex into a zeroizing vector
+        let bytes = hex::decode(&*hex_str).map_err(|e| {
             VaultError::KeyNotFound(format!("Branch {} decode failed: {}", index, e))
         })?;
 
-        Ok(bytes)
+        Ok(Zeroizing::new(bytes))
     }
 
     /// Save a branch to keychain.
@@ -162,7 +163,7 @@ impl PlatformVault {
         let entry = keyring::Entry::new(&self.service, &key)
             .map_err(|e| VaultError::Keychain(format!("Keychain entry creation failed: {}", e)))?;
 
-        let hex_str = hex::encode(bytes);
+        let hex_str = Zeroizing::new(hex::encode(bytes));
         entry
             .set_password(&hex_str)
             .map_err(|e| VaultError::Keychain(e.to_string()))?;
