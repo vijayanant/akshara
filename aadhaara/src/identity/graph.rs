@@ -160,6 +160,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
             new_root,
             parents,
             ManifestId::null(), // Identity graph is self-anchored
+            Address::null(),
             signer,
             None,
         );

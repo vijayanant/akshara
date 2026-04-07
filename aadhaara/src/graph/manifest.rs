@@ -1,4 +1,4 @@
-use crate::base::address::{BlockId, GraphId, ManifestId};
+use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::{AksharaSigner, Signature, SigningPublicKey};
 use crate::base::error::{AksharaError, CryptoError, IntegrityError};
 use metrics::counter;
@@ -13,6 +13,7 @@ pub struct ManifestHeader {
     pub(crate) content_root: BlockId,
     pub(crate) parents: Vec<ManifestId>,
     pub(crate) identity_anchor: ManifestId,
+    pub(crate) schema_anchor: Address, // Points to the physical layout rules
     pub(crate) signer_path_hash: [u8; 32],
     pub(crate) authority_proof: Option<crate::base::crypto::BlockContent>,
     pub(crate) created_at: i64,
@@ -40,6 +41,7 @@ impl Manifest {
             hasher.update(parent.as_ref());
         }
         hasher.update(header.identity_anchor.as_ref());
+        hasher.update(header.schema_anchor.as_ref()); // Bind schema to CID
         hasher.update(author.as_bytes());
         hasher.update(header.signer_path_hash);
         hasher.update(header.created_at.to_le_bytes());
@@ -52,6 +54,7 @@ impl Manifest {
         content_root: BlockId,
         parents: Vec<ManifestId>,
         identity_anchor: ManifestId,
+        schema_anchor: Address,
         signer: &impl AksharaSigner,
         authority_proof: Option<crate::base::crypto::BlockContent>,
     ) -> Self {
@@ -72,6 +75,7 @@ impl Manifest {
             content_root,
             parents,
             identity_anchor,
+            schema_anchor,
             signer_path_hash,
             authority_proof,
             created_at,
@@ -109,6 +113,10 @@ impl Manifest {
 
     pub fn identity_anchor(&self) -> ManifestId {
         self.header.identity_anchor
+    }
+
+    pub fn schema_anchor(&self) -> Address {
+        self.header.schema_anchor
     }
 
     pub fn author(&self) -> &SigningPublicKey {
@@ -170,6 +178,7 @@ impl Manifest {
             hasher.update(p.as_ref());
         }
         hasher.update(header.identity_anchor.as_ref());
+        hasher.update(header.schema_anchor.as_ref()); // Bind schema to CID
         hasher.update(author.as_bytes());
         hasher.update(header.signer_path_hash);
 

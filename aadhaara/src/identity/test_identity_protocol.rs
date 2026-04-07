@@ -108,6 +108,7 @@ async fn test_akshara_full_authority_chain_verification() {
             doc_root,
             vec![],
             ManifestId::null(),
+            Address::null(),
             &alice_phone,
             None,
         );

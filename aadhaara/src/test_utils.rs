@@ -65,8 +65,30 @@ impl TestFactory {
             root,
             parents,
             self.anchor,
+            Address::null(), // Default schema anchor
             &self.identity,
             None, // Default to no authority proof
+        );
+
+        self.store.put_manifest(&manifest).await.unwrap();
+        manifest
+    }
+
+    /// Creates a manifest with a specific schema anchor.
+    pub async fn create_manifest_with_schema(
+        &self,
+        root: BlockId,
+        parents: Vec<ManifestId>,
+        schema: Address,
+    ) -> Manifest {
+        let manifest = Manifest::new(
+            self.graph_id,
+            root,
+            parents,
+            self.anchor,
+            schema,
+            &self.identity,
+            None,
         );
 
         self.store.put_manifest(&manifest).await.unwrap();
@@ -123,6 +145,7 @@ impl TestFactory {
             root_index_id,
             vec![],
             ManifestId::null(),
+            Address::null(),
             &self.identity,
             None,
         );

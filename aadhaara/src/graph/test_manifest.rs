@@ -1,7 +1,7 @@
 use crate::graph::Manifest;
 use crate::graph::manifest::ManifestHeader;
 use crate::traversal::create_identity;
-use crate::{AksharaSigner, BlockId, GraphId, ManifestId};
+use crate::{Address, AksharaSigner, BlockId, GraphId, ManifestId};
 
 #[test]
 fn manifest_integrity_success() {
@@ -11,7 +11,15 @@ fn manifest_integrity_success() {
     let parents = vec![ManifestId::from_sha256(&[2u8; 32])];
     let anchor = ManifestId::null();
 
-    let manifest = Manifest::new(graph_id, content_root, parents, anchor, &identity, None);
+    let manifest = Manifest::new(
+        graph_id,
+        content_root,
+        parents,
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
 
     assert!(manifest.verify_integrity().is_ok());
 }
@@ -28,6 +36,7 @@ fn manifest_identity_anchor_mismatch_fails() {
         content_root,
         vec![],
         valid_anchor,
+        Address::null(),
         &identity,
         None,
     );
@@ -52,6 +61,7 @@ fn manifest_integrity_fails_on_tampered_content_root() {
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
         ManifestId::null(),
+        Address::null(),
         &identity,
         None,
     );
@@ -70,6 +80,7 @@ fn manifest_integrity_fails_on_tampered_metadata() {
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
         ManifestId::null(),
+        Address::null(),
         &identity,
         None,
     );
@@ -88,6 +99,7 @@ fn manifest_integrity_fails_on_tampered_signature() {
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
         ManifestId::null(),
+        Address::null(),
         &identity,
         None,
     );
@@ -109,8 +121,24 @@ fn manifest_id_depends_on_content_root_and_authority() {
     let parents = vec![];
     let anchor = ManifestId::null();
 
-    let m1 = Manifest::new(graph_id, content_root, parents.clone(), anchor, &id_a, None);
-    let m2 = Manifest::new(graph_id, content_root, parents, anchor, &id_b, None);
+    let m1 = Manifest::new(
+        graph_id,
+        content_root,
+        parents.clone(),
+        anchor,
+        Address::null(),
+        &id_a,
+        None,
+    );
+    let m2 = Manifest::new(
+        graph_id,
+        content_root,
+        parents,
+        anchor,
+        Address::null(),
+        &id_b,
+        None,
+    );
 
     assert_ne!(
         m1.id(),
@@ -127,6 +155,7 @@ fn manifest_is_signed_by_author() {
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
         ManifestId::null(),
+        Address::null(),
         &identity,
         None,
     );
@@ -142,6 +171,7 @@ fn manifest_restores_from_raw_parts() {
         BlockId::from_sha256(&[1u8; 32]),
         vec![],
         ManifestId::null(),
+        Address::null(),
         &identity,
         None,
     );
@@ -151,6 +181,7 @@ fn manifest_restores_from_raw_parts() {
         content_root: original.content_root(),
         parents: original.parents().to_vec(),
         identity_anchor: original.identity_anchor(),
+        schema_anchor: original.schema_anchor(),
         signer_path_hash: *original.signer_path_hash(),
         authority_proof: None,
         created_at: original.created_at(),
@@ -176,7 +207,15 @@ fn manifest_parent_cycle_detection() {
     let anchor = ManifestId::null();
 
     // Create a normal manifest first
-    let parent_manifest = Manifest::new(graph_id, content_root, vec![], anchor, &identity, None);
+    let parent_manifest = Manifest::new(
+        graph_id,
+        content_root,
+        vec![],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
 
     // Create child that references parent
     let child_manifest = Manifest::new(
@@ -184,6 +223,7 @@ fn manifest_parent_cycle_detection() {
         content_root,
         vec![parent_manifest.id()],
         anchor,
+        Address::null(),
         &identity,
         None,
     );

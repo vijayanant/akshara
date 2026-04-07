@@ -50,6 +50,7 @@ async fn create_identity_graph(store: &InMemoryStore, identity: &SecretIdentity)
         root_index_id,
         vec![],
         ManifestId::null(),
+        Address::null(),
         identity,
         None,
     );
@@ -205,6 +206,7 @@ async fn test_identity_graph_ghost_branch_prevention() {
         root_v1,
         vec![],
         ManifestId::null(),
+        Address::null(),
         &identity,
         None,
     );
@@ -230,6 +232,7 @@ async fn test_identity_graph_ghost_branch_prevention() {
         root_v2,
         vec![manifest_v1.id()],
         manifest_v1.id(),
+        Address::null(),
         &identity,
         None,
     );
@@ -284,6 +287,7 @@ async fn test_identity_graph_revocation_scenario() {
         root_v1,
         vec![],
         ManifestId::null(),
+        Address::null(),
         &identity,
         None,
     );
@@ -310,6 +314,7 @@ async fn test_identity_graph_revocation_scenario() {
         root_v2,
         vec![manifest_v1.id()],
         manifest_v1.id(),
+        Address::null(),
         &identity,
         None,
     );

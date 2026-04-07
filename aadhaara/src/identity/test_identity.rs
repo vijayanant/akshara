@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
 
-use crate::base::address::GraphId;
+use crate::base::address::{Address, GraphId, ManifestId};
 use crate::base::crypto::AksharaSigner;
 use crate::identity::SecretIdentity;
 
@@ -158,7 +158,8 @@ async fn identity_adversarial_shadow_isolation() {
         gid_b,
         data_root,
         vec![],
-        crate::base::address::ManifestId::null(),
+        ManifestId::null(),
+        Address::null(),
         &shadow_a,
         None,
     );

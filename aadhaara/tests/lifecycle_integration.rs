@@ -43,12 +43,14 @@ async fn test_sync_recursive_index_structure() {
 
     let manifest = Manifest::new(
         graph_id,
-        root_index_id,
+        leaf.id(),
         vec![],
         ManifestId::null(),
+        Address::null(),
         &identity,
         None,
     );
+
     laptop_store.put_manifest(&manifest).await.unwrap();
 
     relay_store.put_manifest(&manifest).await.unwrap();
@@ -129,6 +131,7 @@ async fn test_identity_rebirth_bootstrap() {
             id_root.id(),
             vec![],
             ManifestId::null(),
+            Address::null(),
             &laptop_identity,
             None,
         );
@@ -237,10 +240,12 @@ async fn test_full_lifecycle_stateless_journey() {
             project_id,
             data.id(),
             vec![],
-            ManifestId::null(), // genesis
+            ManifestId::null(),
+            Address::null(),
             &laptop_identity.derive_shadow_identity(&project_id).unwrap(),
             None,
         );
+
         relay_store.put_block(&data).await.unwrap();
         relay_store.put_manifest(&manifest).await.unwrap();
 

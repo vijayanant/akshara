@@ -34,6 +34,11 @@ pub const CODEC_AKSHARA_MANIFEST: u64 = 0x58;
 pub struct Address(Cid);
 
 impl Address {
+    /// Returns a null address (all zeros).
+    pub fn null() -> Self {
+        Self(Cid::default())
+    }
+
     /// Returns the raw binary representation of the address.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.0.to_bytes()
@@ -47,6 +52,12 @@ impl Address {
     /// Internal accessor for the underlying CID.
     pub(crate) fn as_cid(&self) -> &Cid {
         &self.0
+    }
+}
+
+impl AsRef<[u8]> for Address {
+    fn as_ref(&self) -> &[u8] {
+        self.0.hash().digest()
     }
 }
 

@@ -40,8 +40,15 @@ async fn test_identity_graph_device_resolution() {
 
     // 4. Create Identity Manifest
     let anchor = ManifestId::null();
-    let manifest =
-        crate::graph::Manifest::new(graph_id, root_index_id, vec![], anchor, &identity, None);
+    let manifest = crate::graph::Manifest::new(
+        graph_id,
+        root_index_id,
+        vec![],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
     store.put_manifest(&manifest).await.unwrap();
 
     // 5. Walk the Identity Graph
@@ -142,7 +149,15 @@ async fn test_identity_graph_revocation() {
         .await
         .unwrap();
 
-    let manifest = Manifest::new(graph_id, root_index_id, vec![], anchor, &master, None);
+    let manifest = Manifest::new(
+        graph_id,
+        root_index_id,
+        vec![],
+        anchor,
+        Address::null(),
+        &master,
+        None,
+    );
     store.put_manifest(&manifest).await.unwrap();
 
     {

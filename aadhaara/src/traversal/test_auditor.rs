@@ -66,6 +66,7 @@ async fn test_auditor_rejects_invalid_anchor() {
         block.id(),
         vec![],
         fake_anchor,
+        Address::null(),
         &factory.identity,
         None,
     );
@@ -219,6 +220,7 @@ async fn test_auditor_rejects_admin_non_legislator() {
         auth_block.id(), // simplified for test
         vec![],
         ManifestId::null(),
+        Address::null(),
         &executive_identity,
         None,
     );

@@ -35,6 +35,7 @@ async fn test_negative_identity_graph_swap() {
         root,
         vec![],
         alice_anchor,
+        Address::null(),
         &bob, // Bob signs, but uses Alice's history
         None,
     );
@@ -106,6 +107,7 @@ async fn test_negative_identity_stale_authority() {
         root_index_id,
         vec![genesis_anchor],
         genesis_anchor,
+        Address::null(),
         &alice,
         None,
     );
@@ -118,6 +120,7 @@ async fn test_negative_identity_stale_authority() {
         BlockId::from_sha256(&[0x11; 32]),
         vec![],
         genesis_anchor,
+        Address::null(),
         &device_a,
         None,
     );
@@ -187,6 +190,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
         root_index_id,
         vec![anchor_1],
         anchor_1,
+        Address::null(),
         &alice_legislator,
         None,
     );
@@ -202,6 +206,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
         root,
         vec![],
         null_anchor,
+        Address::null(),
         &alice_phone,
         None,
     );
@@ -254,6 +259,7 @@ async fn test_negative_path_hijack_prefix() {
         crate::traversal::create_dummy_root(),
         vec![],
         anchor,
+        Address::null(),
         &malicious_key,
         None,
     );
@@ -303,7 +309,15 @@ async fn test_adversarial_ghost_branch_rejection() {
         .unwrap();
     let id_root = builder.build(gid, &store, &alice, &gkey).await.unwrap();
 
-    let id_manifest_v1 = Manifest::new(gid, id_root, vec![], ManifestId::null(), &alice, None);
+    let id_manifest_v1 = Manifest::new(
+        gid,
+        id_root,
+        vec![],
+        ManifestId::null(),
+        Address::null(),
+        &alice,
+        None,
+    );
     store.put_manifest(&id_manifest_v1).await.unwrap();
 
     // 3. Revoke the Laptop in ID_V2
@@ -332,6 +346,7 @@ async fn test_adversarial_ghost_branch_rejection() {
         id_root_v2,
         vec![id_manifest_v1.id()],
         id_manifest_v1.id(),
+        Address::null(),
         &alice,
         None,
     );
@@ -345,6 +360,7 @@ async fn test_adversarial_ghost_branch_rejection() {
         data_root,
         vec![],
         id_manifest_v1.id(),
+        Address::null(),
         &laptop,
         None,
     );
@@ -426,6 +442,7 @@ async fn test_revocation_detected_without_latest_identity() {
         root_index_id,
         vec![genesis_anchor],
         genesis_anchor,
+        Address::null(),
         &alice,
         None,
     );
@@ -462,6 +479,7 @@ async fn test_revocation_detected_without_latest_identity() {
         root_after_revocation,
         vec![anchor_with_phone_id],
         anchor_with_phone_id,
+        Address::null(),
         &alice,
         None,
     );
@@ -477,7 +495,8 @@ async fn test_revocation_detected_without_latest_identity() {
         root,
         vec![],
         anchor_after_revocation_id, // Anchored to state AFTER revocation
-        &phone,                     // Signed by the revoked phone
+        Address::null(),
+        &phone, // Signed by the revoked phone
         None,
     );
 
@@ -520,7 +539,15 @@ async fn test_auditor_rejects_manifest_with_missing_identity_anchor() {
     // Sign a data manifest pointing to the missing identity anchor
     let graph_id = GraphId::new();
     let root = BlockId::from_sha256(&[0xDD; 32]);
-    let manifest = Manifest::new(graph_id, root, vec![], fake_identity_anchor, &alice, None);
+    let manifest = Manifest::new(
+        graph_id,
+        root,
+        vec![],
+        fake_identity_anchor,
+        Address::null(),
+        &alice,
+        None,
+    );
 
     let auditor = Auditor::new(&store);
     let result = auditor.audit_manifest(&manifest, Some(&graph_id)).await;
@@ -537,7 +564,15 @@ async fn test_auditor_rejects_manifest_with_missing_identity_anchor() {
     // Now create a real identity anchor and retry — should pass
     let identity_anchor = create_valid_anchor(&store, &alice).await;
 
-    let manifest2 = Manifest::new(graph_id, root, vec![], identity_anchor, &alice, None);
+    let manifest2 = Manifest::new(
+        graph_id,
+        root,
+        vec![],
+        identity_anchor,
+        Address::null(),
+        &alice,
+        None,
+    );
     let auditor = Auditor::new(&store);
     assert!(
         auditor
@@ -572,12 +607,28 @@ async fn test_auditor_rejects_manifest_from_wrong_graph() {
     // Manifest for graph_a — valid
     let graph_a = GraphId::new();
     let root_a = BlockId::from_sha256(&[0xAA; 32]);
-    let manifest_a = Manifest::new(graph_a, root_a, vec![], anchor, &alice, None);
+    let manifest_a = Manifest::new(
+        graph_a,
+        root_a,
+        vec![],
+        anchor,
+        Address::null(),
+        &alice,
+        None,
+    );
 
     // Manifest for graph_b — also valid internally, but WRONG graph
     let graph_b = GraphId::new();
     let root_b = BlockId::from_sha256(&[0xBB; 32]);
-    let manifest_b = Manifest::new(graph_b, root_b, vec![], anchor, &alice, None);
+    let manifest_b = Manifest::new(
+        graph_b,
+        root_b,
+        vec![],
+        anchor,
+        Address::null(),
+        &alice,
+        None,
+    );
 
     // Auditor auditing graph_a receives graph_b's manifest
     let auditor = Auditor::new(&store);

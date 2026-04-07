@@ -43,7 +43,7 @@ impl IndexBuilder {
 
                 match entry {
                     IndexNode::Branch(next_map) => current_map = next_map,
-                    IndexNode::Leaf(_) => {
+                    _ => {
                         return Err(AksharaError::InternalError(format!(
                             "Path conflict at segment: {}",
                             segment

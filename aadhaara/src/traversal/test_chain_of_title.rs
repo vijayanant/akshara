@@ -28,6 +28,7 @@ async fn test_chain_of_title_authorized_collaborator() {
         factory.dummy_root(),
         vec![alice_genesis.id()],
         bob_anchor,
+        Address::null(),
         &bob_id,
         None,
     );
@@ -77,6 +78,7 @@ async fn test_chain_of_title_authorized_collaborator() {
         root_index_id,
         vec![alice_genesis.id()],
         alice_anchor,
+        Address::null(),
         &alice_id,
         None,
     );
@@ -88,6 +90,7 @@ async fn test_chain_of_title_authorized_collaborator() {
         factory.dummy_root(),
         vec![alice_trust_manifest.id()],
         bob_anchor,
+        Address::null(),
         &bob_id,
         None,
     );
@@ -119,6 +122,7 @@ async fn test_chain_of_title_rejects_malicious_genesis_author() {
         bob.dummy_root(),
         vec![], // No parents = Genesis
         bob.anchor,
+        Address::null(),
         &bob.identity,
         None,
     );

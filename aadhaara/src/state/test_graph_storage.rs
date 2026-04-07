@@ -2,7 +2,7 @@ use rand::rngs::OsRng;
 use uuid::Uuid;
 
 use crate::{
-    BlockId, GraphId, GraphKey, ManifestId,
+    Address, BlockId, GraphId, GraphKey, ManifestId,
     graph::{Block, Manifest},
     identity::SecretIdentity,
     state::{GraphStore, in_memory_store::InMemoryStore},
@@ -32,7 +32,15 @@ async fn store_can_save_and_load_manifest() {
     let graph_id = GraphId::new();
     let root = create_dummy_root();
     let anchor = create_dummy_anchor();
-    let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity, None);
+    let manifest = Manifest::new(
+        graph_id,
+        root,
+        vec![],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
 
     let store = InMemoryStore::new();
     store.put_manifest(&manifest).await.expect("Save failed");
@@ -54,7 +62,15 @@ async fn store_tracks_single_head_linear_history() {
     let anchor = create_dummy_anchor();
 
     // 1. Root Manifest (A)
-    let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity, None);
+    let m_a = Manifest::new(
+        graph_id,
+        root,
+        vec![],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
     store.put_manifest(&m_a).await.unwrap();
 
     let heads = store.get_heads(&graph_id).await.unwrap();
@@ -62,7 +78,15 @@ async fn store_tracks_single_head_linear_history() {
     assert_eq!(heads[0], m_a.id());
 
     // 2. Child Manifest (B) -> Parent A
-    let m_b = Manifest::new(graph_id, root, vec![m_a.id()], anchor, &identity, None);
+    let m_b = Manifest::new(
+        graph_id,
+        root,
+        vec![m_a.id()],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
     store.put_manifest(&m_b).await.unwrap();
 
     let heads = store.get_heads(&graph_id).await.unwrap();
@@ -79,11 +103,27 @@ async fn store_tracks_multiple_heads_on_fork() {
     let key = create_dummy_key();
 
     // Root A
-    let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity, None);
+    let m_a = Manifest::new(
+        graph_id,
+        root,
+        vec![],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
     store.put_manifest(&m_a).await.unwrap();
 
     // Fork B -> A
-    let m_b = Manifest::new(graph_id, root, vec![m_a.id()], anchor, &identity, None);
+    let m_b = Manifest::new(
+        graph_id,
+        root,
+        vec![m_a.id()],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
     store.put_manifest(&m_b).await.unwrap();
 
     // Fork C -> A (Must differ from B content-wise)
@@ -103,6 +143,7 @@ async fn store_tracks_multiple_heads_on_fork() {
         unique_block.id(),
         vec![m_a.id()],
         anchor,
+        Address::null(),
         &identity,
         None,
     );
@@ -124,8 +165,24 @@ async fn store_merges_heads() {
     let key = create_dummy_key();
 
     // Setup Fork: B, C
-    let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity, None);
-    let m_b = Manifest::new(graph_id, root, vec![m_a.id()], anchor, &identity, None);
+    let m_a = Manifest::new(
+        graph_id,
+        root,
+        vec![],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
+    let m_b = Manifest::new(
+        graph_id,
+        root,
+        vec![m_a.id()],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
 
     // Fork C needs unique content
     let unique_block = Block::new(
@@ -143,6 +200,7 @@ async fn store_merges_heads() {
         unique_block.id(),
         vec![m_a.id()],
         anchor,
+        Address::null(),
         &identity,
         None,
     );
@@ -157,6 +215,7 @@ async fn store_merges_heads() {
         root,
         vec![m_b.id(), m_c.id()],
         anchor,
+        Address::null(),
         &identity,
         None,
     );
@@ -174,8 +233,24 @@ async fn store_handles_out_of_order_insertion() {
     let root = create_dummy_root();
     let anchor = create_dummy_anchor();
 
-    let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity, None);
-    let m_b = Manifest::new(graph_id, root, vec![m_a.id()], anchor, &identity, None);
+    let m_a = Manifest::new(
+        graph_id,
+        root,
+        vec![],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
+    let m_b = Manifest::new(
+        graph_id,
+        root,
+        vec![m_a.id()],
+        anchor,
+        Address::null(),
+        &identity,
+        None,
+    );
 
     // 1. Insert Child B first
     store.put_manifest(&m_b).await.unwrap();
@@ -203,6 +278,7 @@ async fn store_isolates_different_graph_ids() {
         BlockId::from_sha256(&[0xAA; 32]),
         vec![],
         anchor,
+        Address::null(),
         &identity,
         None,
     );
@@ -214,6 +290,7 @@ async fn store_isolates_different_graph_ids() {
         BlockId::from_sha256(&[0xBB; 32]),
         vec![],
         anchor,
+        Address::null(),
         &identity,
         None,
     );
@@ -260,6 +337,7 @@ async fn store_handles_concurrent_writes_to_same_graph() {
                 BlockId::from_sha256(&[i as u8; 32]),
                 vec![],
                 anchor,
+                Address::null(),
                 &identity,
                 None,
             );
