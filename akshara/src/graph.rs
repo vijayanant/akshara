@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use zeroize::Zeroizing;
 
 use akshara_aadhaara::{
     Block, BlockType, GraphId, GraphKey, GraphStore, InMemoryStore, IndexBuilder, Manifest,
@@ -22,7 +23,7 @@ use crate::vault::Vault;
 /// This ensures secret keys have minimal lifetime in memory.
 pub struct Graph {
     graph_id: GraphId,
-    graph_key: GraphKey,
+    graph_key: Zeroizing<GraphKey>,
     vault: Arc<dyn Vault>,
     store: InMemoryStore,
     staging: Arc<Mutex<Box<dyn StagingStore>>>,
@@ -50,7 +51,7 @@ impl Graph {
     ) -> Self {
         Self {
             graph_id,
-            graph_key,
+            graph_key: Zeroizing::new(graph_key),
             vault,
             store,
             staging,
