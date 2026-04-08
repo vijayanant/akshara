@@ -116,6 +116,13 @@ impl<T: SyncTransport> SyncEngine<T> {
                 )));
             }
 
+            // THE AUDITOR: Create once, use for both manifest and block ingestion.
+            let latest_id = self.vault.latest_identity_anchor();
+            let mut auditor = akshara_aadhaara::Auditor::new(store, self.root_key.clone());
+            if latest_id != akshara_aadhaara::ManifestId::null() {
+                auditor = auditor.with_latest_identity(latest_id);
+            }
+
             // Ingest into store
             if expected_cid.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
                 let manifest =
@@ -125,12 +132,6 @@ impl<T: SyncTransport> SyncEngine<T> {
                         })?;
 
                 // THE AUTHORITY AUDIT: Verify the author's right to speak before ingestion
-                let latest_id = self.vault.latest_identity_anchor();
-                let mut auditor = akshara_aadhaara::Auditor::new(store, self.root_key.clone());
-                if latest_id != akshara_aadhaara::ManifestId::null() {
-                    auditor = auditor.with_latest_identity(latest_id);
-                }
-
                 auditor.audit_manifest(&manifest).await.map_err(|e| {
                     Error::SyncFailed(format!(
                         "Authority audit failed for {}: {}",
@@ -160,6 +161,16 @@ impl<T: SyncTransport> SyncEngine<T> {
                 let block =
                     akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Block>(bytes)
                         .map_err(|e| Error::SyncFailed(format!("Failed to parse block: {}", e)))?;
+
+                // BLOCK AUTHORITY AUDIT: Verify mathematical integrity before ingestion.
+                // While the manifest authority was checked above, each block must also
+                // independently pass mathematical verification (hash + signature).
+                auditor.audit_block(&block).map_err(|e| {
+                    Error::SyncFailed(format!(
+                        "Block authority audit failed for {}: {}",
+                        expected_cid, e
+                    ))
+                })?;
 
                 store
                     .put_block(&block)
