@@ -1,5 +1,4 @@
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
-use crate::base::crypto::GraphKey;
 use crate::base::error::{AksharaError, IntegrityError};
 use crate::graph::{Block, BlockType, Manifest};
 use crate::identity::SecretIdentity;
@@ -115,7 +114,7 @@ async fn test_negative_identity_stale_authority() {
     // 2. Device A is added in a NEW identity snapshot
     let device_a_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let device_a = SecretIdentity::from_mnemonic(&device_a_mnemonic, "").unwrap();
-    let identity_key = GraphKey::new([0u8; 32]);
+    let identity_key = crate::identity::graph::IDENTITY_GRAPH_KEY;
     let signer_hex = device_a.public().signing_key().to_hex();
 
     // 1. Create the authorization block (The Leaf)
@@ -197,7 +196,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     let anchor_1 = create_valid_anchor(&store, &alice_legislator).await;
 
     // Explicitly authorize the Phone in a second identity snapshot
-    let identity_key = GraphKey::new([0u8; 32]);
+    let identity_key = crate::identity::graph::IDENTITY_GRAPH_KEY;
     let signer_hex = alice_phone.public().signing_key().to_hex();
 
     let auth_block = Block::new(
@@ -316,7 +315,7 @@ async fn test_adversarial_ghost_branch_rejection() {
 
     // 1. Genesis: Alice (Master) is the root.
     let gid = GraphId::new();
-    let gkey = GraphKey::new([0u8; 32]);
+    let gkey = crate::identity::graph::IDENTITY_GRAPH_KEY;
     let alice = master.derive_child("m/44'/999'/0'/0'/0'", None).unwrap();
 
     // 2. Authorize a Laptop

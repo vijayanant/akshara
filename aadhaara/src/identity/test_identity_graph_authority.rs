@@ -27,7 +27,7 @@ async fn create_credential_block(
 /// Helper: Create Identity Graph with credentials
 async fn create_identity_graph(store: &InMemoryStore, identity: &SecretIdentity) -> Manifest {
     let graph_id = GraphId::new();
-    let identity_key = GraphKey::new([0u8; 32]);
+    let identity_key = crate::identity::graph::IDENTITY_GRAPH_KEY;
     let signer_hex = identity.public().signing_key().to_hex();
 
     let auth_block = create_credential_block(store, graph_id, &identity_key, identity).await;
@@ -182,7 +182,7 @@ async fn test_identity_graph_ghost_branch_prevention() {
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
     let graph_id = GraphId::new();
-    let identity_key = GraphKey::new([0u8; 32]);
+    let identity_key = crate::identity::graph::IDENTITY_GRAPH_KEY;
 
     let signer_hex = identity.public().signing_key().to_hex();
     let auth_block = create_credential_block(&store, graph_id, &identity_key, &identity).await;
@@ -253,7 +253,7 @@ async fn test_identity_graph_revocation_scenario() {
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
     let graph_id = GraphId::new();
-    let identity_key = GraphKey::new([0u8; 32]);
+    let identity_key = crate::identity::graph::IDENTITY_GRAPH_KEY;
 
     let signer_hex = identity.public().signing_key().to_hex();
     let auth_block = create_credential_block(&store, graph_id, &identity_key, &identity).await;

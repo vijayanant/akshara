@@ -61,6 +61,11 @@ impl From<&str> for BlockType {
             "data" => Self::AksharaDataV1,
             "auth" => Self::AksharaAuthV1,
             "revocation" => Self::AksharaRevocationV1,
+            _ if s.starts_with("akshara.") => {
+                // SECURITY: Reserved namespace must use a known variant.
+                // Allowing Custom("akshara.*") would enable type confusion attacks.
+                panic!("BlockType: '{s}' uses reserved akshara.* namespace")
+            }
             _ => Self::Custom(s.to_string()),
         }
     }

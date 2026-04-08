@@ -1,7 +1,7 @@
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
-use crate::base::crypto::GraphKey;
 use crate::graph::{Block, BlockType, Manifest};
 use crate::identity::SecretIdentity;
+use crate::identity::graph::IDENTITY_GRAPH_KEY;
 use crate::state::in_memory_store::InMemoryStore;
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
@@ -57,7 +57,7 @@ async fn test_akshara_full_authority_chain_verification() {
             SecretIdentity::from_mnemonic_at_path(&mnemonic, passphrase, "m/44'/999'/0'/0'/0'")
                 .unwrap();
         let alice_pub = alice_master.public().signing_key().clone();
-        let graph_key = GraphKey::new([0u8; 32]);
+        let graph_key = IDENTITY_GRAPH_KEY;
         let id_graph_id = GraphId::new();
 
         // 1. Authorize a Phone (m/1'/0')
@@ -112,12 +112,11 @@ async fn test_akshara_full_authority_chain_verification() {
     // It only has the Relay store, the Manifest, and Alice's Master Public Key.
     {
         let walker = GraphWalker::new(&relay_store, alice_master_pub.clone());
-        let identity_key = GraphKey::new([0u8; 32]);
 
         // 1. Walk the graph to find the authorized key
         let path = format!("/credentials/{}", doc_manifest.author().to_hex());
         let resolved_addr = walker
-            .resolve_path(&id_graph_id, id_root_index, &path, &identity_key)
+            .resolve_path(&id_graph_id, id_root_index, &path, &IDENTITY_GRAPH_KEY)
             .await
             .unwrap();
 
@@ -126,7 +125,7 @@ async fn test_akshara_full_authority_chain_verification() {
             .await
             .unwrap()
             .unwrap();
-        let authorized_key_bytes = block.decrypt(&id_graph_id, &identity_key).unwrap();
+        let authorized_key_bytes = block.decrypt(&id_graph_id, &IDENTITY_GRAPH_KEY).unwrap();
 
         // 2. Verify: Does the key in the Identity Graph match the Signer?
         assert_eq!(authorized_key_bytes, doc_manifest.author().as_bytes());

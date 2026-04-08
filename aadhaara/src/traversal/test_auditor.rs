@@ -291,7 +291,7 @@ async fn test_auditor_rejects_admin_non_legislator() {
         SecretIdentity::from_mnemonic_at_path(&mnemonic, "", "m/44'/999'/0'/1'/0'").unwrap();
 
     let graph_id = GraphId::new();
-    let identity_key = GraphKey::new([0u8; 32]);
+    let identity_key = crate::identity::graph::IDENTITY_GRAPH_KEY;
 
     let auth_block = Block::new(
         graph_id,

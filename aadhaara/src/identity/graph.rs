@@ -6,6 +6,16 @@ use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
 use tracing::{Level, debug, span};
 
+/// Well-known key for identity graph `/auth/*` credential blocks.
+///
+/// The identity graph contains public authorization metadata (who is
+/// authorized, who is revoked) that any auditor must be able to read to
+/// verify signing authority. This key is not secret.
+///
+/// TODO: Split identity graph into public /auth/* (well-known key) and
+/// private /private/* (Branch 4 Keyring) for proper privacy isolation.
+pub(crate) const IDENTITY_GRAPH_KEY: GraphKey = GraphKey::new([1u8; 32]);
+
 /// `IdentityGraph` provides the logic for traversing and verifying a user's
 /// social authority timeline.
 pub struct IdentityGraph<'a, S: GraphStore + ?Sized> {
@@ -79,16 +89,15 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
             )))
         })?;
 
-        // 3. Walk the graph to find the credential registration
+        // Walk the graph to find the credential registration
         let walker = GraphWalker::new(self.store, expected_root_key.clone());
-        let identity_key = GraphKey::new([0u8; 32]);
         let devices_root = manifest.content_root();
         let graph_id = manifest.graph_id();
 
         // TIER A: Direct Verification (Master Executive Key)
         let path = format!("credentials/{}", signer.to_hex());
         let resolution_result = walker
-            .resolve_path(&graph_id, devices_root, &path, &identity_key)
+            .resolve_path(&graph_id, devices_root, &path, &IDENTITY_GRAPH_KEY)
             .await;
 
         if let Ok(addr) = resolution_result {
@@ -101,7 +110,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         // If not found directly, we must check if this is a shadow of ANY authorized key.
         // This is an O(N) check of authorized keys, but N (devices) is typically < 10.
         let authorized_keys = self
-            .list_authorized_executives(&graph_id, devices_root, &identity_key)
+            .list_authorized_executives(&graph_id, devices_root)
             .await?;
 
         for exec_pub in authorized_keys {
@@ -160,13 +169,12 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         &self,
         graph_id: &GraphId,
         root: BlockId,
-        key: &GraphKey,
     ) -> Result<Vec<SigningPublicKey>, AksharaError> {
         let walker = GraphWalker::new(self.store, SigningPublicKey::new([0u8; 32])); // Root not used for read-only index walk
 
         // 1. Resolve the /credentials directory
         let creds_dir_addr = match walker
-            .resolve_path(graph_id, root, "credentials", key)
+            .resolve_path(graph_id, root, "credentials", &IDENTITY_GRAPH_KEY)
             .await
         {
             Ok(addr) => addr,
@@ -182,7 +190,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         })?;
 
         // 2. Parse the index block
-        let plaintext = creds_block.decrypt(graph_id, key)?;
+        let plaintext = creds_block.decrypt(graph_id, &IDENTITY_GRAPH_KEY)?;
         let index: std::collections::BTreeMap<String, Address> =
             crate::base::encoding::from_canonical_bytes(&plaintext).map_err(|_| {
                 AksharaError::Integrity(IntegrityError::TypeMismatch(creds_dir_addr, "Index Map"))

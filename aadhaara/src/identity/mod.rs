@@ -1,5 +1,5 @@
 pub mod derivation;
-pub mod graph;
+pub(crate) mod graph;
 pub mod mnemonic;
 pub mod paths;
 pub mod types;

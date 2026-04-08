@@ -2,6 +2,7 @@ use akshara_aadhaara::{
     Address, Block, BlockId, GraphId, GraphKey, GraphStore, Heads, InMemoryStore, IndexBuilder,
     Manifest, ManifestId, MasterIdentity, Reconciler, SecretIdentity,
 };
+use rand::rngs::OsRng;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
 /// SCENARIO 1: Deep Tree Synchronization
@@ -105,7 +106,7 @@ async fn test_identity_rebirth_bootstrap() {
         // Derive the stable Discovery ID for the Identity Graph
         let id_gid = master.derive_discovery_id(&identity_graph_base_id).unwrap();
 
-        let id_key = GraphKey::new([0u8; 32]);
+        let id_key = GraphKey::generate(&mut OsRng);
         let id_root = Block::new(
             id_gid.into(),
             vec![],
@@ -176,7 +177,7 @@ async fn test_full_lifecycle_stateless_journey() {
     let (id_gid, project_id) = {
         let alice_laptop = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
         let id_graph_id = GraphId::new();
-        let id_key = GraphKey::new([0u8; 32]);
+        let id_key = GraphKey::generate(&mut OsRng);
 
         let project_id = GraphId::new();
         let project_key = alice_laptop.derive_graph_key(&project_id).unwrap();
@@ -202,7 +203,7 @@ async fn test_full_lifecycle_stateless_journey() {
         let descriptor = Block::new(
             id_graph_id,
             b"Project Alpha".to_vec(),
-            "akshara.descriptor.v1".into(),
+            "app.descriptor.v1".into(),
             vec![],
             &id_key,
             &alice_laptop,
@@ -272,7 +273,7 @@ async fn test_full_lifecycle_stateless_journey() {
 
     let mid = id_manifest_id.expect("Relay failed to provide identity manifest");
     let id_manifest = phone_store.get_manifest(&mid).await.unwrap().unwrap();
-    let id_key = GraphKey::new([0u8; 32]);
+    let id_key = GraphKey::generate(&mut OsRng);
     sync_recursive_closure(
         &id_gid,
         id_manifest.content_root(),

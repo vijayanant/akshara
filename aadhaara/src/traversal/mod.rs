@@ -43,9 +43,10 @@ pub(crate) async fn create_valid_anchor(
     identity: &crate::identity::SecretIdentity,
 ) -> crate::base::address::ManifestId {
     use crate::graph::BlockType;
+    use crate::identity::graph::IDENTITY_GRAPH_KEY;
     use crate::state::store::GraphStore;
 
-    let identity_key = crate::base::crypto::GraphKey::new([0u8; 32]);
+    let identity_key = IDENTITY_GRAPH_KEY;
     let signer_hex = identity.public().signing_key().to_hex();
     let graph_id = crate::base::address::GraphId::new();
 
