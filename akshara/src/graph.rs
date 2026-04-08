@@ -382,12 +382,15 @@ impl Graph {
     /// 7. Creates and signs a manifest
     /// 8. Persists everything to storage
     pub async fn seal(&self) -> Result<SealReport> {
-        let staging = self.staging.lock().await;
-        let operations = staging.fetch_pending().await?;
-
-        if operations.is_empty() {
-            return Err(Error::NothingToSeal);
-        }
+        // Fetch operations under lock, then release immediately
+        let operations = {
+            let staging = self.staging.lock().await;
+            let ops = staging.fetch_pending().await?;
+            if ops.is_empty() {
+                return Err(Error::NothingToSeal);
+            }
+            ops
+        };
 
         // Coalesce operations by path
         let coalesced = crate::staging::coalesce_operations(operations);
@@ -489,9 +492,10 @@ impl Graph {
 
         // Clear staged operations
         let max_timestamp = coalesced.iter().map(|op| op.timestamp()).max().unwrap_or(0);
-        staging.clear_committed(max_timestamp).await?;
-
-        drop(staging);
+        {
+            let staging = self.staging.lock().await;
+            staging.clear_committed(max_timestamp).await?;
+        }
 
         Ok(SealReport {
             manifest_id: manifest.id(),
