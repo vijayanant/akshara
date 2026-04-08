@@ -11,7 +11,7 @@ use crate::{
 // Helper function
 
 pub fn create_identity() -> SecretIdentity {
-    SecretIdentity::generate(&mut OsRng)
+    SecretIdentity::generate(&mut OsRng).unwrap()
 }
 
 #[tokio::test]

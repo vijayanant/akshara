@@ -83,7 +83,7 @@ async fn create_revocation_block(
 #[tokio::test]
 async fn test_identity_graph_verify_authority_valid() {
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
 
     let manifest = create_identity_graph(&store, &identity).await;
@@ -99,7 +99,7 @@ async fn test_identity_graph_verify_authority_valid() {
 #[tokio::test]
 async fn test_identity_graph_genesis_accepts_master_key() {
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
     let identity_graph = IdentityGraph::new(&store);
 
@@ -113,8 +113,8 @@ async fn test_identity_graph_genesis_accepts_master_key() {
 #[tokio::test]
 async fn test_identity_graph_genesis_rejects_wrong_key() {
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
-    let wrong_identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
+    let wrong_identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
     let identity_graph = IdentityGraph::new(&store);
 
@@ -137,7 +137,7 @@ async fn test_identity_graph_genesis_rejects_wrong_key() {
 #[tokio::test]
 async fn test_identity_graph_missing_anchor() {
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
     let fake_anchor = ManifestId::from_sha256(&[0xAA; 32]);
     let identity_graph = IdentityGraph::new(&store);
@@ -153,7 +153,7 @@ async fn test_identity_graph_missing_anchor() {
 #[tokio::test]
 async fn test_identity_graph_with_latest_identity_valid() {
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
 
     let manifest_v1 = create_identity_graph(&store, &identity).await;
@@ -179,7 +179,7 @@ async fn test_identity_graph_with_latest_identity_valid() {
 #[tokio::test]
 async fn test_identity_graph_ghost_branch_prevention() {
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
     let graph_id = GraphId::new();
     let identity_key = GraphKey::new([0u8; 32]);
@@ -250,7 +250,7 @@ async fn test_identity_graph_ghost_branch_prevention() {
 #[tokio::test]
 async fn test_identity_graph_revocation_scenario() {
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let master_pubkey = identity.public().signing_key().clone();
     let graph_id = GraphId::new();
     let identity_key = GraphKey::new([0u8; 32]);

@@ -5,7 +5,7 @@ use crate::{BlockId, GraphKey, graph::Block, graph::BlockType, identity::SecretI
 // Helper functions
 
 pub fn create_identity() -> SecretIdentity {
-    SecretIdentity::generate(&mut OsRng)
+    SecretIdentity::generate(&mut OsRng).unwrap()
 }
 
 pub fn create_dummy_key() -> GraphKey {
@@ -143,7 +143,7 @@ fn block_is_signed_by_author() {
 #[test]
 fn block_content_encryption_cycle() {
     let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let plaintext = b"Sensitive Data".to_vec();
     let graph_key = GraphKey::generate(&mut rng);
     let gid = crate::GraphId::new();

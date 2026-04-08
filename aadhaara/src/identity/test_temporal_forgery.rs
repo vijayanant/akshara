@@ -11,7 +11,7 @@ use rand::rngs::OsRng;
 async fn test_identity_temporal_forgery_rejection() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let master = SecretIdentity::generate(&mut rng);
+    let master = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
     let anchor = ManifestId::null();

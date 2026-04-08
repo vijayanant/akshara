@@ -11,7 +11,7 @@ use crate::{
 // Helper functions
 
 pub fn create_identity() -> SecretIdentity {
-    SecretIdentity::generate(&mut OsRng)
+    SecretIdentity::generate(&mut OsRng).unwrap()
 }
 
 pub fn create_dummy_key() -> GraphKey {

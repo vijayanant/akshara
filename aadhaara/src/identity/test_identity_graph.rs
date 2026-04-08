@@ -11,12 +11,12 @@ use rand::rngs::OsRng;
 async fn test_identity_graph_device_resolution() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
     // 1. Create a Device Block
-    let device_identity = SecretIdentity::generate(&mut rng);
+    let device_identity = SecretIdentity::generate(&mut rng).unwrap();
     let device_block = Block::new(
         graph_id,
         crate::base::encoding::to_canonical_bytes(&"my-iphone".to_string()).unwrap(),
@@ -67,7 +67,7 @@ async fn test_identity_graph_device_resolution() {
 async fn test_identity_graph_missing_device_failure() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
@@ -96,7 +96,7 @@ async fn test_identity_graph_missing_device_failure() {
 async fn test_identity_graph_unauthorized_traversal_failure() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
@@ -114,13 +114,13 @@ async fn test_identity_graph_unauthorized_traversal_failure() {
 async fn test_identity_graph_revocation() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let master = SecretIdentity::generate(&mut rng);
+    let master = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
     let anchor = ManifestId::null();
 
     // 1. Initial State: Device A is authorized
-    let device_a = SecretIdentity::generate(&mut rng);
+    let device_a = SecretIdentity::generate(&mut rng).unwrap();
     let device_a_block = Block::new(
         graph_id,
         device_a.public().signing_key().as_bytes().to_vec(),

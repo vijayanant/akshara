@@ -10,7 +10,7 @@ const MNEMONIC_1: &str = "abandon abandon abandon abandon abandon abandon abando
 #[test]
 fn identity_can_be_generated_and_sign_messages() {
     let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
 
     let message = b"Satyata is truth";
     let signature = identity.sign(message);
@@ -21,7 +21,7 @@ fn identity_can_be_generated_and_sign_messages() {
 #[test]
 fn identity_verify_fails_on_wrong_message() {
     let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
 
     let message = b"Satyata is truth";
     let signature = identity.sign(message);
@@ -32,7 +32,7 @@ fn identity_verify_fails_on_wrong_message() {
 #[test]
 fn identity_verify_fails_on_wrong_signature() {
     let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
 
     let message = b"Satyata is truth";
     let mut signature_bytes = identity.sign(message).as_bytes().to_vec();
@@ -118,7 +118,7 @@ fn identity_derivation_matches_bip39_standard_phrase() {
 #[test]
 fn identity_derives_isolated_graph_keys() {
     let mut rng = OsRng;
-    let secret_id = SecretIdentity::generate(&mut rng);
+    let secret_id = SecretIdentity::generate(&mut rng).unwrap();
 
     let graph_id = GraphId::new();
     let graph_key = secret_id
@@ -317,8 +317,8 @@ fn shadow_key_collision_resistance() {
     use sha2::Sha256;
 
     // Generate two different master identities
-    let identity_a = SecretIdentity::generate(&mut OsRng);
-    let identity_b = SecretIdentity::generate(&mut OsRng);
+    let identity_a = SecretIdentity::generate(&mut OsRng).unwrap();
+    let identity_b = SecretIdentity::generate(&mut OsRng).unwrap();
     let graph_id = GraphId::new();
 
     // Derive shadow keys using the same HMAC logic as IdentityGraph

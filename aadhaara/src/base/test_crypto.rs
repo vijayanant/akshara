@@ -102,7 +102,7 @@ fn signature_verify_fails_on_truncated_message() {
     use crate::base::crypto::AksharaSigner;
     use rand::rngs::OsRng;
 
-    let identity = crate::identity::SecretIdentity::generate(&mut OsRng);
+    let identity = crate::identity::SecretIdentity::generate(&mut OsRng).unwrap();
     let msg = b"This is a test message that will be truncated";
     let signature = identity.sign(msg);
 

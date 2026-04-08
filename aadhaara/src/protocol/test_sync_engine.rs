@@ -12,7 +12,7 @@ use crate::{
 // Helper functions
 
 pub fn create_identity() -> SecretIdentity {
-    SecretIdentity::generate(&mut OsRng)
+    SecretIdentity::generate(&mut OsRng).unwrap()
 }
 
 pub async fn create_chain(
@@ -20,7 +20,7 @@ pub async fn create_chain(
     store: &mut InMemoryStore,
 ) -> (Vec<ManifestId>, crate::base::crypto::SigningPublicKey) {
     let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let root = create_dummy_root();
 

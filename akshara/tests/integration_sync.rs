@@ -59,7 +59,7 @@ async fn mock_transport_push_portions_accepts_all() {
 #[tokio::test]
 async fn sync_engine_new() {
     let transport = MockTransport::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let root_key = identity.public().signing_key().clone();
 
     let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
@@ -70,7 +70,7 @@ async fn sync_engine_new() {
 #[tokio::test]
 async fn sync_engine_sync_graph_empty_store() {
     let transport = MockTransport::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let root_key = identity.public().signing_key().clone();
     let store = InMemoryStore::new();
 
@@ -90,7 +90,7 @@ async fn sync_engine_sync_graph_empty_store() {
 #[tokio::test]
 async fn sync_engine_sync_all_empty_store() {
     let transport = MockTransport::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng);
+    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let root_key = identity.public().signing_key().clone();
     let store = InMemoryStore::new();
 

@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 async fn test_merkle_index_path_resolution() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
@@ -53,7 +53,7 @@ async fn test_merkle_index_path_resolution() {
 async fn test_merkle_index_nested_resolution() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
@@ -92,7 +92,7 @@ async fn test_merkle_index_nested_resolution() {
 async fn test_merkle_index_path_normalization() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
@@ -132,7 +132,7 @@ async fn test_merkle_index_path_normalization() {
 async fn test_merkle_index_missing_path_failures() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
@@ -165,7 +165,7 @@ async fn test_merkle_index_missing_path_failures() {
 async fn test_merkle_index_wrong_key_failure() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
     let wrong_key = GraphKey::generate(&mut rng);
@@ -194,7 +194,7 @@ async fn test_merkle_index_wrong_key_failure() {
 async fn test_merkle_index_malformed_cbor_failure() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
@@ -233,7 +233,7 @@ async fn test_merkle_index_malformed_cbor_failure() {
 async fn test_merkle_index_type_mismatch_failure() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
@@ -264,7 +264,7 @@ async fn test_merkle_index_type_mismatch_failure() {
 async fn test_merkle_index_circular_reference_protection() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let _graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 

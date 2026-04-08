@@ -201,9 +201,10 @@ impl MasterIdentity {
 }
 
 impl SecretIdentity {
-    pub fn generate(_rng: &mut (impl CryptoRng + RngCore)) -> Self {
-        let mnemonic = mnemonic::generate_mnemonic().unwrap();
-        Self::from_mnemonic(mnemonic.as_str(), "").unwrap()
+    pub fn generate(_rng: &mut (impl CryptoRng + RngCore)) -> Result<Self, AksharaError> {
+        let mnemonic = mnemonic::generate_mnemonic()?;
+        let mnemonic = zeroize::Zeroizing::new(mnemonic);
+        Self::from_mnemonic(&mnemonic, "")
     }
 
     /// Derives a shared vault secret from a mnemonic and version.

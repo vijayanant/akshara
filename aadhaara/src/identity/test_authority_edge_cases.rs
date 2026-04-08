@@ -22,11 +22,11 @@ async fn test_negative_imposter_genesis_hijack() {
     let store = InMemoryStore::new();
 
     // Alice is the legitimate owner defined in the Auditor's context
-    let alice = SecretIdentity::generate(&mut rng);
+    let alice = SecretIdentity::generate(&mut rng).unwrap();
     let master_key = alice.public().signing_key().clone();
 
     // Eve is the attacker
-    let eve = SecretIdentity::generate(&mut rng);
+    let eve = SecretIdentity::generate(&mut rng).unwrap();
 
     // Eve creates a manifest claiming to be a Genesis (anchor: 0) for Alice's document
     let graph_id = GraphId::new();
@@ -63,8 +63,8 @@ async fn test_negative_identity_graph_swap() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
 
-    let alice = SecretIdentity::generate(&mut rng);
-    let bob = SecretIdentity::generate(&mut rng);
+    let alice = SecretIdentity::generate(&mut rng).unwrap();
+    let bob = SecretIdentity::generate(&mut rng).unwrap();
 
     // 1. Setup Alice's real anchor (Alice is authorized in her own graph)
     let alice_anchor = create_valid_anchor(&store, &alice).await;
@@ -106,7 +106,7 @@ async fn test_negative_identity_graph_swap() {
 async fn test_negative_identity_stale_authority() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let alice = SecretIdentity::generate(&mut rng);
+    let alice = SecretIdentity::generate(&mut rng).unwrap();
     let master_key = alice.public().signing_key().clone();
 
     // 1. Genesis State (Master Key only)

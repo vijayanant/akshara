@@ -10,7 +10,7 @@ use std::sync::Arc;
 #[ignore]
 fn test_byzantine_bit_flip_fuzzer() {
     let mut rng = OsRng;
-    let master = SecretIdentity::generate(&mut rng);
+    let master = SecretIdentity::generate(&mut rng).unwrap();
     let key = GraphKey::generate(&mut rng);
 
     let data = b"Target Truth".to_vec();
@@ -43,7 +43,7 @@ fn test_byzantine_bit_flip_fuzzer() {
 #[ignore]
 fn test_byzantine_manifest_corruption() {
     let mut rng = OsRng;
-    let master = SecretIdentity::generate(&mut rng);
+    let master = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = akshara_aadhaara::GraphId::new();
     let root = akshara_aadhaara::BlockId::from_sha256(&[0xFF; 32]);
     let anchor = akshara_aadhaara::ManifestId::null();
@@ -82,7 +82,7 @@ fn test_byzantine_manifest_corruption() {
 async fn test_byzantine_walker_robustness() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let master = SecretIdentity::generate(&mut rng);
+    let master = SecretIdentity::generate(&mut rng).unwrap();
     let key = GraphKey::generate(&mut rng);
 
     let leaf = Block::new(
@@ -145,7 +145,7 @@ async fn store_rwlock_torture_test() {
         let store_ref = Arc::clone(&store);
         let h = tokio::spawn(async move {
             let mut rng = OsRng;
-            let identity = SecretIdentity::generate(&mut rng);
+            let identity = SecretIdentity::generate(&mut rng).unwrap();
             let key = GraphKey::generate(&mut rng);
             let gid = akshara_aadhaara::GraphId::new();
 

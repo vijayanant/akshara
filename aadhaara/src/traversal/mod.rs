@@ -24,7 +24,7 @@ mod test_merkle_index;
 #[cfg(test)]
 pub(crate) fn create_identity() -> crate::identity::SecretIdentity {
     let mut rng = rand::rngs::OsRng;
-    crate::identity::SecretIdentity::generate(&mut rng)
+    crate::identity::SecretIdentity::generate(&mut rng).unwrap()
 }
 
 #[cfg(test)]
@@ -99,7 +99,7 @@ pub(crate) async fn create_chain(
 ) {
     use crate::state::store::GraphStore;
     let mut rng = rand::rngs::OsRng;
-    let identity = crate::identity::SecretIdentity::generate(&mut rng);
+    let identity = crate::identity::SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = crate::base::address::GraphId::new();
     let root = create_dummy_root();
 
