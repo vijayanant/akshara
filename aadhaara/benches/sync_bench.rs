@@ -8,7 +8,7 @@ use tokio::runtime::Runtime;
 fn bench_fulfillment(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let mut rng = OsRng;
-    let identity = SecretIdentity::generate(&mut rng);
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let key = GraphKey::generate(&mut rng);
     let store = InMemoryStore::new();
 
