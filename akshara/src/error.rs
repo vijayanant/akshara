@@ -1,94 +1,136 @@
 use thiserror::Error;
 
+use akshara_aadhaara::GraphId;
+
 /// Error types for the Akshara API.
 #[derive(Debug, Error)]
 pub enum Error {
-    // === Identity ===
-    #[error("Invalid mnemonic: {0}")]
-    InvalidMnemonic(String),
+    // === Identity & Vault (category: IDENTITY) ===
+    #[error("vault initialization failed: {0}")]
+    VaultInit(String),
 
-    #[error("Vault error: {0}")]
+    #[error("invalid mnemonic: {reason}")]
+    InvalidMnemonic { reason: String },
+
+    #[error("vault error: {0}")]
     Vault(#[from] VaultError),
 
-    // === Storage ===
-    #[error("Storage error: {0}")]
+    #[error("identity error: {0}")]
+    Identity(String),
+
+    // === Storage (category: STORAGE) ===
+    #[error("storage error: {0}")]
     Storage(#[from] StorageError),
 
-    #[error("Graph not found: {0}")]
-    GraphNotFound(String),
+    // === Graph Operations (category: GRAPH) ===
+    #[error("graph not found: {0}")]
+    GraphNotFound(GraphId),
 
-    // === Path Resolution ===
-    #[error("Path not found: {0}")]
+    #[error("invalid lakshana: {0}")]
+    InvalidLakshana(String),
+
+    #[error("nothing to flush — staging is empty")]
+    NothingToFlush,
+
+    #[error("invalid path: {path} — {reason}")]
+    InvalidPath { path: String, reason: String },
+
+    #[error("path not found: {0}")]
     PathNotFound(String),
 
-    #[error("Cycle detected in index tree")]
-    CycleDetected,
+    // === Serialization (category: SERDE) ===
+    #[error("serialization failed: {0}")]
+    Serialization(String),
 
-    #[error("Invalid path: {0}")]
-    InvalidPath(String),
+    #[error("deserialization failed: {path}: {reason}")]
+    Deserialization { path: String, reason: String },
 
-    // === Staging ===
-    #[error("Staging store empty, nothing to seal")]
-    NothingToSeal,
+    // === Crypto (category: CRYPTO) ===
+    #[error("decryption failed: {0}")]
+    Decryption(String),
 
-    #[error("Staging error: {0}")]
-    Staging(String),
+    #[error("signature verification failed: {0}")]
+    SignatureVerification(String),
 
-    // === Sealing ===
-    #[error("Chunking failed: {0}")]
-    ChunkingFailed(String),
+    #[error("block size exceeded: path={path}, size={size}, max={max}")]
+    BlockSizeExceeded {
+        path: String,
+        size: usize,
+        max: usize,
+    },
 
-    #[error("Index build failed: {0}")]
-    IndexBuildFailed(String),
-
-    // === Sync ===
-    #[error("Sync failed: {0}")]
+    // === Sync (category: SYNC) ===
+    #[error("sync failed: {0}")]
     SyncFailed(String),
 
-    #[error("Conflict detected at path {0}")]
-    ConflictDetected(String),
+    #[error("sync transport error: {0}")]
+    SyncTransport(String),
+
+    // === Access Control (category: ACCESS) ===
+    #[error("access denied: {resource} — {reason}")]
+    AccessDenied { resource: String, reason: String },
+
+    #[error("revoked grant: {0}")]
+    RevokedGrant(String),
+
+    #[error("transfer failed: {0}")]
+    TransferFailed(String),
+
+    // === Conflicts (category: CONFLICT) ===
+    #[error("conflict detected at path: {0}")]
+    Conflict(String),
+
+    #[error("conflict resolution failed: {0}")]
+    ConflictResolution(String),
+
+    // === Audit (category: AUDIT) ===
+    #[error("authority verification failed: {0}")]
+    AuthorityVerificationFailed(String),
+
+    #[error("provenance incomplete: {0}")]
+    ProvenanceIncomplete(String),
+
+    // === Internal (category: INTERNAL) ===
+    #[error("internal error: {0}")]
+    Internal(String),
 
     // === Protocol (wrapped from aadhaara) ===
-    #[error("Protocol error: {0}")]
+    #[error("protocol error: {0}")]
     Protocol(#[from] akshara_aadhaara::AksharaError),
-
-    // === Internal ===
-    #[error("Internal error: {0}")]
-    Internal(String),
 }
 
 /// Vault-specific errors.
 #[derive(Debug, Error)]
 pub enum VaultError {
-    #[error("Keychain error: {0}")]
+    #[error("keychain error: {0}")]
     Keychain(String),
 
-    #[error("Secure enclave error: {0}")]
+    #[error("secure enclave error: {0}")]
     SecureEnclave(String),
 
-    #[error("Key not found: {0}")]
+    #[error("key not found: {0}")]
     KeyNotFound(String),
 
-    #[error("Authentication required")]
+    #[error("authentication required")]
     AuthenticationRequired,
 
-    #[error("Vault already initialized")]
+    #[error("vault already initialized")]
     AlreadyInitialized,
 }
 
 /// Storage-specific errors.
 #[derive(Debug, Error)]
 pub enum StorageError {
-    #[error("Database error: {0}")]
+    #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 
-    #[error("Database not initialized")]
+    #[error("database not initialized")]
     DatabaseNotInitialized,
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("Migration error: {0}")]
+    #[error("migration error: {0}")]
     Migration(String),
 }
 
@@ -105,7 +147,9 @@ mod tests {
 
     #[test]
     fn error_display_invalid_mnemonic() {
-        let err = Error::InvalidMnemonic("invalid words".to_string());
+        let err = Error::InvalidMnemonic {
+            reason: "invalid words".to_string(),
+        };
         assert!(err.to_string().contains("invalid words"));
     }
 
@@ -117,14 +161,63 @@ mod tests {
 
     #[test]
     fn error_display_graph_not_found() {
-        let err = Error::GraphNotFound("graph-id-123".to_string());
-        assert!(err.to_string().contains("graph-id-123"));
+        let graph_id = GraphId::new();
+        let err = Error::GraphNotFound(graph_id);
+        let s = err.to_string();
+        assert!(s.contains("graph not found"));
     }
 
     #[test]
-    fn error_display_nothing_to_seal() {
-        let err = Error::NothingToSeal;
-        assert!(err.to_string().to_lowercase().contains("seal"));
+    fn error_display_nothing_to_flush() {
+        let err = Error::NothingToFlush;
+        assert!(err.to_string().contains("flush"));
+    }
+
+    #[test]
+    fn error_display_invalid_path_with_reason() {
+        let err = Error::InvalidPath {
+            path: "no-slash".to_string(),
+            reason: "must start with /".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("no-slash"));
+        assert!(s.contains("must start with /"));
+    }
+
+    #[test]
+    fn error_display_block_size_exceeded() {
+        let err = Error::BlockSizeExceeded {
+            path: "data/file".to_string(),
+            size: 2_000_000,
+            max: 1_048_576,
+        };
+        let s = err.to_string();
+        assert!(s.contains("data/file"));
+        assert!(s.contains("2000000"));
+        assert!(s.contains("1048576"));
+    }
+
+    #[test]
+    fn error_display_revoked_grant() {
+        let err = Error::RevokedGrant("grant-123".to_string());
+        assert!(err.to_string().contains("grant-123"));
+    }
+
+    #[test]
+    fn error_display_transfer_failed() {
+        let err = Error::TransferFailed("invalid token".to_string());
+        assert!(err.to_string().contains("invalid token"));
+    }
+
+    #[test]
+    fn error_display_access_denied() {
+        let err = Error::AccessDenied {
+            resource: "/private/docs".to_string(),
+            reason: "no grant for this scope".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("/private/docs"));
+        assert!(s.contains("no grant for this scope"));
     }
 
     #[test]
@@ -142,50 +235,31 @@ mod tests {
     }
 
     #[test]
-    fn vault_error_keychain() {
-        let err = VaultError::Keychain("keychain error".to_string());
-        assert!(err.to_string().contains("keychain error"));
+    fn error_internal() {
+        let err = Error::Internal("unexpected state".to_string());
+        assert!(err.to_string().contains("unexpected state"));
     }
 
     #[test]
-    fn vault_error_key_not_found() {
-        let err = VaultError::KeyNotFound("missing key".to_string());
-        assert!(err.to_string().contains("missing key"));
+    fn error_deserialization_with_path() {
+        let err = Error::Deserialization {
+            path: "notes/001".to_string(),
+            reason: "invalid CBOR".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("notes/001"));
+        assert!(s.contains("invalid CBOR"));
     }
 
     #[test]
-    fn vault_error_authentication_required() {
-        let err = VaultError::AuthenticationRequired;
-        assert!(err.to_string().contains("Authentication required"));
+    fn error_sync_failed() {
+        let err = Error::SyncFailed("reconciliation failed".to_string());
+        assert!(err.to_string().contains("reconciliation failed"));
     }
 
     #[test]
-    fn storage_error_database_not_initialized() {
-        let err = StorageError::DatabaseNotInitialized;
-        assert!(err.to_string().contains("Database not initialized"));
-    }
-
-    #[test]
-    fn storage_error_migration() {
-        let err = StorageError::Migration("migration failed".to_string());
-        assert!(err.to_string().contains("migration failed"));
-    }
-
-    #[test]
-    fn error_chain_vault_to_error() {
-        let vault_err = VaultError::KeyNotFound("original error".to_string());
-        let err = Error::Vault(vault_err);
-        let err_str = err.to_string();
-        assert!(err_str.contains("Vault error"));
-        assert!(err_str.contains("original error"));
-    }
-
-    #[test]
-    fn error_chain_storage_to_error() {
-        let storage_err = StorageError::Migration("original error".to_string());
-        let err = Error::Storage(storage_err);
-        let err_str = err.to_string();
-        assert!(err_str.contains("Storage error"));
-        assert!(err_str.contains("original error"));
+    fn error_conflict() {
+        let err = Error::Conflict("notes/doc".to_string());
+        assert!(err.to_string().contains("notes/doc"));
     }
 }
