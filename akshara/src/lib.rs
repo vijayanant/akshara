@@ -11,19 +11,19 @@
 //! # async fn example() -> Result<(), akshara::Error> {
 //! // Initialize the client with ephemeral vault (for testing)
 //! let config = ClientConfig::new()
-//!     .with_ephemeral_vault();
+//!     .with_ephemeral_vault()
+//!     .with_in_memory_storage();
 //!
 //! let client = Client::init(config).await?;
 //!
 //! // Create a graph
-//! let notes = client.create_graph("my-notes").await?;
+//! let notes = client.create_graph().await?;
 //!
 //! // Write data
 //! notes.insert("meeting-notes", b"Today we discussed...").await?;
 //!
-//! // Seal and sync
+//! // Seal (commits staged operations to the Merkle-DAG)
 //! notes.seal().await?;
-//! client.sync().await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -32,10 +32,10 @@
 //!
 //! - **Client**: Entry point, manages identity, vault, and storage
 //! - **Graph**: Handle to a single graph for read/write operations
-//! - **Staging**: Operations are buffered and coalesced before sealing
-//! - **Sealing**: Commits staged operations to the Merkle-DAG
+//! - **Staging**: Operations are buffered and coalesced before flushing
+//! - **Flushing**: Commits staged operations to the Merkle-DAG via a manifest
 //!
-//! For more details, see the [API specification](https://github.com/vijayanant/akshara/tree/main/docs/akshara).
+//! For the full API specification, see `docs/specs/api/`.
 
 pub mod client;
 pub mod config;
@@ -48,15 +48,15 @@ pub mod sync;
 pub mod vault;
 
 // Re-export main types for convenience
-pub use client::Client;
-pub use config::ClientConfig;
+pub use client::{Client, GraphSummary};
+pub use config::{ClientConfig, StorageConfig};
 pub use error::Error;
-pub use graph::{Graph, SealReport, SyncReport};
+pub use graph::{Graph, SyncReport};
 pub use ordering::{FractionalIndex, midpoint, parse_index};
 pub use staging::{StagedOperation, StagingStore};
 pub use store::InMemoryStore;
-pub use sync::{Conflict, MergeStrategy, SyncTransport};
-pub use vault::{Vault, VaultConfig};
+pub use sync::SyncTransport;
+pub use vault::Vault;
 
 // Re-export commonly used aadhaara types
-pub use akshara_aadhaara::{GraphId, GraphKey, SecretIdentity};
+pub use akshara_aadhaara::{GraphId, GraphKey, Lakshana, SecretIdentity};
