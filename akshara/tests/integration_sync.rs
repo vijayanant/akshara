@@ -1,7 +1,9 @@
 //! Integration tests for sync module.
 
-use akshara::VaultConfig;
-use akshara::sync::{MockTransport, SyncEngine, SyncTransport};
+use akshara::SyncTransport;
+use akshara::sync::MockTransport;
+use akshara::sync::{Conflict, MergeStrategy, SyncEngine};
+use akshara::vault::VaultConfig;
 use akshara_aadhaara::{GraphId, InMemoryStore, SecretIdentity};
 
 // ============================================================================
@@ -109,17 +111,17 @@ async fn sync_engine_sync_all_empty_store() {
 
 #[test]
 fn merge_strategy_default_is_keep_latest() {
-    let strategy = akshara::MergeStrategy::default();
-    assert!(matches!(strategy, akshara::MergeStrategy::KeepLatest));
+    let strategy = MergeStrategy::default();
+    assert!(matches!(strategy, MergeStrategy::KeepLatest));
 }
 
 #[test]
 fn merge_strategy_variants() {
     // Test all variants can be created
-    let _latest = akshara::MergeStrategy::KeepLatest;
-    let _mine = akshara::MergeStrategy::KeepMine;
-    let _theirs = akshara::MergeStrategy::KeepTheirs;
-    let _manual = akshara::MergeStrategy::Manual {
+    let _latest = MergeStrategy::KeepLatest;
+    let _mine = MergeStrategy::KeepMine;
+    let _theirs = MergeStrategy::KeepTheirs;
+    let _manual = MergeStrategy::Manual {
         resolver_name: "test".to_string(),
     };
 }
@@ -127,7 +129,7 @@ fn merge_strategy_variants() {
 #[test]
 fn conflict_struct() {
     let graph_id = GraphId::new();
-    let conflict = akshara::Conflict {
+    let conflict = Conflict {
         graph_id,
         path: "/test".to_string(),
         heads: vec![],
