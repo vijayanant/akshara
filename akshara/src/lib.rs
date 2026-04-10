@@ -22,8 +22,8 @@
 //! // Write data
 //! notes.insert("meeting-notes", b"Today we discussed...").await?;
 //!
-//! // Seal (commits staged operations to the Merkle-DAG)
-//! notes.seal().await?;
+//! // Flush (commits staged operations to the Merkle-DAG)
+//! notes.flush().await?;
 //! # Ok(())
 //! # }
 //! ```

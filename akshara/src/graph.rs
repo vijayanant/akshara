@@ -64,7 +64,7 @@ impl Graph {
 
     /// Insert new content at the specified path.
     ///
-    /// The operation is staged and will be committed when `seal()` is called.
+    /// The operation is staged and will be committed when `flush()` is called.
     pub async fn insert(&self, path: &str, data: impl Into<Vec<u8>>) -> Result<()> {
         validate_path(path)?;
         let op = StagedOperation::Insert {
@@ -317,12 +317,12 @@ impl Graph {
         Ok(())
     }
 
-    /// Seal all staged operations into the Merkle-DAG.
+    /// Flush all staged operations into the Merkle-DAG.
     ///
     /// This is the core operation that coalesces pending writes by path,
     /// creates blocks with proper lineage, builds the Merkle index, and
     /// signs a manifest checkpoint.
-    pub async fn seal(&self) -> Result<SealReport> {
+    pub async fn flush(&self) -> Result<FlushReport> {
         let operations = self.staging.fetch_pending().await?;
         if operations.is_empty() {
             return Err(Error::NothingToFlush);
@@ -358,7 +358,7 @@ impl Graph {
 
         let mut index_builder = IndexBuilder::new();
         let mut blocks_created = 0;
-        let mut bytes_sealed = 0;
+        let mut bytes_flushed = 0;
 
         for (path, (data, prev_id)) in current_state {
             if data.len() > self.tuning.max_block_size {
@@ -387,7 +387,7 @@ impl Graph {
 
             self.store.put_block(&block).await?;
             blocks_created += 1;
-            bytes_sealed += data.len();
+            bytes_flushed += data.len();
 
             index_builder.insert(&path, akshara_aadhaara::Address::from(block.id()))?;
         }
@@ -417,10 +417,10 @@ impl Graph {
         let max_timestamp = coalesced.iter().map(|op| op.timestamp()).max().unwrap_or(0);
         self.staging.clear_committed(max_timestamp).await?;
 
-        Ok(SealReport {
+        Ok(FlushReport {
             manifest_id: manifest.id(),
             blocks_created,
-            bytes_sealed: bytes_sealed as u64,
+            bytes_flushed: bytes_flushed as u64,
             operations_coalesced: coalesced.len(),
         })
     }
@@ -519,15 +519,15 @@ impl Graph {
     }
 }
 
-/// Report from a seal operation.
+/// Report from a flush operation.
 #[derive(Debug, Clone)]
-pub struct SealReport {
+pub struct FlushReport {
     /// The manifest ID that was created
     pub manifest_id: ManifestId,
     /// Number of blocks created
     pub blocks_created: usize,
-    /// Total bytes sealed
-    pub bytes_sealed: u64,
+    /// Total bytes flushed
+    pub bytes_flushed: u64,
     /// Number of operations coalesced
     pub operations_coalesced: usize,
 }
@@ -621,18 +621,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_block_lineage_is_preserved_during_seal() {
+    async fn test_block_lineage_is_preserved_during_flush() {
         let graph = create_test_graph().await;
         let path = "/test/lineage";
 
         // 1. Initial write
         graph.insert(path, b"v1").await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id1 = graph.get_id(path).await.unwrap();
 
         // 2. Update the same path
         graph.update(path, b"v2").await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id2 = graph.get_id(path).await.unwrap();
 
         // 3. Verify that the new block points to the old block as its parent
@@ -659,17 +659,17 @@ mod tests {
 
         // G1
         graph.insert(path, b"gen1").await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id1 = graph.get_id(path).await.unwrap();
 
         // G2
         graph.update(path, b"gen2").await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id2 = graph.get_id(path).await.unwrap();
 
         // G3
         graph.update(path, b"gen3").await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id3 = graph.get_id(path).await.unwrap();
 
         // Verify G3 points to G2
@@ -686,22 +686,22 @@ mod tests {
         let graph = create_test_graph().await;
         let path = "/test/reset";
 
-        // 1. Insert and Seal
+        // 1. Insert and Flush
         graph.insert(path, b"first").await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id1 = graph.get_id(path).await.unwrap();
 
-        // 2. Delete and Seal
+        // 2. Delete and Flush
         graph.delete(path).await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         assert!(
             graph.get_id(path).await.is_err(),
             "Path should be gone after delete"
         );
 
-        // 3. Re-insert and Seal
+        // 3. Re-insert and Flush
         graph.insert(path, b"second").await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id2 = graph.get_id(path).await.unwrap();
 
         // 4. Verify that re-insertion starts a NEW lineage (no parents)
@@ -720,16 +720,16 @@ mod tests {
 
         // 1. Initial stable state
         graph.insert(path, b"original").await.unwrap();
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id_orig = graph.get_id(path).await.unwrap();
 
-        // 2. Stage multiple updates BEFORE sealing
+        // 2. Stage multiple updates BEFORE flushing
         graph.update(path, b"temp1").await.unwrap();
         graph.update(path, b"temp2").await.unwrap();
         graph.update(path, b"final").await.unwrap();
 
         // 3. Seal (should coalesce to just "final")
-        graph.seal().await.unwrap();
+        graph.flush().await.unwrap();
         let id_final = graph.get_id(path).await.unwrap();
 
         // 4. Verify that "final" points to "original", skipping the temp states
@@ -743,16 +743,16 @@ mod tests {
     // ========================================================================
 
     #[tokio::test]
-    async fn seal_on_empty_staging_returns_nothing_to_flush() {
+    async fn flush_on_empty_staging_returns_nothing_to_flush() {
         // If this silently succeeds, the developer wastes CPU building an empty
         // manifest. If it panics, the app crashes. The error must fire.
         let graph = create_test_graph().await;
-        let result = graph.seal().await;
+        let result = graph.flush().await;
         assert!(matches!(result, Err(Error::NothingToFlush)));
     }
 
     #[tokio::test]
-    async fn seal_with_oversized_data_returns_block_size_exceeded() {
+    async fn flush_with_oversized_data_returns_block_size_exceeded() {
         // Guards the BlockSizeExceeded error path. We just fixed the path field
         // to actually carry the path string — without this test, nobody would
         // notice if it regressed to String::new().
@@ -761,7 +761,7 @@ mod tests {
         let oversized = vec![0u8; graph.tuning.max_block_size + 1];
 
         graph.insert(path, oversized).await.unwrap();
-        let result = graph.seal().await;
+        let result = graph.flush().await;
 
         match result {
             Err(Error::BlockSizeExceeded { path: p, size, max }) => {

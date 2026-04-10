@@ -29,7 +29,7 @@ async fn create_test_graph_with_data(client: &Client) -> (Graph, GraphId) {
         .unwrap();
 
     // Seal the data
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     (graph, graph_id)
 }
@@ -71,7 +71,7 @@ async fn graph_get_after_seal() {
         .insert("/test", b"hello world".to_vec())
         .await
         .unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     // After sealing, get should return the data
     let data = graph.get("/test").await.unwrap();
@@ -87,7 +87,7 @@ async fn graph_get_nested_path() {
         .insert("/folder/subfolder/file", b"nested content".to_vec())
         .await
         .unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let data = graph.get("/folder/subfolder/file").await.unwrap();
     assert_eq!(data, b"nested content");
@@ -100,7 +100,7 @@ async fn graph_get_binary_data() {
 
     let binary_data = vec![0u8, 1, 2, 3, 255, 254, 253];
     graph.insert("/binary", binary_data.clone()).await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let retrieved = graph.get("/binary").await.unwrap();
     assert_eq!(retrieved, binary_data);
@@ -112,7 +112,7 @@ async fn graph_get_empty_content() {
     let graph = client.create_graph().await.unwrap();
 
     graph.insert("/empty", vec![]).await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let data = graph.get("/empty").await.unwrap();
     assert!(data.is_empty());
@@ -126,7 +126,7 @@ async fn graph_get_large_content() {
     // Create 500KB of data
     let large_data = vec![0x42u8; 500 * 1024];
     graph.insert("/large", large_data.clone()).await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let retrieved = graph.get("/large").await.unwrap();
     assert_eq!(retrieved, large_data);
@@ -157,7 +157,7 @@ async fn graph_exists_after_seal() {
     assert!(!exists);
 
     // After sealing
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
     let exists = graph.exists("/test").await.unwrap();
     assert!(exists);
 }
@@ -210,7 +210,7 @@ async fn graph_list_nested_prefix() {
     let graph = client.create_graph().await.unwrap();
 
     graph.insert("/a/b/c/d", b"deep".to_vec()).await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let paths = graph.list("/a/b").await.unwrap();
     assert!(paths.contains(&"/a/b/c/d".to_string()));
@@ -223,11 +223,11 @@ async fn graph_list_after_multiple_seals() {
 
     // First seal
     graph.insert("/doc1", b"first".to_vec()).await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     // Second seal - CRDT-style: merges with existing state
     graph.insert("/doc2", b"second".to_vec()).await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let paths = graph.list("").await.unwrap();
     // Both documents should be present (CRDT merge)
@@ -241,11 +241,11 @@ async fn graph_list_after_update() {
     let graph = client.create_graph().await.unwrap();
 
     graph.insert("/test", b"original".to_vec()).await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     // Update the same path
     graph.update("/test", b"updated".to_vec()).await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let paths = graph.list("").await.unwrap();
     assert!(paths.contains(&"/test".to_string()));
@@ -264,11 +264,11 @@ async fn graph_list_after_delete() {
         .insert("/to-delete", b"content".to_vec())
         .await
         .unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     // Delete
     graph.delete("/to-delete").await.unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let paths = graph.list("").await.unwrap();
     // Deleted path should not appear
@@ -288,7 +288,7 @@ async fn graph_get_with_unicode_path() {
         .insert("/日本語/ファイル", b"unicode content".to_vec())
         .await
         .unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let data = graph.get("/日本語/ファイル").await.unwrap();
     assert_eq!(data, b"unicode content");
@@ -303,7 +303,7 @@ async fn graph_get_with_spaces_in_path() {
         .insert("/path with spaces/file", b"spaces content".to_vec())
         .await
         .unwrap();
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     let data = graph.get("/path with spaces/file").await.unwrap();
     assert_eq!(data, b"spaces content");
@@ -325,7 +325,7 @@ async fn graph_get_multiple_reads() {
             .await
             .unwrap();
     }
-    graph.seal().await.unwrap();
+    graph.flush().await.unwrap();
 
     // Read all documents
     for i in 0..10 {
