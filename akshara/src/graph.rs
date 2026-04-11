@@ -162,6 +162,16 @@ impl Graph {
         Ok(content)
     }
 
+    /// Fetch raw bytes at a path without deserializing into a typed document.
+    ///
+    /// Used for large binary data (files, images, PDFs) that the developer
+    /// wants to handle directly. For `#[chunked]` fields, this reassembles
+    /// all chunks transparently.
+    pub async fn fetch_blob(&self, path: &str) -> Result<Vec<u8>> {
+        // Reuses the same path resolution as get()
+        self.get(path).await
+    }
+
     /// Returns the BlockId (CID) for the specified path.
     pub async fn get_id(&self, path: &str) -> Result<akshara_aadhaara::BlockId> {
         let heads = self
@@ -770,6 +780,29 @@ mod tests {
             }
             other => panic!("Expected BlockSizeExceeded, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn fetch_blob_returns_raw_bytes() {
+        let graph = create_test_graph().await;
+        let path = "/blob/data";
+        let data = vec![0xDE, 0xAD, 0xBE, 0xEF];
+
+        graph.insert(path, data.clone()).await.unwrap();
+        graph.flush().await.unwrap();
+
+        let blob = graph.fetch_blob(path).await.unwrap();
+        assert_eq!(blob, data);
+    }
+
+    #[tokio::test]
+    async fn fetch_blob_on_missing_path_returns_not_found() {
+        let graph = create_test_graph().await;
+        graph.insert("/doc", b"hello").await.unwrap();
+        graph.flush().await.unwrap();
+
+        let result = graph.fetch_blob("/missing/path").await;
+        assert!(matches!(result, Err(Error::PathNotFound(_))));
     }
 
     #[tokio::test]
