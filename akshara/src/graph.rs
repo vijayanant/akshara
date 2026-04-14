@@ -126,11 +126,8 @@ impl Graph {
             .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
             .ok_or_else(|| Error::Internal("Manifest not found".to_string()))?;
 
-        let identity = self.vault.get_identity().await?;
-        let walker = akshara_aadhaara::GraphWalker::new(
-            &self.store,
-            identity.public().signing_key().clone(),
-        );
+        let _identity = self.vault.get_identity().await?;
+        let walker = akshara_aadhaara::GraphWalker::new(&self.store);
 
         let address = walker
             .resolve_path(
@@ -195,11 +192,8 @@ impl Graph {
             .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
             .ok_or_else(|| Error::Internal("Manifest not found".to_string()))?;
 
-        let identity = self.vault.get_identity().await?;
-        let walker = akshara_aadhaara::GraphWalker::new(
-            &self.store,
-            identity.public().signing_key().clone(),
-        );
+        let _identity = self.vault.get_identity().await?;
+        let walker = akshara_aadhaara::GraphWalker::new(&self.store);
 
         let address = walker
             .resolve_path(
@@ -253,11 +247,8 @@ impl Graph {
             return Ok(paths);
         }
 
-        let identity = self.vault.get_identity().await?;
-        let walker = akshara_aadhaara::GraphWalker::new(
-            &self.store,
-            identity.public().signing_key().clone(),
-        );
+        let _identity = self.vault.get_identity().await?;
+        let walker = akshara_aadhaara::GraphWalker::new(&self.store);
 
         match walker
             .resolve_path(

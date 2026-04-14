@@ -143,8 +143,7 @@ fn identity_derives_isolated_graph_keys() {
 async fn identity_adversarial_shadow_isolation() {
     let mnemonic = MNEMONIC_1;
     let master = crate::identity::types::MasterIdentity::from_mnemonic(mnemonic, "").unwrap();
-    let alice = master.derive_child("m/44'/999'/0'/0'/0'", None).unwrap();
-    let alice_pub = alice.public().signing_key().clone();
+    let _alice = master.derive_child("m/44'/999'/0'/0'/0'", None).unwrap();
 
     let gid_a = GraphId::new();
     let gid_b = GraphId::new();
@@ -166,7 +165,7 @@ async fn identity_adversarial_shadow_isolation() {
 
     // Audit in context of Graph B
     let store = crate::state::in_memory_store::InMemoryStore::new();
-    let auditor = crate::traversal::auditor::Auditor::new(&store, alice_pub.clone());
+    let auditor = crate::traversal::auditor::Auditor::new(&store);
 
     let result = auditor.audit_manifest(&malicious_manifest).await;
 

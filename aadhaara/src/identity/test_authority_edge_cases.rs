@@ -9,48 +9,6 @@ use crate::traversal::auditor::Auditor;
 use crate::traversal::create_valid_anchor;
 use rand::rngs::OsRng;
 
-/// **TEST: Imposter Genesis Hijack (Negative)**
-///
-/// This test verifies that the system rejects a "New Universe" attack.
-/// An attacker (Eve) tries to create a new genesis manifest (anchor: 0) for Alice's
-/// document. Even if the signature is mathematically correct (Eve signed it),
-/// the Auditor must reject it because the signer is not Alice's Master Root Key.
-#[tokio::test]
-async fn test_negative_imposter_genesis_hijack() {
-    let mut rng = OsRng;
-    let store = InMemoryStore::new();
-
-    // Alice is the legitimate owner defined in the Auditor's context
-    let alice = SecretIdentity::generate(&mut rng).unwrap();
-    let master_key = alice.public().signing_key().clone();
-
-    // Eve is the attacker
-    let eve = SecretIdentity::generate(&mut rng).unwrap();
-
-    // Eve creates a manifest claiming to be a Genesis (anchor: 0) for Alice's document
-    let graph_id = GraphId::new();
-    let root = BlockId::from_sha256(&[0xFF; 32]);
-    let null_anchor = ManifestId::from_sha256(&[0x00; 32]);
-
-    let imposter_manifest = Manifest::new(
-        graph_id,
-        root,
-        vec![],
-        null_anchor,
-        &eve, // Signed by Eve!
-    );
-
-    // The Auditor is initialized expecting Alice to be the root of trust
-    let auditor = Auditor::new(&store, master_key);
-
-    // Audit must fail because the genesis manifest isn't signed by the master key
-    let result = auditor.audit_manifest(&imposter_manifest).await;
-    assert!(
-        result.is_err(),
-        "Auditor should have rejected genesis manifest not signed by master key"
-    );
-}
-
 /// **TEST: Identity Graph Swap (Negative)**
 ///
 /// This test verifies that a signer cannot "borrow" someone else's authority.
@@ -81,7 +39,7 @@ async fn test_negative_identity_graph_swap() {
     );
 
     // The Auditor expects Alice's root
-    let auditor = Auditor::new(&store, alice.public().signing_key().clone());
+    let auditor = Auditor::new(&store);
 
     // Audit must fail because Bob is not authorized in Alice's history
     let result = auditor.audit_manifest(&forged_manifest).await;
@@ -106,7 +64,6 @@ async fn test_negative_identity_stale_authority() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
     let alice = SecretIdentity::generate(&mut rng).unwrap();
-    let master_key = alice.public().signing_key().clone();
 
     // 1. Genesis State (Master Key only)
     let genesis_anchor = create_valid_anchor(&store, &alice).await;
@@ -162,7 +119,7 @@ async fn test_negative_identity_stale_authority() {
         &device_a,
     );
 
-    let auditor = Auditor::new(&store, master_key);
+    let auditor = Auditor::new(&store);
     let result = auditor.audit_manifest(&stale_manifest).await;
 
     assert!(
@@ -186,7 +143,6 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     // 1. Legislator Key (m/0')
     let alice_legislator =
         SecretIdentity::from_mnemonic_at_path(&alice_mnemonic, "", "m/44'/999'/0'/0'/0'").unwrap();
-    let master_key = alice_legislator.public().signing_key().clone();
 
     // 2. Executive Key (m/1')
     let alice_phone =
@@ -239,7 +195,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
     let null_anchor = ManifestId::null();
     let malicious_manifest = Manifest::new(GraphId::new(), root, vec![], null_anchor, &alice_phone);
 
-    let auditor = Auditor::new(&store, master_key);
+    let auditor = Auditor::new(&store);
 
     // RED STATE: This SHOULD succeed currently (which is the failure we are testing)
     // because alice_phone IS authorized in the graph at anchor_id.
@@ -274,7 +230,6 @@ async fn test_negative_path_hijack_prefix() {
     let alice_mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let alice_legislator =
         SecretIdentity::from_mnemonic_at_path(&alice_mnemonic, "", "m/44'/999'/0'/0'/0'").unwrap();
-    let master_key = alice_legislator.public().signing_key().clone();
 
     // The attacker creates a key at a path that LOOKS like a legislator but isn't.
     // E.g., appending an extra segment to bypass a naive 'contains' check.
@@ -291,7 +246,7 @@ async fn test_negative_path_hijack_prefix() {
         &malicious_key,
     );
 
-    let auditor = Auditor::new(&store, master_key);
+    let auditor = Auditor::new(&store);
     let res = auditor.audit_manifest(&malicious_manifest).await;
 
     // If our Auditor uses a strict check, this will fail.
@@ -306,12 +261,6 @@ async fn test_adversarial_ghost_branch_rejection() {
     let store = InMemoryStore::new();
     let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
     let master = MasterIdentity::from_mnemonic(mnemonic, "").unwrap();
-    let master_pub = master
-        .derive_child("m/44'/999'/0'/0'/0'", None)
-        .unwrap()
-        .public()
-        .signing_key()
-        .clone();
 
     // 1. Genesis: Alice (Master) is the root.
     let gid = GraphId::new();
@@ -389,8 +338,7 @@ async fn test_adversarial_ghost_branch_rejection() {
     // 5. THE AUDIT:
     // A naive auditor (no frontier) would accept this.
     // Our hardened Auditor (with latest_identity) MUST reject it.
-    let auditor =
-        Auditor::new(&store, master_pub.clone()).with_latest_identity(id_manifest_v2.id());
+    let auditor = Auditor::new(&store).with_latest_identity(id_manifest_v2.id());
 
     let result = auditor.audit_manifest(&ghost_manifest).await;
 

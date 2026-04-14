@@ -3,7 +3,7 @@
 //! The SyncEngine coordinates between the transport layer and the protocol layer
 //! to synchronize graphs with relays or peers.
 
-use akshara_aadhaara::{GraphId, GraphStore, InMemoryStore, Reconciler, SigningPublicKey};
+use akshara_aadhaara::{GraphId, GraphStore, InMemoryStore, Reconciler};
 use std::sync::Arc;
 
 use super::transport::SyncTransport;
@@ -20,17 +20,15 @@ use crate::vault::Vault;
 pub struct SyncEngine<T: SyncTransport> {
     transport: T,
     vault: Arc<dyn Vault>,
-    root_key: SigningPublicKey,
 }
 
 impl<T: SyncTransport> SyncEngine<T> {
     /// Create a new sync engine with the given transport.
-    pub fn new(transport: T, vault: Arc<dyn Vault>, root_key: SigningPublicKey) -> Self {
-        Self {
-            transport,
-            vault,
-            root_key,
-        }
+    ///
+    /// Authority verification is self-contained — the Auditor discovers
+    /// the root of trust from each graph's genesis manifest.
+    pub fn new(transport: T, vault: Arc<dyn Vault>) -> Self {
+        Self { transport, vault }
     }
 
     /// Synchronize a single graph with the remote peer.
@@ -63,7 +61,7 @@ impl<T: SyncTransport> SyncEngine<T> {
             .await?;
 
         // 3. Reconcile to find missing data
-        let reconciler = Reconciler::new(store, self.root_key.clone());
+        let reconciler = Reconciler::new(store);
         let comparison = reconciler
             .reconcile(&peer_heads, &local_heads)
             .await
@@ -118,7 +116,7 @@ impl<T: SyncTransport> SyncEngine<T> {
 
             // THE AUDITOR: Create once, use for both manifest and block ingestion.
             let latest_id = self.vault.latest_identity_anchor();
-            let mut auditor = akshara_aadhaara::Auditor::new(store, self.root_key.clone());
+            let mut auditor = akshara_aadhaara::Auditor::new(store);
             if latest_id != akshara_aadhaara::ManifestId::null() {
                 auditor = auditor.with_latest_identity(latest_id);
             }

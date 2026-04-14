@@ -44,7 +44,7 @@ async fn test_identity_graph_device_resolution() {
     store.put_manifest(&manifest).await.unwrap();
 
     // 5. Walk the Identity Graph
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
     let resolved_addr = walker
         .resolve_path(&graph_id, root_index_id, "/credentials/laptop_1", &key)
         .await
@@ -84,7 +84,7 @@ async fn test_identity_graph_missing_device_failure() {
         .await
         .unwrap();
 
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
     let result = walker
         .resolve_path(&graph_id, root_index_id, "/credentials/stolen_laptop", &key)
         .await;
@@ -96,11 +96,10 @@ async fn test_identity_graph_missing_device_failure() {
 async fn test_identity_graph_unauthorized_traversal_failure() {
     let mut rng = OsRng;
     let store = InMemoryStore::new();
-    let identity = SecretIdentity::generate(&mut rng).unwrap();
     let graph_id = GraphId::new();
     let key = GraphKey::generate(&mut rng);
 
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
     let fake_root = BlockId::from_sha256(&[0xFF; 32]);
 
     // Should fail because the block doesn't exist in store
@@ -146,7 +145,7 @@ async fn test_identity_graph_revocation() {
     store.put_manifest(&manifest).await.unwrap();
 
     {
-        let walker = GraphWalker::new(&store, master.public().signing_key().clone());
+        let walker = GraphWalker::new(&store);
         let result = walker
             .resolve_path(&graph_id, root_index_id, "/phone", &key)
             .await;
@@ -167,7 +166,7 @@ async fn test_identity_graph_revocation() {
         .unwrap();
 
     {
-        let walker = GraphWalker::new(&store, master.public().signing_key().clone());
+        let walker = GraphWalker::new(&store);
         let result_v2 = walker
             .resolve_path(&graph_id, root_index_v2, "/phone", &key)
             .await;

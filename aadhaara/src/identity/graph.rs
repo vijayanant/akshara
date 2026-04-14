@@ -52,16 +52,12 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         }
 
         // 2. PRIMARY CHECK: Verify authority at the local anchor
-        self.check_authorization_at(signer, anchor, expected_root_key)
-            .await?;
+        self.check_authorization_at(signer, anchor).await?;
 
         // 3. LATEST STATE PROTECTION: Prevent "Ghost Branches" by checking the latest known state.
         // If a revocation exists at the frontier, this manifest is rejected regardless of its local anchor.
         if let Some(latest) = latest_identity.filter(|&l| l != anchor) {
-            match self
-                .check_authorization_at(signer, latest, expected_root_key)
-                .await
-            {
+            match self.check_authorization_at(signer, latest).await {
                 Ok(_) => { /* Still valid at frontier */ }
                 Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
                     return Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(
@@ -80,7 +76,6 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         &self,
         signer: &SigningPublicKey,
         anchor: &ManifestId,
-        expected_root_key: &SigningPublicKey,
     ) -> Result<(), AksharaError> {
         let manifest = self.store.get_manifest(anchor).await?.ok_or_else(|| {
             AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
@@ -90,7 +85,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         })?;
 
         // Walk the graph to find the credential registration
-        let walker = GraphWalker::new(self.store, expected_root_key.clone());
+        let walker = GraphWalker::new(self.store);
         let devices_root = manifest.content_root();
         let graph_id = manifest.graph_id();
 
@@ -170,7 +165,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         graph_id: &GraphId,
         root: BlockId,
     ) -> Result<Vec<SigningPublicKey>, AksharaError> {
-        let walker = GraphWalker::new(self.store, SigningPublicKey::new([0u8; 32])); // Root not used for read-only index walk
+        let walker = GraphWalker::new(self.store);
 
         // 1. Resolve the /credentials directory
         let creds_dir_addr = match walker

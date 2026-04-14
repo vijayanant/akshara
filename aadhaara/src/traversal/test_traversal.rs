@@ -21,7 +21,7 @@ async fn walker_with_corrupted_index_block() {
     let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
     store.put_manifest(&manifest).await.unwrap();
 
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
 
     // Walker should handle corrupted/missing index gracefully
     let result = walker.get_ancestors(&manifest.id()).await;
@@ -41,7 +41,7 @@ async fn walker_handles_missing_blocks_gracefully() {
     let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
     store.put_manifest(&manifest).await.unwrap();
 
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
 
     // Walker should handle missing blocks without panicking
     let result = walker.get_ancestors(&manifest.id()).await;
@@ -53,9 +53,9 @@ async fn walker_handles_missing_blocks_gracefully() {
 #[tokio::test]
 async fn can_find_ancestors_in_chain() {
     let store = InMemoryStore::new();
-    let (chain, master_key) = create_chain(3, &store).await; // A -> B -> C
+    let (chain, _master_key) = create_chain(3, &store).await; // A -> B -> C
 
-    let walker = GraphWalker::new(&store, master_key);
+    let walker = GraphWalker::new(&store);
     let ancestors = walker.get_ancestors(&chain[2]).await.unwrap();
 
     assert_eq!(ancestors.len(), 2);
@@ -89,7 +89,7 @@ async fn walker_handles_diamond_graph() {
     let m_d = Manifest::new(graph_id, root, vec![m_b.id(), m_c.id()], anchor, &identity);
     store.put_manifest(&m_d).await.unwrap();
 
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
     let ancestors = walker.get_ancestors(&m_d.id()).await.unwrap();
 
     // Should find A, B, and C
@@ -112,7 +112,7 @@ async fn walker_handles_missing_parent() {
     let m_b = Manifest::new(graph_id, root, vec![a_id], anchor, &identity);
     store.put_manifest(&m_b).await.unwrap();
 
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
     let ancestors = walker.get_ancestors(&m_b.id()).await.unwrap();
 
     assert_eq!(ancestors.len(), 1);
@@ -127,10 +127,10 @@ async fn walker_respects_graph_boundaries() {
     let (chain1, _master1) = create_chain(2, &store).await;
 
     // Chain 2: X -> Y
-    let (chain2, master2) = create_chain(2, &store).await;
+    let (chain2, _master2) = create_chain(2, &store).await;
     let head2 = chain2[1];
 
-    let walker = GraphWalker::new(&store, master2);
+    let walker = GraphWalker::new(&store);
     let ancestors2 = walker.get_ancestors(&head2).await.unwrap();
 
     assert!(ancestors2.contains(&chain2[0]));
@@ -172,7 +172,7 @@ async fn walker_handles_manifest_cycles_gracefully() {
 
     store.put_manifest(&malicious_manifest).await.unwrap();
 
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
 
     // Should fail integrity check before it even finishes the walk
     let result = walker.get_ancestors(&cycle_id).await;

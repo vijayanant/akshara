@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use akshara_aadhaara::{GraphId, GraphStore, InMemoryStore, Lakshana, SigningPublicKey};
+use akshara_aadhaara::{GraphId, GraphStore, InMemoryStore, Lakshana};
 
 use crate::config::{ClientConfig, TuningConfig};
 use crate::error::{Error, Result};
@@ -19,12 +19,11 @@ use crate::vault::{Vault, create_vault};
 /// - A vault for identity and key storage
 /// - A storage backend for blocks and manifests
 /// - An in-memory staging buffer for write coalescing
-/// - The user's root signing identity
+/// - A registry of graphs known to this client
 pub struct Client {
     vault: Arc<dyn Vault>,
     store: InMemoryStore,
     tuning: TuningConfig,
-    root_key: SigningPublicKey,
     graph_registry: Arc<RwLock<HashMap<GraphId, String>>>,
 }
 
@@ -38,11 +37,7 @@ impl Client {
         let tuning = config.tuning().clone();
 
         let vault = create_vault(vault_cfg)?;
-
         let _result = vault.initialize(None).await?;
-
-        let identity = vault.get_identity().await?;
-        let root_key = identity.public().signing_key().clone();
 
         let store = InMemoryStore::new();
         let graph_registry = Arc::new(RwLock::new(HashMap::new()));
@@ -51,7 +46,6 @@ impl Client {
             vault,
             store,
             tuning,
-            root_key,
             graph_registry,
         })
     }
@@ -151,14 +145,14 @@ impl Client {
     /// Currently uses `MockTransport` — real gRPC transport is coming in v0.2.
     pub async fn sync(&self) -> Result<SyncReport> {
         let transport = MockTransport::new();
-        let engine = SyncEngine::new(transport, self.vault.clone(), self.root_key.clone());
+        let engine = SyncEngine::new(transport, self.vault.clone());
         engine.sync_all(&self.store).await
     }
 
     /// Synchronize a specific graph.
     pub async fn sync_graph(&self, graph_id: GraphId) -> Result<SyncReport> {
         let transport = MockTransport::new();
-        let engine = SyncEngine::new(transport, self.vault.clone(), self.root_key.clone());
+        let engine = SyncEngine::new(transport, self.vault.clone());
         engine.sync_graph(graph_id, &self.store).await
     }
 
@@ -172,11 +166,6 @@ impl Client {
             registry.remove(&graph_id);
         }
         Ok(())
-    }
-
-    /// Returns the root signing public key.
-    pub fn root_key(&self) -> &SigningPublicKey {
-        &self.root_key
     }
 
     /// Returns the vault handle for vault-specific operations.

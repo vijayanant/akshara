@@ -122,7 +122,7 @@ async fn test_byzantine_walker_robustness() {
         }
 
         {
-            let walker = GraphWalker::new(&store, master.public().signing_key().clone());
+            let walker = GraphWalker::new(&store);
             let _ = walker
                 .resolve_path(
                     &akshara_aadhaara::GraphId::new(),

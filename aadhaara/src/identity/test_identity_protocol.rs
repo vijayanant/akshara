@@ -52,7 +52,7 @@ async fn test_akshara_full_authority_chain_verification() {
     let relay_store = InMemoryStore::new();
 
     // --- ACTOR 1: Alice's Laptop (The Authorizer) ---
-    let (id_root_index, alice_master_pub, id_graph_id) = {
+    let (id_root_index, _alice_master_pub, id_graph_id) = {
         let alice_master =
             SecretIdentity::from_mnemonic_at_path(&mnemonic, passphrase, "m/44'/999'/0'/0'/0'")
                 .unwrap();
@@ -111,7 +111,7 @@ async fn test_akshara_full_authority_chain_verification() {
     // The Auditor has ZERO knowledge of Alice's mnemonic or private keys.
     // It only has the Relay store, the Manifest, and Alice's Master Public Key.
     {
-        let walker = GraphWalker::new(&relay_store, alice_master_pub.clone());
+        let walker = GraphWalker::new(&relay_store);
 
         // 1. Walk the graph to find the authorized key
         let path = format!("/credentials/{}", doc_manifest.author().to_hex());

@@ -37,7 +37,7 @@ async fn can_find_manifest_lca() {
     store.put_manifest(&m_c).await.unwrap();
 
     // 4. Find LCA of B and C
-    let walker = GraphWalker::new(&store, identity.public().signing_key().clone());
+    let walker = GraphWalker::new(&store);
     let lca = walker.find_lca(&m_b.id(), &m_c.id()).await.unwrap();
 
     assert_eq!(lca, Some(m_a.id()));

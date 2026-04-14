@@ -62,22 +62,21 @@ async fn mock_transport_push_portions_accepts_all() {
 async fn sync_engine_new() {
     let transport = MockTransport::new();
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
-    let root_key = identity.public().signing_key().clone();
+    let _root_key = identity.public().signing_key().clone();
 
     let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
-    let _engine = SyncEngine::new(transport, vault, root_key);
+    let _engine = SyncEngine::new(transport, vault);
     // Test that engine can be created
 }
 
 #[tokio::test]
 async fn sync_engine_sync_graph_empty_store() {
     let transport = MockTransport::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
-    let root_key = identity.public().signing_key().clone();
+    let _identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let store = InMemoryStore::new();
 
     let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
-    let engine = SyncEngine::new(transport, vault, root_key);
+    let engine = SyncEngine::new(transport, vault);
     let graph_id = GraphId::new();
 
     let report = engine.sync_graph(graph_id, &store).await.unwrap();
@@ -92,12 +91,11 @@ async fn sync_engine_sync_graph_empty_store() {
 #[tokio::test]
 async fn sync_engine_sync_all_empty_store() {
     let transport = MockTransport::new();
-    let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
-    let root_key = identity.public().signing_key().clone();
+    let _identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let store = InMemoryStore::new();
 
     let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
-    let engine = SyncEngine::new(transport, vault, root_key);
+    let engine = SyncEngine::new(transport, vault);
 
     let report = engine.sync_all(&store).await.unwrap();
 
