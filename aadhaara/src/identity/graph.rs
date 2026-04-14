@@ -66,10 +66,49 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
                 }
                 Err(e) => return Err(e),
             }
+        } else {
+            // No latest state available (e.g., shared graph). Check revocation at the anchor
+            // itself — if the signer was already revoked at the time of signing, reject.
+            self.check_not_revoked_at(signer, anchor).await?;
         }
 
         debug!("Signer authority verified via frontier-aware walk");
         Ok(())
+    }
+
+    /// Checks that the signer has NOT been revoked at the given identity anchor.
+    /// Used when no latest identity state is available (e.g., shared graphs).
+    async fn check_not_revoked_at(
+        &self,
+        signer: &SigningPublicKey,
+        anchor: &ManifestId,
+    ) -> Result<(), AksharaError> {
+        let manifest = self.store.get_manifest(anchor).await?.ok_or_else(|| {
+            AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                "Identity anchor {}",
+                anchor
+            )))
+        })?;
+
+        let walker = GraphWalker::new(self.store);
+        let devices_root = manifest.content_root();
+        let graph_id = manifest.graph_id();
+
+        let revocation_path = format!("revocations/{}", signer.to_hex());
+        match walker
+            .resolve_path(
+                &graph_id,
+                devices_root,
+                &revocation_path,
+                &IDENTITY_GRAPH_KEY,
+            )
+            .await
+        {
+            Ok(_) => Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(
+                "Signer has been revoked".to_string(),
+            ))),
+            Err(_) => Ok(()), // Not revoked at this anchor
+        }
     }
 
     async fn check_authorization_at(

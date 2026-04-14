@@ -356,3 +356,127 @@ async fn test_adversarial_ghost_branch_rejection() {
         ),
     }
 }
+
+/// **TEST: Revocation Detection Without Latest Identity (High Severity Fix)**
+///
+/// This test verifies that even when no "latest" identity state is available
+/// (e.g., syncing a shared graph where we only see the peer's anchor),
+/// the Auditor still detects revocations at the anchor itself.
+///
+/// Scenario:
+/// 1. Alice creates a genesis identity anchor
+/// 2. Alice authorizes a device (phone)
+/// 3. Alice revokes the phone
+/// 4. The phone tries to sign a manifest anchored to the post-revocation state
+/// 5. The Auditor (with latest_identity=None) must reject the manifest
+#[tokio::test]
+async fn test_revocation_detected_without_latest_identity() {
+    let mut rng = OsRng;
+    let store = InMemoryStore::new();
+    let identity_key = crate::identity::graph::IDENTITY_GRAPH_KEY;
+
+    // 1. Alice's genesis (Legislator root)
+    let alice = SecretIdentity::generate(&mut rng).unwrap();
+    let genesis_anchor = create_valid_anchor(&store, &alice).await;
+
+    // 2. Create and authorize a phone device
+    let phone = SecretIdentity::generate(&mut rng).unwrap();
+    let signer_hex = phone.public().signing_key().to_hex();
+
+    let auth_block = Block::new(
+        GraphId::new(),
+        vec![],
+        BlockType::AksharaAuthV1,
+        vec![],
+        &identity_key,
+        &alice,
+    )
+    .unwrap();
+    store.put_block(&auth_block).await.unwrap();
+
+    let mut builder = crate::traversal::IndexBuilder::new();
+    builder
+        .insert(
+            &format!("credentials/{}", signer_hex),
+            Address::from(auth_block.id()),
+        )
+        .unwrap();
+
+    let root_index_id = builder
+        .build(GraphId::new(), &store, &alice, &identity_key)
+        .await
+        .unwrap();
+
+    let anchor_with_phone = Manifest::new(
+        GraphId::new(),
+        root_index_id,
+        vec![genesis_anchor],
+        genesis_anchor,
+        &alice,
+    );
+    let anchor_with_phone_id = anchor_with_phone.id();
+    store.put_manifest(&anchor_with_phone).await.unwrap();
+
+    // 3. Revoke the phone — add a revocation entry
+    let revocation_block = Block::new(
+        GraphId::new(),
+        vec![],
+        BlockType::AksharaRevocationV1,
+        vec![],
+        &identity_key,
+        &alice,
+    )
+    .unwrap();
+    store.put_block(&revocation_block).await.unwrap();
+
+    let mut builder2 = crate::traversal::IndexBuilder::new();
+    builder2
+        .insert(
+            &format!("revocations/{}", signer_hex),
+            Address::from(revocation_block.id()),
+        )
+        .unwrap();
+
+    let root_after_revocation = builder2
+        .build(GraphId::new(), &store, &alice, &identity_key)
+        .await
+        .unwrap();
+
+    let anchor_after_revocation = Manifest::new(
+        GraphId::new(),
+        root_after_revocation,
+        vec![anchor_with_phone_id],
+        anchor_with_phone_id,
+        &alice,
+    );
+    let anchor_after_revocation_id = anchor_after_revocation.id();
+    store.put_manifest(&anchor_after_revocation).await.unwrap();
+
+    // 4. The revoked phone signs a data manifest anchored to the post-revocation state
+    let data_graph_id = GraphId::new();
+    let root = BlockId::from_sha256(&[0xDD; 32]);
+
+    let revoked_manifest = Manifest::new(
+        data_graph_id,
+        root,
+        vec![],
+        anchor_after_revocation_id, // Anchored to state AFTER revocation
+        &phone,                     // Signed by the revoked phone
+    );
+
+    // 5. Auditor with latest_identity=None must still reject
+    let auditor = Auditor::new(&store);
+    let result = auditor.audit_manifest(&revoked_manifest).await;
+
+    assert!(
+        result.is_err(),
+        "Auditor should reject manifest signed by a revoked device, even without latest_identity"
+    );
+    assert!(
+        matches!(
+            result.unwrap_err(),
+            AksharaError::Integrity(IntegrityError::UnauthorizedSigner(_))
+        ),
+        "Should fail with UnauthorizedSigner (revoked)"
+    );
+}
