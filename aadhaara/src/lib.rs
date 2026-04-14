@@ -20,7 +20,10 @@ pub use base::crypto::{
 pub use base::encoding::{from_canonical_bytes, to_canonical_bytes};
 pub use base::error::{AksharaError, IntegrityError};
 
-pub use graph::{Block, BlockType, Manifest};
+pub use graph::{
+    AksharaDocument, Block, BlockMode, BlockType, DocumentSchema, FieldDescriptor, LazyField,
+    Manifest,
+};
 pub use identity::{
     GraphDescriptor, IdentityGraph, MasterIdentity, SecretIdentity, graph::IDENTITY_GRAPH_KEY,
     paths,

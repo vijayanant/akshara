@@ -558,23 +558,33 @@ impl SecretIdentity {
     ///
     /// This method automatically:
     /// 1. Derives the Shadow Identity for the given graph.
-    /// 2. Hashes the signer's derivation path for the manifest header.
-    /// 3. (Future) Attaches a Shadow Certificate if the anchor is not null.
+    /// 2. (Optional) Attaches a Shadow Certificate if a GraphKey is provided.
+    /// 3. Hashes the signer's derivation path for the manifest header.
+    /// 4. Computes the Header CID and returns the (ShadowPub, Signature) pair.
     pub fn sign_manifest_shadowed(
         &self,
         header: &mut crate::graph::ManifestHeader,
         graph_id: &GraphId,
+        graph_key: Option<&GraphKey>,
     ) -> Result<(SigningPublicKey, Signature), AksharaError> {
         let shadow = self.derive_shadow_identity(graph_id)?;
+        let shadow_pub = shadow.public().signing_key().clone();
 
-        // Update header with the signer's path hash
+        // 1. If a GraphKey is provided, attach a Shadow Certificate
+        if let Some(key) = graph_key {
+            let mut rng = rand::rngs::OsRng;
+            let cert = self.create_shadow_certificate(&shadow_pub, graph_id, key, &mut rng)?;
+            header.authority_proof = Some(cert);
+        }
+
+        // 2. Update header with the signer's path hash
         let mut path_hasher = sha2::Sha256::new();
         path_hasher.update(shadow.derivation_path().as_bytes());
         header.signer_path_hash = path_hasher.finalize().into();
 
-        let shadow_pub = shadow.public().signing_key().clone();
-        let header_cid = crate::graph::Manifest::compute_header_id(header, &shadow_pub);
-        let signature = shadow.sign(header_cid.as_ref());
+        // 3. Compute the Header ID and sign it
+        let header_id = crate::graph::Manifest::compute_header_id(header, &shadow_pub);
+        let signature = shadow.sign(header_id.as_ref());
 
         Ok((shadow_pub, signature))
     }
