@@ -481,6 +481,53 @@ async fn test_revocation_detected_without_latest_identity() {
     );
 }
 
+/// **TEST: Auditor Rejects Manifest with Missing Identity Anchor (Issue #2)**
+///
+/// During sync, manifests can arrive out of order. If a data manifest references
+/// an identity_anchor that hasn't arrived yet, the Auditor should reject it
+/// rather than crashing or accepting blindly.
+///
+/// Scenario:
+/// 1. Alice creates an identity anchor (genesis)
+/// 2. Alice signs a data manifest pointing to a NEW anchor that doesn't exist yet
+/// 3. The Auditor must reject it — the identity anchor is missing
+#[tokio::test]
+async fn test_auditor_rejects_manifest_with_missing_identity_anchor() {
+    let store = InMemoryStore::new();
+    let alice = SecretIdentity::generate(&mut OsRng).unwrap();
+    let genesis = create_valid_anchor(&store, &alice).await;
+
+    // Create a fake identity anchor that doesn't exist in the store
+    let fake_identity_anchor = ManifestId::from_sha256(&[0xCC; 32]);
+
+    // Sign a data manifest pointing to the missing identity anchor
+    let graph_id = GraphId::new();
+    let root = BlockId::from_sha256(&[0xDD; 32]);
+    let manifest = Manifest::new(graph_id, root, vec![], fake_identity_anchor, &alice);
+
+    let auditor = Auditor::new(&store);
+    let result = auditor.audit_manifest(&manifest, Some(&graph_id)).await;
+
+    assert!(
+        result.is_err(),
+        "Auditor should reject manifest when identity_anchor is missing"
+    );
+    assert!(
+        matches!(result.unwrap_err(), AksharaError::Store(_)),
+        "Should fail with Store error (identity anchor not found)"
+    );
+
+    // Now create a real identity anchor and retry — should pass
+    let identity_anchor = create_valid_anchor(&store, &alice).await;
+
+    let manifest2 = Manifest::new(graph_id, root, vec![], identity_anchor, &alice);
+    let auditor = Auditor::new(&store);
+    assert!(
+        auditor.audit_manifest(&manifest2, Some(&graph_id)).await.is_ok(),
+        "Auditor should accept when identity anchor exists"
+    );
+}
+
 /// **TEST: Auditor Rejects Manifests from Wrong Graph (Issue #1/#5 Fix)**
 ///
 /// This test verifies that the Auditor rejects manifests whose `graph_id`
