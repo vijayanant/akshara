@@ -133,7 +133,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
 
         if let Some(manifest) = self.store.get_manifest(start).await? {
             // Audit the starting manifest
-            self.auditor.audit_manifest(&manifest).await?;
+            self.auditor.audit_manifest(&manifest, None).await?;
 
             for parent in manifest.parents() {
                 if !visited.contains(parent) {
@@ -147,7 +147,7 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         while let Some(current_id) = queue.pop_front() {
             if let Some(manifest) = self.store.get_manifest(&current_id).await? {
                 // Audit each ancestor we find
-                self.auditor.audit_manifest(&manifest).await?;
+                self.auditor.audit_manifest(&manifest, None).await?;
 
                 for parent in manifest.parents() {
                     if !visited.contains(parent) {

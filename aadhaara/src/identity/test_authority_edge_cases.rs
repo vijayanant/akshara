@@ -42,7 +42,7 @@ async fn test_negative_identity_graph_swap() {
     let auditor = Auditor::new(&store);
 
     // Audit must fail because Bob is not authorized in Alice's history
-    let result = auditor.audit_manifest(&forged_manifest).await;
+    let result = auditor.audit_manifest(&forged_manifest, None).await;
     assert!(
         result.is_err(),
         "Auditor should have rejected Bob signing with Alice's anchor"
@@ -120,7 +120,7 @@ async fn test_negative_identity_stale_authority() {
     );
 
     let auditor = Auditor::new(&store);
-    let result = auditor.audit_manifest(&stale_manifest).await;
+    let result = auditor.audit_manifest(&stale_manifest, None).await;
 
     assert!(
         result.is_err(),
@@ -199,7 +199,7 @@ async fn test_negative_executive_cannot_sign_administrative_action() {
 
     // RED STATE: This SHOULD succeed currently (which is the failure we are testing)
     // because alice_phone IS authorized in the graph at anchor_id.
-    let audit_res = auditor.audit_manifest(&malicious_manifest).await;
+    let audit_res = auditor.audit_manifest(&malicious_manifest, None).await;
 
     assert!(
         audit_res.is_err(),
@@ -247,7 +247,7 @@ async fn test_negative_path_hijack_prefix() {
     );
 
     let auditor = Auditor::new(&store);
-    let res = auditor.audit_manifest(&malicious_manifest).await;
+    let res = auditor.audit_manifest(&malicious_manifest, None).await;
 
     // If our Auditor uses a strict check, this will fail.
     assert!(
@@ -340,7 +340,7 @@ async fn test_adversarial_ghost_branch_rejection() {
     // Our hardened Auditor (with latest_identity) MUST reject it.
     let auditor = Auditor::new(&store).with_latest_identity(id_manifest_v2.id());
 
-    let result = auditor.audit_manifest(&ghost_manifest).await;
+    let result = auditor.audit_manifest(&ghost_manifest, None).await;
 
     match result {
         Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
@@ -466,7 +466,7 @@ async fn test_revocation_detected_without_latest_identity() {
 
     // 5. Auditor with latest_identity=None must still reject
     let auditor = Auditor::new(&store);
-    let result = auditor.audit_manifest(&revoked_manifest).await;
+    let result = auditor.audit_manifest(&revoked_manifest, None).await;
 
     assert!(
         result.is_err(),
@@ -478,5 +478,61 @@ async fn test_revocation_detected_without_latest_identity() {
             AksharaError::Integrity(IntegrityError::UnauthorizedSigner(_))
         ),
         "Should fail with UnauthorizedSigner (revoked)"
+    );
+}
+
+/// **TEST: Auditor Rejects Manifests from Wrong Graph (Issue #1/#5 Fix)**
+///
+/// This test verifies that the Auditor rejects manifests whose `graph_id`
+/// does not match the expected graph. Without this check, a malicious peer
+/// could inject data manifests from a completely different graph and the
+/// Auditor would accept them as valid.
+///
+/// Scenario:
+/// 1. Alice creates an identity anchor
+/// 2. Alice signs a manifest for graph_a
+/// 3. Alice signs a manifest for graph_b
+/// 4. Auditor is auditing graph_a and receives the graph_b manifest
+/// 5. Auditor must reject it
+#[tokio::test]
+async fn test_auditor_rejects_manifest_from_wrong_graph() {
+    use crate::traversal::auditor::Auditor;
+
+    let store = InMemoryStore::new();
+    let alice = SecretIdentity::generate(&mut OsRng).unwrap();
+    let anchor = create_valid_anchor(&store, &alice).await;
+
+    // Manifest for graph_a — valid
+    let graph_a = GraphId::new();
+    let root_a = BlockId::from_sha256(&[0xAA; 32]);
+    let manifest_a = Manifest::new(graph_a, root_a, vec![], anchor, &alice);
+
+    // Manifest for graph_b — also valid internally, but WRONG graph
+    let graph_b = GraphId::new();
+    let root_b = BlockId::from_sha256(&[0xBB; 32]);
+    let manifest_b = Manifest::new(graph_b, root_b, vec![], anchor, &alice);
+
+    // Auditor auditing graph_a receives graph_b's manifest
+    let auditor = Auditor::new(&store);
+    let result = auditor.audit_manifest(&manifest_b, Some(&graph_a)).await;
+
+    assert!(
+        result.is_err(),
+        "Auditor should reject manifest from wrong graph_id"
+    );
+    assert!(
+        matches!(
+            result.unwrap_err(),
+            AksharaError::Integrity(IntegrityError::GraphIdMismatch(..))
+        ),
+        "Should fail with GraphIdMismatch error"
+    );
+
+    // But the same manifest from the CORRECT graph should pass
+    let auditor = Auditor::new(&store);
+    let result = auditor.audit_manifest(&manifest_a, Some(&graph_a)).await;
+    assert!(
+        result.is_ok(),
+        "Auditor should accept manifest from correct graph_id"
     );
 }

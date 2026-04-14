@@ -1,4 +1,4 @@
-use crate::base::address::{Address, BlockId, ManifestId};
+use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::SigningPublicKey;
 use crate::base::error::AksharaError;
 use crate::graph::{Block, Manifest};
@@ -90,9 +90,24 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         ))
     }
 
-    pub async fn audit_manifest(&self, manifest: &Manifest) -> Result<(), AksharaError> {
+    pub async fn audit_manifest(
+        &self,
+        manifest: &Manifest,
+        expected_graph_id: Option<&GraphId>,
+    ) -> Result<(), AksharaError> {
         let span = span!(Level::DEBUG, "audit_manifest", id = ?manifest.id());
         let _enter = span.enter();
+
+        // GRAPH ID CHECK: Reject manifests from a different graph.
+        // This prevents a malicious peer from injecting valid manifests
+        // from a different graph during sync.
+        if let Some(expected) = expected_graph_id
+            && manifest.graph_id() != *expected
+        {
+            return Err(crate::base::error::AksharaError::Integrity(
+                crate::base::error::IntegrityError::GraphIdMismatch(manifest.graph_id(), *expected),
+            ));
+        }
 
         manifest.verify_integrity()?;
 

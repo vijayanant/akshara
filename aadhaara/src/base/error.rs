@@ -1,4 +1,4 @@
-use crate::base::address::{Address, BlockId, ManifestId};
+use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -50,6 +50,9 @@ pub enum IntegrityError {
 
     #[error("Block ID {0:?} does not match its content hash")]
     BlockIdMismatch(BlockId),
+
+    #[error("Manifest graph ID {0} does not match expected graph ID {1}")]
+    GraphIdMismatch(GraphId, GraphId),
 
     #[error("Manifest {0:?} ID does not match its metadata hash")]
     ManifestIdMismatch(ManifestId),

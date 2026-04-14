@@ -167,7 +167,7 @@ async fn identity_adversarial_shadow_isolation() {
     let store = crate::state::in_memory_store::InMemoryStore::new();
     let auditor = crate::traversal::auditor::Auditor::new(&store);
 
-    let result = auditor.audit_manifest(&malicious_manifest).await;
+    let result = auditor.audit_manifest(&malicious_manifest, None).await;
 
     // This should fail because the Shadow Key derived for GID_A is mathematically
     // different from the one that would be derived for GID_B.

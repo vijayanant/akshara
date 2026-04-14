@@ -41,7 +41,7 @@ async fn test_auditor_accepts_valid_genesis_manifest() {
     let genesis = create_identity_anchor_manifest(&store, &identity).await;
 
     let auditor = Auditor::new(&store);
-    assert!(auditor.audit_manifest(&genesis).await.is_ok());
+    assert!(auditor.audit_manifest(&genesis, None).await.is_ok());
 }
 
 #[tokio::test]
@@ -58,7 +58,7 @@ async fn test_auditor_rejects_tampered_signature() {
     );
 
     let auditor = Auditor::new(&store);
-    let result = auditor.audit_manifest(&tampered_manifest).await;
+    let result = auditor.audit_manifest(&tampered_manifest, None).await;
 
     assert!(result.is_err());
     assert!(matches!(
@@ -90,7 +90,7 @@ async fn test_auditor_accepts_valid_data_manifest() {
     store.put_manifest(&data_manifest).await.unwrap();
 
     let auditor = Auditor::new(&store);
-    assert!(auditor.audit_manifest(&data_manifest).await.is_ok());
+    assert!(auditor.audit_manifest(&data_manifest, None).await.is_ok());
 }
 
 #[tokio::test]
@@ -126,7 +126,7 @@ async fn test_auditor_rejects_invalid_anchor() {
     );
 
     let auditor = Auditor::new(&store);
-    assert!(auditor.audit_manifest(&bad_manifest).await.is_err());
+    assert!(auditor.audit_manifest(&bad_manifest, None).await.is_err());
 }
 
 #[tokio::test]
@@ -258,7 +258,7 @@ async fn test_auditor_with_latest_identity() {
 
     let auditor = Auditor::new(&store).with_latest_identity(genesis.id());
 
-    assert!(auditor.audit_manifest(&genesis).await.is_ok());
+    assert!(auditor.audit_manifest(&genesis, None).await.is_ok());
 }
 
 #[tokio::test]
@@ -310,5 +310,5 @@ async fn test_auditor_rejects_admin_non_legislator() {
     store.put_manifest(&genesis).await.unwrap();
 
     let auditor = Auditor::new(&store);
-    assert!(auditor.audit_manifest(&genesis).await.is_err());
+    assert!(auditor.audit_manifest(&genesis, None).await.is_err());
 }

@@ -130,12 +130,15 @@ impl<T: SyncTransport> SyncEngine<T> {
                         })?;
 
                 // THE AUTHORITY AUDIT: Verify the author's right to speak before ingestion
-                auditor.audit_manifest(&manifest).await.map_err(|e| {
-                    Error::SyncFailed(format!(
-                        "Authority audit failed for {}: {}",
-                        expected_cid, e
-                    ))
-                })?;
+                auditor
+                    .audit_manifest(&manifest, Some(&graph_id))
+                    .await
+                    .map_err(|e| {
+                        Error::SyncFailed(format!(
+                            "Authority audit failed for {}: {}",
+                            expected_cid, e
+                        ))
+                    })?;
 
                 store
                     .put_manifest(&manifest)
