@@ -25,6 +25,7 @@ pub struct Graph {
     store: InMemoryStore,
     staging: Arc<InMemoryStagingStore>,
     tuning: TuningConfig,
+    flush_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Graph {
@@ -44,6 +45,7 @@ impl Graph {
             store,
             staging,
             tuning,
+            flush_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -126,7 +128,6 @@ impl Graph {
             .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
             .ok_or_else(|| Error::Internal("Manifest not found".to_string()))?;
 
-        let _identity = self.vault.get_identity().await?;
         let walker = akshara_aadhaara::GraphWalker::new(&self.store);
 
         let address = walker
@@ -192,7 +193,6 @@ impl Graph {
             .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
             .ok_or_else(|| Error::Internal("Manifest not found".to_string()))?;
 
-        let _identity = self.vault.get_identity().await?;
         let walker = akshara_aadhaara::GraphWalker::new(&self.store);
 
         let address = walker
@@ -247,7 +247,6 @@ impl Graph {
             return Ok(paths);
         }
 
-        let _identity = self.vault.get_identity().await?;
         let walker = akshara_aadhaara::GraphWalker::new(&self.store);
 
         match walker
@@ -324,6 +323,8 @@ impl Graph {
     /// creates blocks with proper lineage, builds the Merkle index, and
     /// signs a manifest checkpoint.
     pub async fn flush(&self) -> Result<FlushReport> {
+        let _lock = self.flush_lock.lock().await;
+
         let operations = self.staging.fetch_pending().await?;
         if operations.is_empty() {
             return Err(Error::NothingToFlush);
@@ -575,6 +576,12 @@ fn validate_path(path: &str) -> Result<()> {
         return Err(Error::InvalidPath {
             path: path.to_string(),
             reason: "must not exceed 1024 characters".to_string(),
+        });
+    }
+    if path.split('/').any(|seg| seg == "." || seg == "..") {
+        return Err(Error::InvalidPath {
+            path: path.to_string(),
+            reason: "must not contain relative path segments (. or ..)".to_string(),
         });
     }
     if path.split('/').any(|seg| seg.starts_with(".akshara.")) {

@@ -495,7 +495,7 @@ async fn test_revocation_detected_without_latest_identity() {
 async fn test_auditor_rejects_manifest_with_missing_identity_anchor() {
     let store = InMemoryStore::new();
     let alice = SecretIdentity::generate(&mut OsRng).unwrap();
-    let genesis = create_valid_anchor(&store, &alice).await;
+    create_valid_anchor(&store, &alice).await;
 
     // Create a fake identity anchor that doesn't exist in the store
     let fake_identity_anchor = ManifestId::from_sha256(&[0xCC; 32]);
@@ -523,7 +523,10 @@ async fn test_auditor_rejects_manifest_with_missing_identity_anchor() {
     let manifest2 = Manifest::new(graph_id, root, vec![], identity_anchor, &alice);
     let auditor = Auditor::new(&store);
     assert!(
-        auditor.audit_manifest(&manifest2, Some(&graph_id)).await.is_ok(),
+        auditor
+            .audit_manifest(&manifest2, Some(&graph_id))
+            .await
+            .is_ok(),
         "Auditor should accept when identity anchor exists"
     );
 }

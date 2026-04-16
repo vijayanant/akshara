@@ -22,17 +22,17 @@ use tracing::{Level, debug, span};
 pub struct Auditor<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
     pub(crate) latest_identity: Option<ManifestId>,
+    /// Memoized root key discovered during this session to avoid O(N^2) walks.
+    pub(crate) memoized_root_key: std::sync::Arc<std::sync::RwLock<Option<SigningPublicKey>>>,
 }
 
 impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
     /// Creates a new Auditor.
-    ///
-    /// The Auditor discovers the root of trust from the identity graph
-    /// itself — no external key is required or accepted.
     pub fn new(store: &'a S) -> Self {
         Self {
             store,
             latest_identity: None,
+            memoized_root_key: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -42,52 +42,106 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
     }
 
     /// Discovers the Legislator root key from the manifest's identity graph.
-    ///
-    /// For genesis manifests (`identity_anchor == null`), the author IS the root.
-    /// For all other manifests, this walks the identity graph manifest chain
-    /// back to its genesis.
     async fn discover_root_key(
         &self,
         manifest: &Manifest,
     ) -> Result<SigningPublicKey, AksharaError> {
-        // Genesis manifest: the author IS the root of trust
-        if manifest.identity_anchor() == ManifestId::null() {
-            return Ok(manifest.author().clone());
-        }
-        // Non-genesis: walk the identity graph to find the genesis
-        self.discover_identity_root(&manifest.identity_anchor())
-            .await
-    }
-
-    /// Walks the identity graph manifest chain to find the genesis.
-    async fn discover_identity_root(
-        &self,
-        anchor: &ManifestId,
-    ) -> Result<SigningPublicKey, AksharaError> {
-        let anchor_manifest = self.store.get_manifest(anchor).await?.ok_or_else(|| {
-            AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
-                "Identity anchor {}",
-                anchor
-            )))
-        })?;
-
-        // If this is the genesis of the identity graph, its author is the root.
-        if anchor_manifest.identity_anchor() == ManifestId::null() {
-            return Ok(anchor_manifest.author().clone());
-        }
-
-        // Otherwise walk back through the identity graph's parents.
-        for parent_id in anchor_manifest.parents() {
-            if let Ok(root_key) = Box::pin(self.discover_identity_root(parent_id)).await {
-                return Ok(root_key);
+        // 1. Check memoization first
+        {
+            let cache = self.memoized_root_key.read().map_err(|_| {
+                AksharaError::InternalError("memoized_root_key lock poisoned".to_string())
+            })?;
+            if let Some(ref key) = *cache {
+                return Ok(key.clone());
             }
         }
 
-        Err(AksharaError::Integrity(
-            crate::base::error::IntegrityError::UnauthorizedSigner(
-                "Could not find genesis manifest in the identity graph".to_string(),
-            ),
-        ))
+        // 2. Not in cache, perform discovery
+        let root_key = if manifest.identity_anchor() == ManifestId::null() {
+            // Genesis manifest: the author IS the root of trust
+            manifest.author().clone()
+        } else {
+            // Non-genesis: walk the identity graph to find the genesis
+            self.discover_identity_root_iterative(&manifest.identity_anchor())
+                .await?
+        };
+
+        // 3. Update cache
+        {
+            let mut cache = self.memoized_root_key.write().map_err(|_| {
+                AksharaError::InternalError("memoized_root_key lock poisoned".to_string())
+            })?;
+            *cache = Some(root_key.clone());
+        }
+
+        Ok(root_key)
+    }
+
+    /// Iterative discovery of the identity root with depth limits and convergence checks.
+    async fn discover_identity_root_iterative(
+        &self,
+        anchor: &ManifestId,
+    ) -> Result<SigningPublicKey, AksharaError> {
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(*anchor);
+
+        let mut discovered_root: Option<SigningPublicKey> = None;
+        let mut visited = std::collections::HashSet::new();
+        let mut depth = 0;
+        const MAX_IDENTITY_DEPTH: usize = 1024;
+
+        while let Some(current_id) = queue.pop_front() {
+            if !visited.insert(current_id) {
+                continue;
+            }
+
+            depth += 1;
+            if depth > MAX_IDENTITY_DEPTH {
+                return Err(AksharaError::Integrity(
+                    crate::base::error::IntegrityError::UnauthorizedSigner(
+                        "Identity graph depth limit exceeded".to_string(),
+                    ),
+                ));
+            }
+
+            let manifest = self.store.get_manifest(&current_id).await?.ok_or_else(|| {
+                AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                    "Identity anchor {}",
+                    current_id
+                )))
+            })?;
+
+            if manifest.identity_anchor() == ManifestId::null() {
+                // Found a genesis manifest!
+                let author = manifest.author();
+
+                if let Some(ref existing_root) = discovered_root {
+                    if existing_root != author {
+                        // UNIQUENESS OF TITLE VIOLATION:
+                        // This graph claims to anchor to two different people.
+                        return Err(AksharaError::Integrity(
+                            crate::base::error::IntegrityError::UnauthorizedSigner(
+                                "Conflict of Title: identity graph anchors to multiple root keys"
+                                    .to_string(),
+                            ),
+                        ));
+                    }
+                } else {
+                    discovered_root = Some(author.clone());
+                }
+            } else {
+                // Not a genesis, keep walking parents
+                for parent_id in manifest.parents() {
+                    queue.push_back(*parent_id);
+                }
+            }
+        }
+
+        discovered_root.ok_or_else(|| {
+            AksharaError::Integrity(crate::base::error::IntegrityError::UnauthorizedSigner(
+                "Could not find genesis manifest in the identity graph chain".to_string(),
+            ))
+        })
     }
 
     pub async fn audit_manifest(
