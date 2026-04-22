@@ -18,7 +18,7 @@ async fn walker_with_corrupted_index_block() {
     let root = create_dummy_root();
 
     // Create a valid manifest first
-    let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
+    let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity, None);
     store.put_manifest(&manifest).await.unwrap();
 
     let walker = GraphWalker::new(&store);
@@ -38,7 +38,7 @@ async fn walker_handles_missing_blocks_gracefully() {
     let anchor = create_valid_anchor(&store, &identity).await;
     let root = create_dummy_root();
 
-    let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity);
+    let manifest = Manifest::new(graph_id, root, vec![], anchor, &identity, None);
     store.put_manifest(&manifest).await.unwrap();
 
     let walker = GraphWalker::new(&store);
@@ -72,21 +72,28 @@ async fn walker_handles_diamond_graph() {
     let anchor = create_valid_anchor(&store, &identity).await;
 
     // 1. Root A
-    let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity);
+    let m_a = Manifest::new(graph_id, root, vec![], anchor, &identity, None);
     store.put_manifest(&m_a).await.unwrap();
 
     // 2. Branch B -> A (Add a unique block)
     let b_block = BlockId::from_sha256(&[0xB1; 32]);
-    let m_b = Manifest::new(graph_id, b_block, vec![m_a.id()], anchor, &identity);
+    let m_b = Manifest::new(graph_id, b_block, vec![m_a.id()], anchor, &identity, None);
     store.put_manifest(&m_b).await.unwrap();
 
     // 3. Branch C -> A (Add a different unique block)
     let c_block = BlockId::from_sha256(&[0xC1; 32]);
-    let m_c = Manifest::new(graph_id, c_block, vec![m_a.id()], anchor, &identity);
+    let m_c = Manifest::new(graph_id, c_block, vec![m_a.id()], anchor, &identity, None);
     store.put_manifest(&m_c).await.unwrap();
 
     // 4. Merge D -> B, C
-    let m_d = Manifest::new(graph_id, root, vec![m_b.id(), m_c.id()], anchor, &identity);
+    let m_d = Manifest::new(
+        graph_id,
+        root,
+        vec![m_b.id(), m_c.id()],
+        anchor,
+        &identity,
+        None,
+    );
     store.put_manifest(&m_d).await.unwrap();
 
     let walker = GraphWalker::new(&store);
@@ -109,7 +116,7 @@ async fn walker_handles_missing_parent() {
 
     // Manifest B pointing to A, but A is not in store
     let a_id = ManifestId::from_sha256(&[0xEE; 32]);
-    let m_b = Manifest::new(graph_id, root, vec![a_id], anchor, &identity);
+    let m_b = Manifest::new(graph_id, root, vec![a_id], anchor, &identity, None);
     store.put_manifest(&m_b).await.unwrap();
 
     let walker = GraphWalker::new(&store);
@@ -159,6 +166,7 @@ async fn walker_handles_manifest_cycles_gracefully() {
         parents: vec![cycle_id], // Point to self!
         identity_anchor: anchor,
         signer_path_hash,
+        authority_proof: None,
         created_at: 12345,
     };
 

@@ -41,7 +41,7 @@ async fn test_identity_temporal_forgery_rejection() {
         .await
         .unwrap();
 
-    let manifest_v1 = Manifest::new(graph_id, root_index_v1_id, vec![], anchor, &master);
+    let manifest_v1 = Manifest::new(graph_id, root_index_v1_id, vec![], anchor, &master, None);
     store.put_manifest(&manifest_v1).await.unwrap();
 
     // 2. AT T=10: Revoke Device A (Phone stolen!)
@@ -58,6 +58,7 @@ async fn test_identity_temporal_forgery_rejection() {
         vec![manifest_v1.id()],
         anchor,
         &master,
+        None,
     );
     store.put_manifest(&manifest_v2).await.unwrap();
 

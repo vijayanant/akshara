@@ -103,7 +103,14 @@ async fn test_akshara_full_authority_chain_verification() {
         let doc_root = BlockId::from_sha256(&[0xAA; 32]);
 
         // The phone signs the update, anchoring it to the identity graph
-        let manifest = Manifest::new(gid, doc_root, vec![], ManifestId::null(), &alice_phone);
+        let manifest = Manifest::new(
+            gid,
+            doc_root,
+            vec![],
+            ManifestId::null(),
+            &alice_phone,
+            None,
+        );
         (gid, manifest)
     };
 

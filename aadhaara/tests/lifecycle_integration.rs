@@ -36,6 +36,7 @@ async fn test_sync_recursive_index_structure() {
         vec![],
         ManifestId::null(),
         &identity,
+        None,
     );
     laptop_store.put_manifest(&manifest).await.unwrap();
 
@@ -122,6 +123,7 @@ async fn test_identity_rebirth_bootstrap() {
             vec![],
             ManifestId::null(),
             &laptop_identity,
+            None,
         );
 
         relay_store.put_block(&id_root).await.unwrap();
@@ -196,6 +198,7 @@ async fn test_full_lifecycle_stateless_journey() {
             vec![],
             ManifestId::null(),
             &alice_laptop,
+            None,
         );
         laptop_store.put_manifest(&manifest).await.unwrap();
 
@@ -228,6 +231,7 @@ async fn test_full_lifecycle_stateless_journey() {
             vec![],
             ManifestId::null(),
             &alice_laptop,
+            None,
         );
         laptop_store.put_manifest(&id_manifest).await.unwrap();
 

@@ -48,7 +48,7 @@ fn test_byzantine_manifest_corruption() {
     let root = akshara_aadhaara::BlockId::from_sha256(&[0xFF; 32]);
     let anchor = akshara_aadhaara::ManifestId::null();
 
-    let manifest = akshara_aadhaara::Manifest::new(graph_id, root, vec![], anchor, &master);
+    let manifest = akshara_aadhaara::Manifest::new(graph_id, root, vec![], anchor, &master, None);
     let manifest_bytes = akshara_aadhaara::to_canonical_bytes(&manifest).unwrap();
 
     for _ in 0..100 {
@@ -207,8 +207,14 @@ async fn test_async_storm_manifest_heads() {
                 };
 
                 // 2. Create new manifest pointing to current heads
-                let m =
-                    akshara_aadhaara::Manifest::new(graph_id, root, heads, anchor, &identity_ref);
+                let m = akshara_aadhaara::Manifest::new(
+                    graph_id,
+                    root,
+                    heads,
+                    anchor,
+                    &identity_ref,
+                    None,
+                );
 
                 // 3. Put manifest
                 {

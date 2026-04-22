@@ -42,52 +42,14 @@ pub(crate) async fn create_valid_anchor(
     store: &crate::state::in_memory_store::InMemoryStore,
     identity: &crate::identity::SecretIdentity,
 ) -> crate::base::address::ManifestId {
-    use crate::graph::BlockType;
-    use crate::identity::graph::IDENTITY_GRAPH_KEY;
-    use crate::state::store::GraphStore;
+    use crate::test_utils::TestFactory;
+    use std::sync::Arc;
+    let mut factory = TestFactory::new().await;
+    factory.identity = identity.clone();
+    factory.store = Arc::new(store.clone()); // Use the PROVIDED store
 
-    let identity_key = IDENTITY_GRAPH_KEY;
-    let signer_hex = identity.public().signing_key().to_hex();
-    let graph_id = crate::base::address::GraphId::new();
-
-    // 1. Create the authorization block (The Leaf)
-    let auth_block = crate::graph::Block::new(
-        graph_id,
-        vec![],
-        BlockType::AksharaAuthV1,
-        vec![],
-        &identity_key,
-        identity,
-    )
-    .unwrap();
-    store.put_block(&auth_block).await.unwrap();
-
-    // 2. Use IndexBuilder to construct the hierarchical path: credentials/<pubkey>
-    let mut builder = IndexBuilder::new();
-    builder
-        .insert(
-            &format!("credentials/{}", signer_hex),
-            crate::base::address::Address::from(auth_block.id()),
-        )
-        .unwrap();
-
-    let root_index_id = builder
-        .build(graph_id, store, identity, &identity_key)
-        .await
-        .unwrap();
-
-    // 3. Create the Genesis Manifest
-    let genesis_manifest = crate::graph::Manifest::new(
-        graph_id,
-        root_index_id,
-        vec![],
-        crate::base::address::ManifestId::null(),
-        identity,
-    );
-
-    store.put_manifest(&genesis_manifest).await.unwrap();
-
-    genesis_manifest.id()
+    factory.anchor = factory.create_identity_anchor().await;
+    factory.anchor
 }
 
 #[cfg(test)]
@@ -98,23 +60,21 @@ pub(crate) async fn create_chain(
     Vec<crate::base::address::ManifestId>,
     crate::base::crypto::SigningPublicKey,
 ) {
-    use crate::state::store::GraphStore;
-    let mut rng = rand::rngs::OsRng;
-    let identity = crate::identity::SecretIdentity::generate(&mut rng).unwrap();
-    let graph_id = crate::base::address::GraphId::new();
-    let root = create_dummy_root();
-
-    let anchor = create_valid_anchor(store, &identity).await;
+    use crate::test_utils::TestFactory;
+    use std::sync::Arc;
+    let mut factory = TestFactory::new().await;
+    factory.store = Arc::new(store.clone()); // Use the PROVIDED store
+    factory.anchor = factory.create_identity_anchor().await;
 
     let mut parents = vec![];
     let mut ids = vec![];
 
     for _ in 0..length {
-        let manifest =
-            crate::graph::Manifest::new(graph_id, root, parents.clone(), anchor, &identity);
-        store.put_manifest(&manifest).await.unwrap();
+        let manifest = factory
+            .create_manifest(factory.dummy_root(), parents.clone())
+            .await;
         parents = vec![manifest.id()];
         ids.push(manifest.id());
     }
-    (ids, identity.public().signing_key().clone())
+    (ids, factory.identity.public().signing_key().clone())
 }

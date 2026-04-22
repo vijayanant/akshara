@@ -161,6 +161,7 @@ async fn identity_adversarial_shadow_isolation() {
         vec![],
         crate::base::address::ManifestId::null(),
         &shadow_a,
+        None,
     );
 
     // Audit in context of Graph B
