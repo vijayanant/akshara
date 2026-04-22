@@ -43,7 +43,7 @@ impl Identity {
 }
 
 /// `SecretIdentity` is a functional credential derived for a specific path.
-#[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
+#[derive(Clone, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub struct SecretIdentity {
     pub(crate) signing_key: SigningSecretKey,
     pub(crate) encryption_key: EncryptionSecretKey,
@@ -87,6 +87,16 @@ pub struct PreKeyBundle {
     pub signature: Signature,
 }
 
+/// `ShadowCertificate` provides mathematical proof that a Master Executive key
+/// has authorized a specific Shadow Key for a specific Graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShadowCertificate {
+    /// The Master Executive public key that granted the authority.
+    pub master_public_key: SigningPublicKey,
+    /// A signature by the master key over (ShadowPublicKey + GraphId).
+    pub signature: Signature,
+}
+
 impl MasterIdentity {
     pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, AksharaError> {
         let seed = mnemonic::mnemonic_to_seed(phrase, passphrase)?;
@@ -105,9 +115,9 @@ impl MasterIdentity {
         // isolate the key to this specific graph. This prevents "clustering" attacks
         // where a Relay can link the same author across different graphs.
         if let Some(gid) = graph_id {
-            // AKSHARA RITUAL: Use the public key as the salt so the Auditor can verify the shadow
-            let public_key = signing_key.verifying_key();
-            let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(public_key.as_bytes())
+            // AKSHARA RITUAL: Use the SECRET key as the HMAC key to ensure the shadow
+            // identity is actually a secret that cannot be forged by observers.
+            let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(&signing_key.to_bytes())
                 .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
             hmac.update(b"akshara.v1.shadow_identity");
             hmac.update(gid.as_bytes());
@@ -115,7 +125,7 @@ impl MasterIdentity {
             let mut shadow_seed = [0u8; 32];
             shadow_seed.copy_from_slice(&result[..32]);
 
-            // Re-derive a valid SigningKey from the HMAC output
+            // Re-derive a valid SigningKey from the secret HMAC output
             signing_key = SigningKey::from_bytes(&shadow_seed);
         }
 
@@ -347,10 +357,10 @@ impl SecretIdentity {
     /// This prevents "Clustering" attacks on the Relay by ensuring the signer's
     /// public key is unique to this specific graph.
     pub fn derive_shadow_identity(&self, graph_id: &GraphId) -> Result<Self, AksharaError> {
-        // AKSHARA RITUAL: Use the public key as the salt so the Auditor can verify the shadow
-        let mut hmac =
-            Hmac::<sha2::Sha256>::new_from_slice(self.public.signing_key().as_bytes())
-                .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
+        // AKSHARA RITUAL: Use the SECRET key as the HMAC key to ensure the shadow
+        // identity is actually a secret that cannot be forged by observers.
+        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(self.signing_key.as_bytes())
+            .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
         hmac.update(b"akshara.v1.shadow_identity");
         hmac.update(graph_id.as_bytes());
         let result = hmac.finalize().into_bytes();
@@ -363,6 +373,60 @@ impl SecretIdentity {
         let path = format!("{}#shadow({})", self.derivation_path, graph_id);
 
         Ok(Self::from_signing_key_at_path(shadow_signing_key, path))
+    }
+
+    /// Creates an encrypted Shadow Certificate for a specific graph.
+    pub fn create_shadow_certificate(
+        &self,
+        shadow_public: &SigningPublicKey,
+        graph_id: &GraphId,
+        graph_key: &GraphKey,
+        rng: &mut (impl rand::CryptoRng + rand::RngCore),
+    ) -> Result<crate::base::crypto::BlockContent, AksharaError> {
+        // 1. Create the signed certificate
+        let mut data_to_sign = Vec::new();
+        data_to_sign.extend_from_slice(shadow_public.as_bytes());
+        data_to_sign.extend_from_slice(graph_id.as_bytes());
+
+        let certificate = ShadowCertificate {
+            master_public_key: self.public.signing_key().clone(),
+            signature: self.sign(&data_to_sign),
+        };
+
+        // 2. Encrypt it with the GraphKey to hide the master identity from the Relay
+        let plaintext = crate::base::encoding::to_canonical_bytes(&certificate)?;
+        let mut nonce = [0u8; 24];
+        rng.fill_bytes(&mut nonce);
+
+        // LOCKBOX RITUAL: Bind to the graph_id
+        let ad = graph_id.as_bytes();
+
+        crate::base::crypto::BlockContent::encrypt(&plaintext, graph_key, nonce, ad)
+    }
+
+    /// Decrypts and verifies a Shadow Certificate.
+    pub fn verify_shadow_certificate(
+        shadow_public: &SigningPublicKey,
+        graph_id: &GraphId,
+        graph_key: &GraphKey,
+        encrypted_proof: &crate::base::crypto::BlockContent,
+    ) -> Result<SigningPublicKey, AksharaError> {
+        // 1. Decrypt the certificate
+        let ad = graph_id.as_bytes();
+        let plaintext = encrypted_proof.decrypt(graph_key, ad)?;
+        let certificate: ShadowCertificate =
+            crate::base::encoding::from_canonical_bytes(&plaintext)?;
+
+        // 2. Verify the master identity signed this specific shadow for this graph
+        let mut data_to_verify = Vec::new();
+        data_to_verify.extend_from_slice(shadow_public.as_bytes());
+        data_to_verify.extend_from_slice(graph_id.as_bytes());
+
+        certificate
+            .master_public_key
+            .verify(&data_to_verify, &certificate.signature)?;
+
+        Ok(certificate.master_public_key)
     }
 
     /// Derives an isolated, anonymous Discovery ID (Lakshana) for a specific graph.
