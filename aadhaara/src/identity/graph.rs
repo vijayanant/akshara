@@ -3,6 +3,7 @@ use crate::base::crypto::{GraphKey, SigningPublicKey};
 use crate::base::error::{AksharaError, IntegrityError};
 use crate::graph::BlockType;
 use crate::state::store::GraphStore;
+use crate::traversal::index_builder::IndexBuilder;
 use crate::traversal::walker::GraphWalker;
 use tracing::{Level, debug, span};
 
@@ -12,9 +13,14 @@ use tracing::{Level, debug, span};
 /// authorized, who is revoked) that any auditor must be able to read to
 /// verify signing authority. This key is not secret.
 ///
-/// TODO: Split identity graph into public /auth/* (well-known key) and
-/// private /private/* (Branch 4 Keyring) for proper privacy isolation.
-pub(crate) const IDENTITY_GRAPH_KEY: GraphKey = GraphKey::new([1u8; 32]);
+/// Well-known key for identity graph `/auth/*` credential blocks.
+///
+/// This allows any Auditor to verify signatures by decrypting the authorization
+/// blocks without needing the user's master private seed.
+pub const IDENTITY_GRAPH_KEY: GraphKey = GraphKey::new([1u8; 32]);
+
+pub const PATH_RESOURCES_OWNED: &str = "resources/owned";
+pub const PATH_RESOURCES_SHARED: &str = "resources/shared";
 
 /// `IdentityGraph` provides the logic for traversing and verifying a user's
 /// social authority timeline.
@@ -25,6 +31,141 @@ pub struct IdentityGraph<'a, S: GraphStore + ?Sized> {
 impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
     pub fn new(store: &'a S) -> Self {
         Self { store }
+    }
+
+    /// Lists all resources (graphs) registered in this identity graph.
+    pub async fn list_resources(
+        &self,
+        root: &ManifestId,
+    ) -> Result<Vec<(Address, crate::identity::types::GraphDescriptor)>, AksharaError> {
+        let walker = GraphWalker::new(self.store);
+        let mut results = Vec::new();
+
+        let manifest = self.store.get_manifest(root).await?.ok_or_else(|| {
+            AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                "Manifest {}",
+                root
+            )))
+        })?;
+
+        let graph_id = manifest.graph_id();
+        let content_root = manifest.content_root();
+
+        // 1. Resolve /resources/owned and /resources/shared
+        let base_paths = vec![PATH_RESOURCES_OWNED, PATH_RESOURCES_SHARED];
+
+        for base_path in base_paths {
+            // Check if the base path exists
+            let children = match walker
+                .list_at_path(&graph_id, content_root, base_path, &IDENTITY_GRAPH_KEY)
+                .await
+            {
+                Ok(c) => c,
+                Err(_) => continue, // Path doesn't exist yet
+            };
+
+            for child_segment in children {
+                // Construct full path to descriptor
+                let full_path = format!("{}/{}", base_path, child_segment);
+
+                let addr = walker
+                    .resolve_path(&graph_id, content_root, &full_path, &IDENTITY_GRAPH_KEY)
+                    .await?;
+
+                let block_id = BlockId::try_from(addr).map_err(|_| {
+                    AksharaError::Integrity(crate::base::error::IntegrityError::MalformedId)
+                })?;
+
+                let block = self.store.get_block(&block_id).await?.ok_or_else(|| {
+                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                        "Descriptor block {}",
+                        block_id
+                    )))
+                })?;
+
+                let plaintext = block.decrypt(&graph_id, &IDENTITY_GRAPH_KEY)?;
+                let descriptor: crate::identity::types::GraphDescriptor =
+                    crate::base::encoding::from_canonical_bytes(&plaintext)?;
+
+                results.push((addr, descriptor));
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Registers a new resource (graph) in the identity graph.
+    pub async fn add_resource(
+        &self,
+        descriptor: crate::identity::types::GraphDescriptor,
+        is_owned: bool,
+        identity_graph_id: &GraphId,
+        signer: &impl crate::base::crypto::AksharaSigner,
+    ) -> Result<ManifestId, AksharaError> {
+        // 1. Create the descriptor block
+        let plaintext = crate::base::encoding::to_canonical_bytes(&descriptor)?;
+        let descriptor_block = crate::graph::Block::new(
+            *identity_graph_id,
+            plaintext,
+            BlockType::AksharaDataV1,
+            vec![],
+            &IDENTITY_GRAPH_KEY,
+            signer,
+        )?;
+        self.store.put_block(&descriptor_block).await?;
+
+        // 2. Fetch existing heads and build the new index
+        let heads = self.store.get_heads(identity_graph_id).await?;
+        let mut builder = IndexBuilder::new();
+        let mut parents = vec![];
+
+        if !heads.is_empty() {
+            let mid = heads[0];
+            parents.push(mid);
+
+            // ALPHA LIMITATION: For Alpha, we'll list existing and re-insert into builder.
+            // In v0.2, IndexBuilder will support incremental updates.
+            let existing = self.list_resources(&mid).await?;
+            for (addr, desc) in existing {
+                // Skip if we are updating the same graph (last-write-wins)
+                if desc.graph_id == descriptor.graph_id {
+                    continue;
+                }
+
+                let b_path = if desc.shared_by.is_none() {
+                    PATH_RESOURCES_OWNED
+                } else {
+                    PATH_RESOURCES_SHARED
+                };
+
+                builder.insert(&format!("{}/{}", b_path, desc.graph_id.to_hex()), addr)?;
+            }
+        }
+
+        let base_path = if is_owned {
+            PATH_RESOURCES_OWNED
+        } else {
+            PATH_RESOURCES_SHARED
+        };
+        let path = format!("{}/{}", base_path, descriptor.graph_id.to_hex());
+
+        builder.insert(&path, Address::from(descriptor_block.id()))?;
+        let new_root = builder
+            .build(*identity_graph_id, self.store, signer, &IDENTITY_GRAPH_KEY)
+            .await?;
+
+        // 3. Sign the new manifest
+        let manifest = crate::graph::Manifest::new(
+            *identity_graph_id,
+            new_root,
+            parents,
+            ManifestId::null(), // Identity graph is self-anchored
+            signer,
+            None,
+        );
+        self.store.put_manifest(&manifest).await?;
+
+        Ok(manifest.id())
     }
 
     /// Verifies that a specific signing key was authorized and unrevoked

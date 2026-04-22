@@ -119,6 +119,28 @@ impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
         Ok(current_addr)
     }
 
+    /// Lists all immediate children at a given path.
+    pub async fn list_at_path(
+        &self,
+        graph_id: &GraphId,
+        root: BlockId,
+        path: &str,
+        key: &GraphKey,
+    ) -> Result<Vec<String>, AksharaError> {
+        let addr = self.resolve_path(graph_id, root, path, key).await?;
+        let block_id = BlockId::try_from(addr)?;
+
+        let block = self.store.get_block(&block_id).await?.ok_or_else(|| {
+            AksharaError::Store(StoreError::NotFound(format!("Block {}", block_id)))
+        })?;
+
+        let plaintext = block.decrypt(graph_id, key)?;
+        let index: BTreeMap<String, Address> =
+            crate::base::encoding::from_canonical_bytes(&plaintext)?;
+
+        Ok(index.keys().cloned().collect())
+    }
+
     /// BFS to find all ancestors of a manifest.
     pub async fn get_ancestors(
         &self,

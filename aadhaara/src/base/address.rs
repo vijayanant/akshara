@@ -277,6 +277,10 @@ impl GraphId {
     pub fn as_bytes(&self) -> &[u8; 16] {
         self.0.as_bytes()
     }
+
+    pub fn to_hex(&self) -> String {
+        self.0.simple().to_string()
+    }
 }
 
 impl Default for GraphId {
@@ -297,15 +301,6 @@ impl FromStr for GraphId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::parse_str(s)?;
         Ok(GraphId(uuid))
-    }
-}
-
-impl From<Lakshana> for GraphId {
-    fn from(lak: Lakshana) -> Self {
-        // Truncate the 32-byte HMAC to a 16-byte UUID
-        let mut bytes = [0u8; 16];
-        bytes.copy_from_slice(&lak.as_bytes()[..16]);
-        GraphId::from_bytes(bytes)
     }
 }
 
