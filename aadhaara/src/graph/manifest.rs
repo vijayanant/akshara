@@ -14,6 +14,7 @@ pub struct ManifestHeader {
     pub(crate) parents: Vec<ManifestId>,
     pub(crate) identity_anchor: ManifestId,
     pub(crate) signer_path_hash: [u8; 32],
+    pub(crate) authority_proof: Option<crate::base::crypto::BlockContent>,
     pub(crate) created_at: i64,
 }
 
@@ -33,6 +34,7 @@ impl Manifest {
         parents: Vec<ManifestId>,
         identity_anchor: ManifestId,
         signer: &impl AksharaSigner,
+        authority_proof: Option<crate::base::crypto::BlockContent>,
     ) -> Self {
         let span = span!(Level::INFO, "manifest_new", graph_id = ?graph_id);
         let _enter = span.enter();
@@ -52,6 +54,7 @@ impl Manifest {
             parents,
             identity_anchor,
             signer_path_hash,
+            authority_proof,
             created_at,
         };
 
@@ -150,6 +153,13 @@ impl Manifest {
         hasher.update(header.identity_anchor.as_ref());
         hasher.update(author.as_bytes());
         hasher.update(header.signer_path_hash);
+
+        // Bind the authority proof (if any) to the CID
+        if let Some(ref proof) = header.authority_proof {
+            hasher.update(proof.as_bytes());
+            hasher.update(proof.nonce());
+        }
+
         hasher.update(header.created_at.to_le_bytes());
 
         ManifestId::from_sha256(&hasher.finalize())

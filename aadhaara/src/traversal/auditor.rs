@@ -22,6 +22,7 @@ use tracing::{Level, debug, span};
 pub struct Auditor<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
     pub(crate) latest_identity: Option<ManifestId>,
+    pub(crate) graph_key: Option<crate::base::crypto::GraphKey>,
     /// Memoized root key discovered during this session to avoid O(N^2) walks.
     pub(crate) memoized_root_key: std::sync::Arc<std::sync::RwLock<Option<SigningPublicKey>>>,
 }
@@ -32,12 +33,18 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         Self {
             store,
             latest_identity: None,
+            graph_key: None,
             memoized_root_key: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
     pub fn with_latest_identity(mut self, identity: ManifestId) -> Self {
         self.latest_identity = Some(identity);
+        self
+    }
+
+    pub fn with_graph_key(mut self, key: crate::base::crypto::GraphKey) -> Self {
+        self.graph_key = Some(key);
         self
     }
 
@@ -182,10 +189,30 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
 
         let root_key = self.discover_root_key(manifest).await?;
 
+        // AUTHORITY RITUAL: Determine which key to verify against the identity graph.
+        // If an authority_proof is present, this is a shadow identity, and we must
+        // verify the MASTER key that delegated the authority.
+        let key_to_verify = if let Some(ref proof) = manifest.header.authority_proof {
+            let graph_key = self.graph_key.as_ref().ok_or_else(|| {
+                AksharaError::Integrity(crate::base::error::IntegrityError::UnauthorizedSigner(
+                    "GraphKey required to verify shadow identity proof".to_string(),
+                ))
+            })?;
+
+            crate::identity::types::SecretIdentity::verify_shadow_certificate(
+                manifest.author(),
+                &manifest.graph_id(),
+                graph_key,
+                proof,
+            )?
+        } else {
+            manifest.author().clone()
+        };
+
         let identity_graph = IdentityGraph::new(self.store);
         identity_graph
             .verify_authority(
-                manifest.author(),
+                &key_to_verify,
                 &manifest.identity_anchor(),
                 &root_key,
                 self.latest_identity.as_ref(),
