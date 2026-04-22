@@ -153,7 +153,8 @@ impl Client {
     pub async fn sync_graph(&self, graph_id: GraphId) -> Result<SyncReport> {
         let transport = MockTransport::new();
         let engine = SyncEngine::new(transport, self.vault.clone());
-        engine.sync_graph(graph_id, &self.store).await
+        let graph_key = self.vault.derive_graph_key(&graph_id).await?;
+        engine.sync_graph(graph_id, &self.store, &graph_key).await
     }
 
     /// Remove a graph from the local registry.

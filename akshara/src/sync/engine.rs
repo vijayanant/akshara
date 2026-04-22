@@ -40,7 +40,12 @@ impl<T: SyncTransport> SyncEngine<T> {
     /// 4. Request missing portions
     /// 5. Converge (apply portions to local store)
     /// 6. Return sync report
-    pub async fn sync_graph(&self, graph_id: GraphId, store: &InMemoryStore) -> Result<SyncReport> {
+    pub async fn sync_graph(
+        &self,
+        graph_id: GraphId,
+        store: &InMemoryStore,
+        key: &akshara_aadhaara::GraphKey,
+    ) -> Result<SyncReport> {
         // 1. Get local heads
         let local_heads = store
             .get_heads(&graph_id)
@@ -116,7 +121,7 @@ impl<T: SyncTransport> SyncEngine<T> {
 
             // THE AUDITOR: Create once, use for both manifest and block ingestion.
             let latest_id = self.vault.latest_identity_anchor();
-            let mut auditor = akshara_aadhaara::Auditor::new(store);
+            let mut auditor = akshara_aadhaara::Auditor::new(store).with_graph_key(key.clone());
             if latest_id != akshara_aadhaara::ManifestId::null() {
                 auditor = auditor.with_latest_identity(latest_id);
             }

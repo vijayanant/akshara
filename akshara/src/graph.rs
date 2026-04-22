@@ -406,12 +406,25 @@ impl Graph {
 
         let identity_anchor = self.vault.latest_identity_anchor();
 
+        // AKSHARA RITUAL: Generate a Shadow Certificate so the Auditor can verify
+        // this shadow identity using the GraphKey.
+        let mut rng = rand::rngs::OsRng;
+        let authority_proof = master_identity
+            .create_shadow_certificate(
+                identity.public().signing_key(),
+                &self.graph_id,
+                &self.graph_key,
+                &mut rng,
+            )
+            .ok();
+
         let manifest = Manifest::new(
             self.graph_id,
             root_index_id,
             parents,
             identity_anchor,
             &identity,
+            authority_proof,
         );
 
         self.store.put_manifest(&manifest).await?;
@@ -508,16 +521,12 @@ impl Graph {
     }
 
     /// Synchronize this graph with the relay.
-    ///
-    /// Currently returns a stub — real sync transport is coming in v0.2.
     pub async fn sync(&self) -> Result<SyncReport> {
-        Ok(SyncReport {
-            graphs_synced: 1,
-            manifests_received: 0,
-            blocks_received: 0,
-            bytes_transferred: 0,
-            conflicts_detected: 0,
-        })
+        let transport = crate::sync::MockTransport::new();
+        let engine = crate::sync::SyncEngine::new(transport, self.vault.clone());
+        engine
+            .sync_graph(self.graph_id, &self.store, &self.graph_key)
+            .await
     }
 }
 

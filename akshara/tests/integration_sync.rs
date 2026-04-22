@@ -76,10 +76,15 @@ async fn sync_engine_sync_graph_empty_store() {
     let store = InMemoryStore::new();
 
     let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
-    let engine = SyncEngine::new(transport, vault);
+    vault.initialize(None).await.unwrap(); // Bootstrap the vault
+    let engine = SyncEngine::new(transport, vault.clone());
     let graph_id = GraphId::new();
+    let graph_key = vault.derive_graph_key(&graph_id).await.unwrap();
 
-    let report = engine.sync_graph(graph_id, &store).await.unwrap();
+    let report = engine
+        .sync_graph(graph_id, &store, &graph_key)
+        .await
+        .unwrap();
 
     assert_eq!(report.graphs_synced, 1);
     assert_eq!(report.manifests_received, 0);
