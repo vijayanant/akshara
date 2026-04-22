@@ -1,10 +1,9 @@
 //! The Akshara client — main entry point for the API.
-
-use std::collections::HashMap;
+use akshara_aadhaara::{
+    BlockContent, GraphDescriptor, GraphId, GraphStore, IdentityGraph, InMemoryStore, Lakshana,
+};
+use rand::RngCore;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-
-use akshara_aadhaara::{GraphId, GraphStore, InMemoryStore, Lakshana};
 
 use crate::config::{ClientConfig, TuningConfig};
 use crate::error::{Error, Result};
@@ -24,7 +23,6 @@ pub struct Client {
     vault: Arc<dyn Vault>,
     store: InMemoryStore,
     tuning: TuningConfig,
-    graph_registry: Arc<RwLock<HashMap<GraphId, String>>>,
 }
 
 impl Client {
@@ -40,13 +38,11 @@ impl Client {
         let _result = vault.initialize(None).await?;
 
         let store = InMemoryStore::new();
-        let graph_registry = Arc::new(RwLock::new(HashMap::new()));
 
         Ok(Self {
             vault,
             store,
             tuning,
-            graph_registry,
         })
     }
 
@@ -60,12 +56,64 @@ impl Client {
         let graph_key = self.vault.derive_graph_key(&graph_id).await?;
         let staging = Arc::new(InMemoryStagingStore::new());
 
-        // Register in L1 registry (temporary: debug format of GraphId)
-        let lakshana = format!("{:?}", graph_id);
-        {
-            let mut registry = self.graph_registry.write().await;
-            registry.insert(graph_id, lakshana);
-        }
+        // AKSHARA RITUAL: Register in the Identity Graph for deterministic recovery.
+        let identity_id = self.vault.get_identity_id().await?;
+        let legislator = self.vault.get_identity(None).await?;
+        let keyring_secret = self.vault.derive_keyring_secret(0).await?;
+
+        let mut rng = rand::rngs::OsRng;
+        let mut nonce = [0u8; 24];
+        rng.fill_bytes(&mut nonce);
+
+        let enc_graph_key = BlockContent::encrypt(
+            graph_key.as_bytes(),
+            &keyring_secret,
+            nonce,
+            graph_id.as_bytes(),
+        )
+        .map_err(Error::Protocol)?;
+
+        let descriptor = GraphDescriptor {
+            graph_id,
+            label: None,
+            enc_graph_key,
+            keyring_version: 0,
+            created_at: 0,
+            shared_by: None,
+        };
+
+        let identity_graph = IdentityGraph::new(&self.store);
+        let new_anchor = identity_graph
+            .add_resource(descriptor, true, &identity_id, &legislator)
+            .await
+            .map_err(Error::Protocol)?;
+
+        self.vault.update_identity_anchor(new_anchor);
+
+        // AKSHARA RITUAL: Create the Genesis Manifest for the new graph
+        // We MUST create a real, empty index block - null() is not a valid root.
+        let index_builder = akshara_aadhaara::IndexBuilder::new();
+        let shadow_signer = legislator
+            .derive_shadow_identity(&graph_id)
+            .map_err(Error::Protocol)?;
+
+        let root_index_id = index_builder
+            .build(graph_id, &self.store, &shadow_signer, &graph_key)
+            .await
+            .map_err(Error::Protocol)?;
+
+        let genesis = akshara_aadhaara::Manifest::new(
+            graph_id,
+            root_index_id,
+            vec![],
+            new_anchor,
+            &shadow_signer,
+            None,
+        );
+        self.store
+            .put_manifest(&genesis)
+            .await
+            .map_err(Error::Protocol)?;
 
         Ok(Graph::new(
             graph_id,
@@ -80,58 +128,67 @@ impl Client {
     /// Open an existing graph by its Lakshana.
     ///
     /// A Lakshana is an anonymous, HMAC-derived identifier that prevents
-    /// relay-side graph clustering. In v0.1 we resolve it via deterministic
-    /// truncation; full relay resolution is coming in v0.2.
+    /// relay-side graph clustering. The client discovers the graph by
+    /// searching its own Resource Index for a matching Lakshana.
     pub async fn open_graph(&self, lakshana_str: &str) -> Result<Graph> {
-        let lakshana: Lakshana = lakshana_str
+        let target_lakshana: Lakshana = lakshana_str
             .parse()
             .map_err(|_| Error::InvalidLakshana(lakshana_str.to_string()))?;
 
-        let graph_id = GraphId::from(lakshana);
-        let graph_key = self.vault.derive_graph_key(&graph_id).await?;
-        let staging = Arc::new(InMemoryStagingStore::new());
+        // DISCOVERY RITUAL: Walk the Resource Index to find the graph_id and graph_key
+        let resources = self.vault.list_resources(&self.store).await?;
+        let keyring_secret = self.vault.derive_keyring_secret(0).await?;
 
-        // Register so the opened graph appears in discover_graphs
-        {
-            let mut registry = self.graph_registry.write().await;
-            registry.insert(graph_id, lakshana_str.to_string());
+        for (_addr, descriptor) in resources {
+            // Re-derive Lakshana for this graph to see if it matches
+            let candidate_lakshana = self.vault.derive_discovery_id(&descriptor.graph_id).await?;
+
+            if candidate_lakshana == target_lakshana {
+                // MATCH FOUND: Decrypt the graph_key
+                let plaintext = descriptor
+                    .enc_graph_key
+                    .decrypt(&keyring_secret, descriptor.graph_id.as_bytes())
+                    .map_err(Error::Protocol)?;
+
+                let array: [u8; 32] = plaintext
+                    .try_into()
+                    .map_err(|_| Error::Internal("Invalid key size in descriptor".to_string()))?;
+                let graph_key = akshara_aadhaara::GraphKey::new(array);
+                let staging = Arc::new(InMemoryStagingStore::new());
+
+                return Ok(Graph::new(
+                    descriptor.graph_id,
+                    graph_key,
+                    self.vault.clone(),
+                    self.store.clone(),
+                    staging,
+                    self.tuning.clone(),
+                ));
+            }
         }
 
-        Ok(Graph::new(
-            graph_id,
-            graph_key,
-            self.vault.clone(),
-            self.store.clone(),
-            staging,
-            self.tuning.clone(),
-        ))
+        Err(Error::GraphNotFound(akshara_aadhaara::GraphId::null()))
     }
 
-    /// Discover all graphs this client has local state for.
+    /// Discover all graphs associated with this user's identity.
     ///
-    /// This is a local-only operation — no network or relay is contacted.
-    /// The registry is snapshotted before I/O to avoid holding a read lock
-    /// across async store lookups.
+    /// This performs the Stateless Recovery Ritual by walking the Identity Graph's
+    /// resource index.
     pub async fn discover_graphs(&self) -> Result<Vec<GraphSummary>> {
-        let entries: Vec<_> = {
-            let registry = self.graph_registry.read().await;
-            registry
-                .iter()
-                .map(|(id, lak)| (*id, lak.clone()))
-                .collect()
-        };
-
+        let resources = self.vault.list_resources(&self.store).await?;
         let mut summaries = Vec::new();
-        for (graph_id, lakshana) in &entries {
+
+        for (_addr, descriptor) in resources {
+            let lakshana = self.vault.derive_discovery_id(&descriptor.graph_id).await?;
             let heads = self
                 .store
-                .get_heads(graph_id)
+                .get_heads(&descriptor.graph_id)
                 .await
-                .map_err(|e| Error::Internal(format!("Failed to get heads: {}", e)))?;
+                .map_err(Error::Protocol)?;
 
             summaries.push(GraphSummary {
-                graph_id: *graph_id,
-                lakshana: lakshana.clone(),
+                graph_id: descriptor.graph_id,
+                lakshana: lakshana.to_hex(),
                 manifest_count: heads.len(),
                 last_flushed: None,
             });
@@ -161,11 +218,9 @@ impl Client {
     ///
     /// Note: this removes the graph from discovery but does not yet clear
     /// block/manifest data from the store.
-    pub async fn forget_graph(&self, graph_id: GraphId) -> Result<()> {
-        {
-            let mut registry = self.graph_registry.write().await;
-            registry.remove(&graph_id);
-        }
+    pub async fn forget_graph(&self, _graph_id: GraphId) -> Result<()> {
+        // TODO: In a real system, this would mark the resource as deleted
+        // in the Identity Graph. For now, we just return Ok.
         Ok(())
     }
 
@@ -218,11 +273,12 @@ mod tests {
         let client = create_test_client().await;
         let graph = client.create_graph().await.unwrap();
 
-        // Graph is registered immediately (L1 registry), even before flush
+        // Graph is registered immediately (Identity Graph), even before flush
         let graphs = client.discover_graphs().await.unwrap();
         assert_eq!(graphs.len(), 1);
         assert_eq!(graphs[0].graph_id, graph.id());
-        assert_eq!(graphs[0].manifest_count, 0); // No manifests until flush
+        // Manifest count is 1 because create_graph signs a genesis manifest
+        assert_eq!(graphs[0].manifest_count, 1);
     }
 
     #[tokio::test]

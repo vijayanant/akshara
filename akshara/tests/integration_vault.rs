@@ -21,8 +21,9 @@ proptest! {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             vault.initialize(None).await.unwrap();
-            let signature = vault.sign(&data).await.unwrap();
-            assert_eq!(signature.len(), 64);
+            let graph_id = GraphId::new();
+            let signature = vault.sign(&graph_id, &data).await.unwrap();
+            assert_eq!(signature.as_bytes().len(), 64);
         });
     }
 }
@@ -62,9 +63,10 @@ async fn vault_sign_deterministic() {
     let vault = EphemeralVault::new();
     vault.initialize(None).await.unwrap();
 
+    let graph_id = GraphId::new();
     let data = b"test message";
-    let sig1 = vault.sign(data).await.unwrap();
-    let sig2 = vault.sign(data).await.unwrap();
+    let sig1 = vault.sign(&graph_id, data).await.unwrap();
+    let sig2 = vault.sign(&graph_id, data).await.unwrap();
 
     assert_eq!(sig1, sig2);
 }
@@ -74,11 +76,12 @@ async fn vault_sign_different_data() {
     let vault = EphemeralVault::new();
     vault.initialize(None).await.unwrap();
 
+    let graph_id = GraphId::new();
     let data1 = b"message 1";
     let data2 = b"message 2";
 
-    let sig1 = vault.sign(data1).await.unwrap();
-    let sig2 = vault.sign(data2).await.unwrap();
+    let sig1 = vault.sign(&graph_id, data1).await.unwrap();
+    let sig2 = vault.sign(&graph_id, data2).await.unwrap();
 
     assert_ne!(sig1, sig2);
 }
@@ -88,8 +91,8 @@ async fn vault_identity_consistency() {
     let vault = EphemeralVault::new();
     vault.initialize(None).await.unwrap();
 
-    let identity1 = vault.get_identity().await.unwrap();
-    let identity2 = vault.get_identity().await.unwrap();
+    let identity1 = vault.get_identity(None).await.unwrap();
+    let identity2 = vault.get_identity(None).await.unwrap();
 
     assert_eq!(
         identity1.public().signing_key().to_hex(),
@@ -128,9 +131,10 @@ async fn vault_sign_empty_data() {
     let vault = EphemeralVault::new();
     vault.initialize(None).await.unwrap();
 
+    let graph_id = GraphId::new();
     let data = b"";
-    let signature = vault.sign(data).await.unwrap();
-    assert_eq!(signature.len(), 64);
+    let signature = vault.sign(&graph_id, data).await.unwrap();
+    assert_eq!(signature.as_bytes().len(), 64);
 }
 
 #[tokio::test]
@@ -138,7 +142,8 @@ async fn vault_sign_large_data() {
     let vault = EphemeralVault::new();
     vault.initialize(None).await.unwrap();
 
+    let graph_id = GraphId::new();
     let data = vec![0u8; 1024];
-    let signature = vault.sign(&data).await.unwrap();
-    assert_eq!(signature.len(), 64);
+    let signature = vault.sign(&graph_id, &data).await.unwrap();
+    assert_eq!(signature.as_bytes().len(), 64);
 }

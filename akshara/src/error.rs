@@ -111,6 +111,9 @@ pub enum VaultError {
     #[error("key not found: {0}")]
     KeyNotFound(String),
 
+    #[error("derivation failed: {0}")]
+    DerivationFailed(String),
+
     #[error("authentication required")]
     AuthenticationRequired,
 

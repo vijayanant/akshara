@@ -151,16 +151,9 @@ impl<T: SyncTransport> SyncEngine<T> {
                     .map_err(|e| Error::SyncFailed(format!("Failed to store manifest: {}", e)))?;
                 manifests_received += 1;
 
-                // UPDATE ANCHOR: If this is an identity graph update, track the new anchor
-                // We identify the identity graph by checking if it matches the user's discovery ID
-                let identity = self.vault.get_identity().await?;
-                // The identity graph's Lakshana is derived without a GraphId context
-                let id_lakshana =
-                    identity.derive_discovery_id(&akshara_aadhaara::GraphId::null())?;
-
-                // For now, we assume graph_id mapping is active (prototype simplification)
-                // In a full implementation, we'd check against the actual Lakshana being synced.
-                if graph_id == akshara_aadhaara::GraphId::from(id_lakshana) {
+                // UPDATE ANCHOR: If this manifest belongs to our OWN Identity Graph, update the vault's anchor.
+                // This is how we bootstrap authority updates across all devices.
+                if graph_id == self.vault.get_identity_id().await? {
                     self.vault.update_identity_anchor(manifest.id());
                 }
             } else {

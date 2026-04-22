@@ -352,11 +352,12 @@ impl Graph {
             }
         }
 
-        let master_identity = self.vault.get_identity().await?;
+        let master_identity = self.vault.get_identity(None).await?;
 
-        // Derive a graph-isolated identity for signing (prevents cross-graph
-        // signature correlation).
-        let identity = master_identity.derive_shadow_identity(&self.graph_id)?;
+        // AKSHARA RITUAL (Privacy Preservation):
+        // We use a Graph-Isolated Shadow Identity to sign all manifests.
+        // This prevents the Relay from linking different graphs to the same user.
+        let identity = self.vault.get_identity(Some(&self.graph_id)).await?;
 
         let mut index_builder = IndexBuilder::new();
         let mut blocks_created = 0;
@@ -622,7 +623,7 @@ mod tests {
         let vault = create_vault(config.vault().clone()).unwrap();
         vault.initialize(Some(mnemonic)).await.unwrap();
 
-        let identity = vault.get_identity().await.unwrap();
+        let identity = vault.get_identity(None).await.unwrap();
         let store = InMemoryStore::new();
         let graph_id = GraphId::new();
         let graph_key = identity.derive_graph_key(&graph_id).unwrap();

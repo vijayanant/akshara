@@ -2,65 +2,53 @@
 //!
 //! The Vault is the **security boundary** - it holds branch keys and performs
 //! cryptographic operations without ever exposing the master seed.
-//!
-//! # Security Properties
-//!
-//! - **Seed Never Stored**: The 24-word mnemonic is shown once during setup, then never stored
-//! - **Branch Keys Only**: Only revocable branch keys are stored in OS keychain
-//! - **Compartmentalization**: Each branch is stored separately - compromise of one doesn't affect others
-//! - **Zeroization**: All intermediate secrets are zeroized after use
-//! - **Platform Security**: Uses platform-native secure storage (Keychain, etc.)
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use akshara_aadhaara::{AksharaSigner, GraphId, GraphKey, ManifestId, SecretIdentity};
+use akshara_aadhaara::{
+    AksharaSigner, GraphDescriptor, GraphId, GraphKey, IdentityGraph, InMemoryStore, Lakshana,
+    ManifestId, SecretIdentity, Signature, paths,
+};
 use zeroize::Zeroizing;
 
-use crate::error::{Result, VaultError};
+use crate::error::{Error, Result, VaultError};
 
 /// Vault trait for secure key management.
-///
-/// # Security Requirements
-///
-/// Implementations MUST:
-/// - Never store the master seed
-/// - Store only revocable branch keys
-/// - Store each branch separately for independent revocation
-/// - Zeroize all intermediate secrets after use
-/// - Use platform-native secure storage when available
-///
-/// # Implementation Notes
-///
-/// All methods take `&self` because implementations should use interior mutability
-/// (e.g., `Mutex`, `RwLock`) for thread-safe access.
 #[async_trait::async_trait]
 pub trait Vault: Send + Sync {
     /// Initialize the vault with a mnemonic or generate a new one.
-    ///
-    /// The mnemonic is used to derive branch keys, which are then stored.
-    /// The mnemonic itself is NEVER stored.
-    /// Returns a status: "created" or "existing".
     async fn initialize(&self, mnemonic: Option<String>) -> Result<String>;
 
     /// Check if the vault is initialized.
     fn is_initialized(&self) -> bool;
 
-    /// Derive a graph key for the given graph ID.
-    ///
-    /// The derivation happens inside the vault - only the derived key is returned.
+    /// Derives a graph-specific symmetric key (Branch 2 — Secret).
     async fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey>;
 
+    /// Derives the anonymous Lakshana (Branch 5) for a graph.
+    async fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<Lakshana>;
+
+    /// Derives the Keyring Secret (Branch 4) for cross-device sync.
+    async fn derive_keyring_secret(&self, version: u32) -> Result<GraphKey>;
+
+    /// Gets the user's own Identity Graph identifier.
+    async fn get_identity_id(&self) -> Result<GraphId>;
+
+    /// Gets the user's own Identity Graph discovery identifier.
+    async fn get_identity_lakshana(&self) -> Result<Lakshana>;
+
+    /// Discovers resources by walking the Identity Graph.
+    async fn list_resources(
+        &self,
+        store: &InMemoryStore,
+    ) -> Result<Vec<(akshara_aadhaara::Address, GraphDescriptor)>>;
+
     /// Sign data with the identity's signing key.
-    ///
-    /// The signing happens inside the vault - only the signature is returned.
-    async fn sign(&self, data: &[u8]) -> Result<Vec<u8>>;
+    async fn sign(&self, graph_id: &GraphId, data: &[u8]) -> Result<Signature>;
 
     /// Get a fresh identity for verification purposes.
-    ///
-    /// This returns a NEW identity instance each time, derived from the stored branch key.
-    /// The seed itself is never exposed.
-    async fn get_identity(&self) -> Result<SecretIdentity>;
+    async fn get_identity(&self, graph_id: Option<&GraphId>) -> Result<SecretIdentity>;
 
     /// Get the latest known identity anchor CID.
     fn latest_identity_anchor(&self) -> ManifestId;
@@ -69,9 +57,6 @@ pub trait Vault: Send + Sync {
     fn update_identity_anchor(&self, anchor: ManifestId);
 
     /// Clear sensitive data from memory.
-    ///
-    /// This does NOT delete keys from secure storage - it only clears
-    /// any cached values in memory.
     fn clear(&self);
 }
 
@@ -99,136 +84,84 @@ impl Clone for VaultConfig {
     }
 }
 
-/// Create a vault from configuration.
+/// Factory function to create a vault based on configuration.
 pub fn create_vault(config: VaultConfig) -> Result<Arc<dyn Vault>> {
     match config {
-        VaultConfig::Platform => Ok(Arc::new(PlatformVault::new()?)),
+        VaultConfig::Platform => Ok(Arc::new(PlatformVault::new("akshara".to_string()))),
         VaultConfig::Ephemeral => Ok(Arc::new(EphemeralVault::new())),
         VaultConfig::Custom { backend } => Ok(backend),
     }
 }
 
 // ============================================================================
-// Platform Vault (Production)
+// Platform Vault (Keychain / Secure Enclave)
 // ============================================================================
 
-/// Platform-native vault using OS keychain.
-///
-/// # Security Properties
-///
-/// - Stores ONLY branch keys (not master seed)
-/// - Each branch stored in separate keychain entry
-/// - Uses hex encoding for cross-platform compatibility
+/// Vault implementation using platform-native secure storage.
 pub struct PlatformVault {
     service: String,
     anchor: Mutex<ManifestId>,
 }
 
 impl PlatformVault {
-    /// Create a new platform vault.
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            service: "akshara".to_string(),
+    pub fn new(service: String) -> Self {
+        Self {
+            service,
             anchor: Mutex::new(ManifestId::null()),
-        })
+        }
     }
 
-    /// Get the keychain key for a specific branch.
     fn branch_key(index: u32) -> String {
         format!("branch:{}", index)
     }
 
-    /// Load a specific branch from keychain.
-    fn load_branch(&self, index: u32) -> Result<Zeroizing<Vec<u8>>> {
-        let key = Self::branch_key(index);
-        let entry = keyring::Entry::new(&self.service, &key)
-            .map_err(|e| VaultError::Keychain(format!("Keychain entry creation failed: {}", e)))?;
+    fn save_branch(&self, index: u32, data: &[u8]) -> Result<()> {
+        let entry = keyring::Entry::new(&self.service, &Self::branch_key(index))
+            .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?;
 
-        let hex_str =
-            Zeroizing::new(entry.get_password().map_err(|e| {
-                VaultError::KeyNotFound(format!("Branch {} not found: {}", index, e))
-            })?);
-
-        // Decode from hex into a zeroizing vector
-        let bytes = hex::decode(&*hex_str).map_err(|e| {
-            VaultError::KeyNotFound(format!("Branch {} decode failed: {}", index, e))
-        })?;
-
-        Ok(Zeroizing::new(bytes))
-    }
-
-    /// Save a branch to keychain.
-    fn save_branch(&self, index: u32, bytes: &[u8]) -> Result<()> {
-        let key = Self::branch_key(index);
-        let entry = keyring::Entry::new(&self.service, &key)
-            .map_err(|e| VaultError::Keychain(format!("Keychain entry creation failed: {}", e)))?;
-
-        let hex_str = Zeroizing::new(hex::encode(bytes));
+        let password = hex::encode(data);
         entry
-            .set_password(&hex_str)
-            .map_err(|e| VaultError::Keychain(e.to_string()))?;
-
+            .set_password(&password)
+            .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?;
         Ok(())
     }
 
-    /// Revoke and regenerate a specific branch.
-    ///
-    /// This is used when a branch is compromised. The branch is re-derived
-    /// from the master seed (which the user must provide) and stored.
-    pub async fn revoke_branch(&mut self, branch_index: u32, mnemonic: &str) -> Result<()> {
-        let mnemonic = Zeroizing::new(mnemonic.to_string());
-        // Verify the mnemonic is valid and derive new branch
-        let new_branch = SecretIdentity::derive_branch_from_mnemonic(&mnemonic, "", branch_index)?;
-        let new_branch_bytes = new_branch.to_bytes();
+    fn load_branch(&self, index: u32) -> Result<Vec<u8>> {
+        let entry = keyring::Entry::new(&self.service, &Self::branch_key(index))
+            .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?;
 
-        // Save the new branch
-        self.save_branch(branch_index, &new_branch_bytes)?;
+        let password = entry
+            .get_password()
+            .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?;
 
-        Ok(())
-    }
-
-    /// Fully reset the vault (delete all keys from keychain).
-    ///
-    /// User will need to re-enter seed phrase to reinitialize.
-    pub fn reset(&self) -> Result<()> {
-        // Delete all 6 branch entries by overwriting with empty data
-        for i in 0..=5 {
-            let key = Self::branch_key(i);
-            if let Ok(entry) = keyring::Entry::new(&self.service, &key) {
-                let _ = entry.set_password("");
-            }
-        }
-        Ok(())
+        hex::decode(password)
+            .map_err(|e| Error::Vault(VaultError::Keychain(format!("Hex decode failed: {}", e))))
     }
 }
 
 #[async_trait::async_trait]
 impl Vault for PlatformVault {
     async fn initialize(&self, mnemonic: Option<String>) -> Result<String> {
-        // Check if already initialized
         if self.load_branch(0).is_ok() {
             return Ok("existing".to_string());
         }
 
-        // Get seed phrase from user (for initial setup or recovery)
         let mnemonic = match mnemonic {
             Some(m) => Zeroizing::new(m),
             None => Zeroizing::new(SecretIdentity::generate_mnemonic().map_err(|e| {
-                VaultError::Keychain(format!("Failed to generate mnemonic: {}", e))
+                Error::Vault(VaultError::Keychain(format!(
+                    "Failed to generate mnemonic: {}",
+                    e
+                )))
             })?),
         };
 
-        // Derive ALL 6 branches from mnemonic and store each separately
         for i in 0..=5 {
-            let branch =
-                SecretIdentity::derive_branch_from_mnemonic(&mnemonic, "", i).map_err(|e| {
-                    VaultError::KeyNotFound(format!("Branch {} derivation failed: {}", i, e))
-                })?;
-            let branch_bytes = branch.to_bytes();
-            self.save_branch(i, &branch_bytes)?;
+            let branch = SecretIdentity::derive_branch_from_mnemonic(&mnemonic, "", i)
+                .map_err(Error::Protocol)?;
+            self.save_branch(i, &branch.to_bytes())?;
         }
 
-        // Seed phrase is NEVER stored - user must have written it down
         Ok("created".to_string())
     }
 
@@ -237,45 +170,74 @@ impl Vault for PlatformVault {
     }
 
     async fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey> {
-        // Load ONLY Branch 2 (Secret) from keychain
-        let branch2_bytes = self.load_branch(2)?;
-
-        // Reconstruct Branch 2 identity
-        let branch2 = SecretIdentity::from_bytes(&branch2_bytes).map_err(|e| {
-            VaultError::KeyNotFound(format!("Branch 2 reconstruction failed: {}", e))
-        })?;
-
-        // Derive GraphKey from Branch 2
-        let graph_key = branch2.derive_graph_key(graph_id)?;
-
-        Ok(graph_key)
+        let branch2_bytes = self.load_branch(paths::BRANCH_SECRET)?;
+        let branch2 = SecretIdentity::from_bytes(&branch2_bytes).map_err(Error::Protocol)?;
+        branch2.derive_graph_key(graph_id).map_err(Error::Protocol)
     }
 
-    async fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
-        // Load ONLY Branch 1 (Executive) from keychain
-        let branch1_bytes = self.load_branch(1)?;
-
-        // Reconstruct Branch 1 identity
-        let branch1 = SecretIdentity::from_bytes(&branch1_bytes).map_err(|e| {
-            VaultError::KeyNotFound(format!("Branch 1 reconstruction failed: {}", e))
-        })?;
-
-        // Sign with Branch 1
-        let signature: akshara_aadhaara::Signature = branch1.sign(data);
-
-        Ok(signature.as_bytes().to_vec())
+    async fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<Lakshana> {
+        let branch5_bytes = self.load_branch(paths::BRANCH_DISCOVERY)?;
+        let branch5 = SecretIdentity::from_bytes(&branch5_bytes).map_err(Error::Protocol)?;
+        branch5
+            .derive_discovery_id(graph_id)
+            .map_err(Error::Protocol)
     }
 
-    async fn get_identity(&self) -> Result<SecretIdentity> {
-        // Load Branch 1 (Executive) - used as the "public identity"
-        let branch1_bytes = self.load_branch(1)?;
+    async fn derive_keyring_secret(&self, _version: u32) -> Result<GraphKey> {
+        Err(Error::Vault(VaultError::DerivationFailed(
+            "Keyring derivation in PlatformVault requires Master Seed".to_string(),
+        )))
+    }
 
-        // Reconstruct identity from Branch 1
-        let identity = SecretIdentity::from_bytes(&branch1_bytes).map_err(|e| {
-            VaultError::KeyNotFound(format!("Identity reconstruction failed: {}", e))
-        })?;
+    async fn get_identity_id(&self) -> Result<GraphId> {
+        let branch0_bytes = self.load_branch(paths::BRANCH_LEGISLATOR)?;
+        let branch0 = SecretIdentity::from_bytes(&branch0_bytes).map_err(Error::Protocol)?;
+        branch0.identity_id().map_err(Error::Protocol)
+    }
 
-        Ok(identity)
+    async fn get_identity_lakshana(&self) -> Result<Lakshana> {
+        let branch0_bytes = self.load_branch(paths::BRANCH_LEGISLATOR)?;
+        let branch0 = SecretIdentity::from_bytes(&branch0_bytes).map_err(Error::Protocol)?;
+        branch0.derive_identity_lakshana().map_err(Error::Protocol)
+    }
+
+    async fn list_resources(
+        &self,
+        store: &InMemoryStore,
+    ) -> Result<Vec<(akshara_aadhaara::Address, GraphDescriptor)>> {
+        let anchor = self.latest_identity_anchor();
+        if anchor == ManifestId::null() {
+            return Ok(vec![]);
+        }
+        let identity_graph = IdentityGraph::new(store);
+        identity_graph
+            .list_resources(&anchor)
+            .await
+            .map_err(Error::Protocol)
+    }
+
+    async fn sign(&self, graph_id: &GraphId, data: &[u8]) -> Result<Signature> {
+        let identity = self.get_identity(Some(graph_id)).await?;
+        Ok(identity.sign(data))
+    }
+
+    async fn get_identity(&self, graph_id: Option<&GraphId>) -> Result<SecretIdentity> {
+        let branch_index = if graph_id.is_some() {
+            paths::BRANCH_EXECUTIVE
+        } else {
+            paths::BRANCH_LEGISLATOR
+        };
+
+        let branch_bytes = self.load_branch(branch_index)?;
+        let identity = SecretIdentity::from_bytes(&branch_bytes).map_err(Error::Protocol)?;
+
+        if let Some(gid) = graph_id {
+            identity
+                .derive_shadow_identity(gid)
+                .map_err(Error::Protocol)
+        } else {
+            Ok(identity)
+        }
     }
 
     fn latest_identity_anchor(&self) -> ManifestId {
@@ -291,29 +253,19 @@ impl Vault for PlatformVault {
         }
     }
 
-    fn clear(&self) {
-        // Note: This doesn't delete from keychain, just clears any in-memory cache
-        // To fully reset, user must delete the keychain entry manually or use reset()
-    }
+    fn clear(&self) {}
 }
 
 // ============================================================================
 // Ephemeral Vault (Testing Only)
 // ============================================================================
 
-/// In-memory vault for testing.
-///
-/// # Security Warning
-///
-/// This vault stores the mnemonic in plain memory.
-/// **DO NOT use in production.**
 pub struct EphemeralVault {
     mnemonic: Mutex<Option<Zeroizing<String>>>,
     anchor: Mutex<ManifestId>,
 }
 
 impl EphemeralVault {
-    /// Create a new ephemeral vault.
     pub fn new() -> Self {
         Self {
             mnemonic: Mutex::new(None),
@@ -352,33 +304,94 @@ impl Vault for EphemeralVault {
     }
 
     async fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey> {
-        let stored = self.mnemonic.lock().await;
-        let mnemonic = stored
-            .as_ref()
-            .ok_or_else(|| VaultError::KeyNotFound("Vault not initialized".to_string()))?;
-
-        // Mnemonic is already Zeroizing<String>, so it will be scrubbed on drop
-        let identity = SecretIdentity::from_mnemonic(mnemonic, "")
-            .map_err(|e| VaultError::KeyNotFound(format!("Derivation failed: {}", e)))?;
-
-        identity.derive_graph_key(graph_id).map_err(|e| e.into())
+        let identity = self.get_identity(None).await?;
+        identity.derive_graph_key(graph_id).map_err(Error::Protocol)
     }
 
-    async fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
-        let identity = self.get_identity().await?;
-        let signature: akshara_aadhaara::Signature = identity.sign(data);
-        Ok(signature.as_bytes().to_vec())
+    async fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<Lakshana> {
+        let stored = self.mnemonic.lock().await;
+        let mnemonic = stored.as_ref().ok_or_else(|| {
+            Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
+        })?;
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+            .map_err(Error::Protocol)?;
+        master
+            .derive_discovery_id(graph_id)
+            .map_err(Error::Protocol)
     }
 
-    async fn get_identity(&self) -> Result<SecretIdentity> {
+    async fn derive_keyring_secret(&self, version: u32) -> Result<GraphKey> {
         let stored = self.mnemonic.lock().await;
-        let mnemonic = stored
-            .as_ref()
-            .ok_or_else(|| VaultError::KeyNotFound("Vault not initialized".to_string()))?;
+        let mnemonic = stored.as_ref().ok_or_else(|| {
+            Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
+        })?;
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+            .map_err(Error::Protocol)?;
+        master
+            .derive_keyring_secret(version)
+            .map_err(Error::Protocol)
+    }
 
-        SecretIdentity::from_mnemonic(mnemonic, "").map_err(|e| {
-            VaultError::KeyNotFound(format!("Identity derivation failed: {}", e)).into()
-        })
+    async fn get_identity_id(&self) -> Result<GraphId> {
+        let stored = self.mnemonic.lock().await;
+        let mnemonic = stored.as_ref().ok_or_else(|| {
+            Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
+        })?;
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+            .map_err(Error::Protocol)?;
+        master.identity_id().map_err(Error::Protocol)
+    }
+
+    async fn get_identity_lakshana(&self) -> Result<Lakshana> {
+        let stored = self.mnemonic.lock().await;
+        let mnemonic = stored.as_ref().ok_or_else(|| {
+            Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
+        })?;
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+            .map_err(Error::Protocol)?;
+        master.derive_identity_lakshana().map_err(Error::Protocol)
+    }
+
+    async fn list_resources(
+        &self,
+        store: &InMemoryStore,
+    ) -> Result<Vec<(akshara_aadhaara::Address, GraphDescriptor)>> {
+        let anchor = self.latest_identity_anchor();
+        if anchor == ManifestId::null() {
+            return Ok(vec![]);
+        }
+        let identity_graph = IdentityGraph::new(store);
+        identity_graph
+            .list_resources(&anchor)
+            .await
+            .map_err(Error::Protocol)
+    }
+
+    async fn sign(&self, graph_id: &GraphId, data: &[u8]) -> Result<Signature> {
+        let identity = self.get_identity(Some(graph_id)).await?;
+        Ok(identity.sign(data))
+    }
+
+    async fn get_identity(&self, graph_id: Option<&GraphId>) -> Result<SecretIdentity> {
+        let stored = self.mnemonic.lock().await;
+        let mnemonic = stored.as_ref().ok_or_else(|| {
+            Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
+        })?;
+
+        if let Some(gid) = graph_id {
+            let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+                .map_err(Error::Protocol)?;
+            master
+                .derive_child("m/44'/999'/0'/1'/0'", Some(gid))
+                .map_err(Error::Protocol)
+        } else {
+            SecretIdentity::from_mnemonic(mnemonic, "").map_err(|e| {
+                Error::Vault(VaultError::KeyNotFound(format!(
+                    "Identity derivation failed: {}",
+                    e
+                )))
+            })
+        }
     }
 
     fn latest_identity_anchor(&self) -> ManifestId {
@@ -403,6 +416,6 @@ impl Vault for EphemeralVault {
 
 impl Drop for EphemeralVault {
     fn drop(&mut self) {
-        // Zeroize on drop is now automatic via Zeroizing<String> wrapper
+        // Zeroize on drop handled via Mutex<Option<Zeroizing<String>>>
     }
 }

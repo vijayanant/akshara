@@ -1,8 +1,11 @@
 use akshara_aadhaara::{
-    Address, Block, BlockId, GraphId, GraphKey, GraphStore, Heads, InMemoryStore, IndexBuilder,
-    Manifest, ManifestId, MasterIdentity, Reconciler, SecretIdentity,
+    Address, Block, BlockContent, BlockId, GraphDescriptor, GraphId, GraphKey, GraphStore, Heads,
+    IdentityGraph, InMemoryStore, IndexBuilder, Manifest, ManifestId, MasterIdentity, Reconciler,
+    SecretIdentity,
 };
+use rand::RngCore;
 use rand::rngs::OsRng;
+
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
 /// SCENARIO 1: Deep Tree Synchronization
@@ -18,14 +21,22 @@ async fn test_sync_recursive_index_structure() {
     let graph_key = identity.derive_graph_key(&graph_id).unwrap();
 
     let data = b"Target Bits".to_vec();
-    let leaf = Block::new(graph_id, data, "data".into(), vec![], &graph_key, &identity).unwrap();
+    let leaf = Block::new(
+        graph_id,
+        data,
+        akshara_aadhaara::BlockType::AksharaDataV1,
+        vec![],
+        &graph_key,
+        &identity,
+    )
+    .unwrap();
     laptop_store.put_block(&leaf).await.unwrap();
 
     let mut builder = IndexBuilder::new();
     builder
         .insert("folder/sub/file.txt", Address::from(leaf.id()))
         .unwrap();
-    let root_index_id = builder
+    let root_index_id: akshara_aadhaara::BlockId = builder
         .build(graph_id, &laptop_store, &identity, &graph_key)
         .await
         .unwrap();
@@ -96,20 +107,16 @@ async fn test_identity_rebirth_bootstrap() {
 
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
     let passphrase = "salt";
-    // The stable base ID used to derive the Identity Graph's discovery identifier.
-    let identity_graph_base_id = GraphId::from_bytes([0xDA; 16]);
 
     // --- Phase 1: Laptop (Creation and Sync) ---
-    {
+    let identity_id = {
         let laptop_identity = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
         let master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
+        let id_gid = master.identity_id().unwrap();
 
-        // Derive the stable Discovery ID for the Identity Graph
-        let id_gid = master.derive_discovery_id(&identity_graph_base_id).unwrap();
-
-        let id_key = GraphKey::generate(&mut OsRng);
+        let id_key = akshara_aadhaara::IDENTITY_GRAPH_KEY;
         let id_root = Block::new(
-            id_gid.into(),
+            id_gid,
             vec![],
             akshara_aadhaara::BlockType::AksharaAuthV1,
             vec![],
@@ -118,7 +125,7 @@ async fn test_identity_rebirth_bootstrap() {
         )
         .unwrap();
         let id_manifest = Manifest::new(
-            id_gid.into(),
+            id_gid,
             id_root.id(),
             vec![],
             ManifestId::null(),
@@ -128,25 +135,25 @@ async fn test_identity_rebirth_bootstrap() {
 
         relay_store.put_block(&id_root).await.unwrap();
         relay_store.put_manifest(&id_manifest).await.unwrap();
-    } // ALL laptop variables are destroyed here.
+        id_gid
+    }; // ALL laptop variables are destroyed here.
 
     // --- Phase 2: Phone (Rebirth and Recovery) ---
     let phone_master = MasterIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
 
-    // The phone derives the Discovery ID independently purely from the words.
-    let derived_id_gid = phone_master
-        .derive_discovery_id(&identity_graph_base_id)
-        .unwrap();
+    // The phone derives the Identity ID independently purely from the words.
+    let derived_id_gid = phone_master.identity_id().unwrap();
+    assert_eq!(derived_id_gid, identity_id);
 
     let reconciler = Reconciler::new(&relay_store);
-    let heads = relay_store.get_heads(&derived_id_gid.into()).await.unwrap();
+    let heads = relay_store.get_heads(&derived_id_gid).await.unwrap();
     assert!(
         !heads.is_empty(),
-        "Phone could not find Identity Graph on Relay via Discovery ID"
+        "Phone could not find Identity Graph on Relay via Identity ID"
     );
 
     let comp = reconciler
-        .reconcile(&Heads::new(derived_id_gid.into(), heads), &[])
+        .reconcile(&Heads::new(derived_id_gid, heads), &[])
         .await
         .unwrap();
     reconciler
@@ -157,7 +164,7 @@ async fn test_identity_rebirth_bootstrap() {
     // PROOF: Phone has successfully recovered Alice's Identity Graph frontier.
     assert!(
         !phone_store
-            .get_heads(&derived_id_gid.into())
+            .get_heads(&derived_id_gid)
             .await
             .unwrap()
             .is_empty()
@@ -167,157 +174,126 @@ async fn test_identity_rebirth_bootstrap() {
 /// SCENARIO 3: The Complete Stateless Journey (Type-Safe)
 #[tokio::test]
 async fn test_full_lifecycle_stateless_journey() {
-    let laptop_store = InMemoryStore::new();
-    let relay_store = InMemoryStore::new();
-    let phone_store = InMemoryStore::new();
-
+    let mut rng = OsRng;
     let mnemonic = SecretIdentity::generate_mnemonic().unwrap();
-    let passphrase = "vault";
+    let relay_store = InMemoryStore::new();
 
-    // --- Phase 1: Laptop Setup ---
-    let (id_gid, project_id) = {
-        let alice_laptop = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
-        let id_graph_id = GraphId::new();
-        let id_key = GraphKey::generate(&mut OsRng);
+    // --- STEP 1: BIRTH (Alice sets up her world on Laptop) ---
+    let (identity_id, _identity_lakshana) = {
+        let master = MasterIdentity::from_mnemonic(&mnemonic, "").unwrap();
+        let id_gid = master.identity_id().unwrap();
+        let id_lak = master.derive_identity_lakshana().unwrap();
+        let laptop_identity = master.derive_child("m/44'/999'/0'/0'/0'", None).unwrap();
 
+        // Alice creates a private project graph
         let project_id = GraphId::new();
-        let project_key = alice_laptop.derive_graph_key(&project_id).unwrap();
-        let data = Block::new(
-            project_id,
-            b"Stateless Secret".to_vec(),
-            "data".into(),
-            vec![],
-            &project_key,
-            &alice_laptop,
+        let project_key_bytes = *master
+            .derive_child("m/44'/999'/0'/2'/0'", Some(&project_id))
+            .unwrap()
+            .public()
+            .encryption_key()
+            .as_bytes();
+        let project_key = GraphKey::new(project_key_bytes);
+
+        // Alice registers the project in her Identity Graph (Resource Index)
+        let keyring_secret = master.derive_keyring_secret(0).unwrap();
+        let mut nonce = [0u8; 24];
+        rng.fill_bytes(&mut nonce);
+
+        let enc_graph_key = BlockContent::encrypt(
+            project_key.as_bytes(),
+            &keyring_secret,
+            nonce,
+            project_id.as_bytes(),
         )
         .unwrap();
-        laptop_store.put_block(&data).await.unwrap();
+
+        let descriptor = GraphDescriptor {
+            graph_id: project_id,
+            label: Some("Alice's Secret Project".to_string()),
+            enc_graph_key,
+            keyring_version: 0,
+            created_at: 0,
+            shared_by: None,
+        };
+
+        let identity_graph = IdentityGraph::new(&relay_store);
+        identity_graph
+            .add_resource(descriptor, true, &id_gid, &laptop_identity)
+            .await
+            .unwrap();
+
+        // Alice also adds some data to the project
+        let data = Block::new(
+            project_id,
+            b"Stateless Recovery Truth".to_vec(),
+            akshara_aadhaara::BlockType::AksharaDataV1,
+            vec![],
+            &project_key,
+            &laptop_identity.derive_shadow_identity(&project_id).unwrap(),
+        )
+        .unwrap();
         let manifest = Manifest::new(
             project_id,
             data.id(),
             vec![],
-            ManifestId::null(),
-            &alice_laptop,
+            ManifestId::null(), // genesis
+            &laptop_identity.derive_shadow_identity(&project_id).unwrap(),
             None,
         );
-        laptop_store.put_manifest(&manifest).await.unwrap();
-
-        let descriptor = Block::new(
-            id_graph_id,
-            b"Project Alpha".to_vec(),
-            "app.descriptor.v1".into(),
-            vec![],
-            &id_key,
-            &alice_laptop,
-        )
-        .unwrap();
-        laptop_store.put_block(&descriptor).await.unwrap();
-
-        let mut builder = IndexBuilder::new();
-        builder
-            .insert(
-                &format!("projects/{}", project_id),
-                Address::from(descriptor.id()),
-            )
-            .unwrap();
-        let id_root_id = builder
-            .build(id_graph_id, &laptop_store, &alice_laptop, &id_key)
-            .await
-            .unwrap();
-
-        let id_manifest = Manifest::new(
-            id_graph_id,
-            id_root_id,
-            vec![],
-            ManifestId::null(),
-            &alice_laptop,
-            None,
-        );
-        laptop_store.put_manifest(&id_manifest).await.unwrap();
-
-        relay_store.put_manifest(&manifest).await.unwrap();
         relay_store.put_block(&data).await.unwrap();
-        relay_store.put_manifest(&id_manifest).await.unwrap();
-        sync_recursive_closure(
-            &id_graph_id,
-            id_root_id,
-            &id_key,
-            &laptop_store,
-            &relay_store,
-        )
-        .await;
+        relay_store.put_manifest(&manifest).await.unwrap();
 
-        (id_graph_id, project_id)
+        (id_gid, id_lak)
     };
 
-    // --- Phase 3: Phone Rebirth ---
-    let alice_phone = SecretIdentity::from_mnemonic(&mnemonic, passphrase).unwrap();
-    let reconciler = Reconciler::new(&relay_store);
+    // --- STEP 2: LOSS (Laptop destroyed) ---
+    // All local variables are gone. Only `mnemonic` and `relay_store` remain.
 
-    // 1. Reconstruct Identity Graph from Words
-    let heads = relay_store.get_heads(&id_gid).await.unwrap();
-    let comp = reconciler
-        .reconcile(&Heads::new(id_gid, heads), &[])
-        .await
-        .unwrap();
-    reconciler
-        .converge(&comp.peer_surplus, &phone_store)
-        .await
-        .unwrap();
+    // --- STEP 3: REBIRTH (Alice gets a new Phone) ---
+    {
+        let master = MasterIdentity::from_mnemonic(&mnemonic, "").unwrap();
+        let recovered_id_gid = master.identity_id().unwrap();
 
-    // TYPE-SAFE DISCOVERY: Find the Manifest CID among the missing addresses
-    let mut id_manifest_id = None;
-    for addr in comp.peer_surplus.missing() {
-        if let Ok(mid) = ManifestId::try_from(*addr) {
-            id_manifest_id = Some(mid);
-            break;
-        }
+        assert_eq!(recovered_id_gid, identity_id);
+
+        // Phone finds Identity Graph on Relay
+        let heads = relay_store.get_heads(&recovered_id_gid).await.unwrap();
+        let identity_graph = IdentityGraph::new(&relay_store);
+
+        // Alice recovers her resources
+        let keyring_secret = master.derive_keyring_secret(0).unwrap();
+        let resources = identity_graph.list_resources(&heads[0]).await.unwrap();
+
+        assert_eq!(resources.len(), 1);
+        let (_addr, descriptor) = &resources[0];
+        assert_eq!(descriptor.label.as_deref(), Some("Alice's Secret Project"));
+
+        // Alice recovers the project key
+        let project_key_bytes = descriptor
+            .enc_graph_key
+            .decrypt(&keyring_secret, descriptor.graph_id.as_bytes())
+            .unwrap();
+        let mut key_array = [0u8; 32];
+        key_array.copy_from_slice(&project_key_bytes);
+        let recovered_project_key = GraphKey::new(key_array);
+
+        // Alice can now sync and read her project
+        let project_heads = relay_store.get_heads(&descriptor.graph_id).await.unwrap();
+        let project_manifest = relay_store
+            .get_manifest(&project_heads[0])
+            .await
+            .unwrap()
+            .unwrap();
+
+        let block_id = project_manifest.content_root();
+        let block = relay_store.get_block(&block_id).await.unwrap().unwrap();
+        let plaintext = block
+            .decrypt(&descriptor.graph_id, &recovered_project_key)
+            .unwrap();
+
+        assert_eq!(plaintext, b"Stateless Recovery Truth");
     }
-
-    let mid = id_manifest_id.expect("Relay failed to provide identity manifest");
-    let id_manifest = phone_store.get_manifest(&mid).await.unwrap().unwrap();
-    let id_key = GraphKey::generate(&mut OsRng);
-    sync_recursive_closure(
-        &id_gid,
-        id_manifest.content_root(),
-        &id_key,
-        &relay_store,
-        &phone_store,
-    )
-    .await;
-
-    // 2. Access Project
-    let phone_project_key = alice_phone.derive_graph_key(&project_id).unwrap();
-    let p_heads = relay_store.get_heads(&project_id).await.unwrap();
-    let p_comp = reconciler
-        .reconcile(&Heads::new(project_id, p_heads), &[])
-        .await
-        .unwrap();
-    reconciler
-        .converge(&p_comp.peer_surplus, &phone_store)
-        .await
-        .unwrap();
-
-    let mut p_manifest_id = None;
-    for addr in p_comp.peer_surplus.missing() {
-        if let Ok(mid) = ManifestId::try_from(*addr) {
-            p_manifest_id = Some(mid);
-            break;
-        }
-    }
-
-    let p_mid = p_manifest_id.expect("Relay failed to provide project manifest");
-    let restored_manifest = phone_store.get_manifest(&p_mid).await.unwrap().unwrap();
-    let restored_block = phone_store
-        .get_block(&restored_manifest.content_root())
-        .await
-        .unwrap()
-        .unwrap();
-
-    let plaintext = restored_block
-        .decrypt(&project_id, &phone_project_key)
-        .unwrap();
-    assert_eq!(plaintext, b"Stateless Secret");
 }
 
 /// Generic recursive synchronization helper for simulations.
