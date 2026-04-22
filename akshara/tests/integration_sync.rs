@@ -5,6 +5,7 @@ use akshara::sync::MockTransport;
 use akshara::sync::{Conflict, MergeStrategy, SyncEngine};
 use akshara::vault::VaultConfig;
 use akshara_aadhaara::{GraphId, InMemoryStore, SecretIdentity};
+use std::sync::Arc;
 
 // ============================================================================
 // MockTransport Tests
@@ -60,7 +61,7 @@ async fn mock_transport_push_portions_accepts_all() {
 
 #[tokio::test]
 async fn sync_engine_new() {
-    let transport = MockTransport::new();
+    let transport = Arc::new(MockTransport::new());
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let _root_key = identity.public().signing_key().clone();
 
@@ -71,7 +72,7 @@ async fn sync_engine_new() {
 
 #[tokio::test]
 async fn sync_engine_sync_graph_empty_store() {
-    let transport = MockTransport::new();
+    let transport = Arc::new(MockTransport::new());
     let _identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let store = InMemoryStore::new();
 
@@ -95,7 +96,7 @@ async fn sync_engine_sync_graph_empty_store() {
 
 #[tokio::test]
 async fn sync_engine_sync_all_empty_store() {
-    let transport = MockTransport::new();
+    let transport = Arc::new(MockTransport::new());
     let _identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let store = InMemoryStore::new();
 
@@ -156,7 +157,7 @@ async fn client_sync_with_mock_transport() {
     let client = Client::init(config).await.unwrap();
 
     // Sync should work with mock transport (returns empty report)
-    let report = client.sync().await.unwrap();
+    let report = client.sync_all().await.unwrap();
 
     assert_eq!(report.graphs_synced, 0);
     assert_eq!(report.manifests_received, 0);

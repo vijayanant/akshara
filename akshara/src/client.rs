@@ -200,15 +200,15 @@ impl Client {
     /// Synchronize all graphs with the relay.
     ///
     /// Currently uses `MockTransport` — real gRPC transport is coming in v0.2.
-    pub async fn sync(&self) -> Result<SyncReport> {
-        let transport = MockTransport::new();
+    pub async fn sync_all(&self) -> Result<SyncReport> {
+        let transport = Arc::new(MockTransport::new());
         let engine = SyncEngine::new(transport, self.vault.clone());
         engine.sync_all(&self.store).await
     }
 
     /// Synchronize a specific graph.
     pub async fn sync_graph(&self, graph_id: GraphId) -> Result<SyncReport> {
-        let transport = MockTransport::new();
+        let transport = Arc::new(MockTransport::new());
         let engine = SyncEngine::new(transport, self.vault.clone());
         let graph_key = self.vault.derive_graph_key(&graph_id).await?;
         engine.sync_graph(graph_id, &self.store, &graph_key).await

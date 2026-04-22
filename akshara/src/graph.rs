@@ -521,9 +521,8 @@ impl Graph {
         Ok(())
     }
 
-    /// Synchronize this graph with the relay.
     pub async fn sync(&self) -> Result<SyncReport> {
-        let transport = crate::sync::MockTransport::new();
+        let transport = Arc::new(crate::sync::MockTransport::new());
         let engine = crate::sync::SyncEngine::new(transport, self.vault.clone());
         engine
             .sync_graph(self.graph_id, &self.store, &self.graph_key)
