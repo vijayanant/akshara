@@ -51,6 +51,7 @@ async fn create_identity_graph(store: &InMemoryStore, identity: &SecretIdentity)
         vec![],
         ManifestId::null(),
         identity,
+        None,
     );
     store.put_manifest(&manifest).await.unwrap();
     manifest
@@ -199,7 +200,14 @@ async fn test_identity_graph_ghost_branch_prevention() {
         .build(graph_id, &store, &identity, &identity_key)
         .await
         .unwrap();
-    let manifest_v1 = Manifest::new(graph_id, root_v1, vec![], ManifestId::null(), &identity);
+    let manifest_v1 = Manifest::new(
+        graph_id,
+        root_v1,
+        vec![],
+        ManifestId::null(),
+        &identity,
+        None,
+    );
     store.put_manifest(&manifest_v1).await.unwrap();
 
     let revocation_block =
@@ -223,6 +231,7 @@ async fn test_identity_graph_ghost_branch_prevention() {
         vec![manifest_v1.id()],
         manifest_v1.id(),
         &identity,
+        None,
     );
     store.put_manifest(&manifest_v2).await.unwrap();
 
@@ -270,7 +279,14 @@ async fn test_identity_graph_revocation_scenario() {
         .build(graph_id, &store, &identity, &identity_key)
         .await
         .unwrap();
-    let manifest_v1 = Manifest::new(graph_id, root_v1, vec![], ManifestId::null(), &identity);
+    let manifest_v1 = Manifest::new(
+        graph_id,
+        root_v1,
+        vec![],
+        ManifestId::null(),
+        &identity,
+        None,
+    );
     store.put_manifest(&manifest_v1).await.unwrap();
 
     let revocation_block_id =
@@ -295,6 +311,7 @@ async fn test_identity_graph_revocation_scenario() {
         vec![manifest_v1.id()],
         manifest_v1.id(),
         &identity,
+        None,
     );
     store.put_manifest(&manifest_v2).await.unwrap();
 

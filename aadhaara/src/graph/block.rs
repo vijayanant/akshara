@@ -275,7 +275,11 @@ impl Block {
         hasher.finalize().to_vec()
     }
 
-    fn compute_id(content: &BlockContent, block_type: &BlockType, parents: &[BlockId]) -> BlockId {
+    pub fn compute_id(
+        content: &BlockContent,
+        block_type: &BlockType,
+        parents: &[BlockId],
+    ) -> BlockId {
         let mut hasher = Sha256::new();
         hasher.update(b"AKSHARA_V1_BLOCK");
         hasher.update(content.as_bytes());

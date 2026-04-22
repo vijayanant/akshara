@@ -400,7 +400,8 @@ fn test_keyring_secret_synchronization() {
 
     // 1. MUST be identical across devices
     assert_eq!(
-        laptop_secret, phone_secret,
+        laptop_secret.as_bytes(),
+        phone_secret.as_bytes(),
         "Keyring secrets must be deterministic and shared"
     );
 
@@ -408,7 +409,8 @@ fn test_keyring_secret_synchronization() {
     let rotated_secret =
         SecretIdentity::derive_keyring_secret(MNEMONIC_1, "", version + 1).unwrap();
     assert_ne!(
-        laptop_secret, rotated_secret,
+        laptop_secret.as_bytes(),
+        rotated_secret.as_bytes(),
         "Rotated keyring secrets must be distinct"
     );
 }
