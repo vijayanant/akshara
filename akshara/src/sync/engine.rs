@@ -3,7 +3,9 @@
 //! The SyncEngine coordinates between the transport layer and the protocol layer
 //! to synchronize graphs with relays or peers.
 
-use akshara_aadhaara::{GraphId, GraphStore, InMemoryStore, Reconciler};
+use akshara_aadhaara::{Address, GraphId, GraphStore, InMemoryStore, Portion, Reconciler};
+use futures::stream::{self, Stream};
+use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
@@ -39,14 +41,6 @@ impl SyncEngine {
     }
 
     /// Synchronize a single graph with the remote peer.
-    ///
-    /// This performs a full sync turn:
-    /// 1. Get local heads from store
-    /// 2. Exchange heads with remote peer
-    /// 3. Reconcile to find missing data
-    /// 4. Request missing portions
-    /// 5. Converge (apply portions to local store)
-    /// 6. Return sync report
     pub async fn sync_graph(
         &self,
         graph_id: GraphId,
@@ -97,8 +91,6 @@ impl SyncEngine {
         let mut blocks_received = 0;
         let mut bytes_transferred = 0;
 
-        // PRE-CALCULATED RITUALS:
-        // Hoist all loop-invariant data to ensure maximum performance.
         let is_identity_sync = graph_id == self.vault.get_identity_id().await?;
         let latest_anchor = self.vault.latest_identity_anchor();
 
@@ -116,47 +108,60 @@ impl SyncEngine {
             bytes_transferred += bytes.len() as u64;
 
             if self
-                .ingest_portion(&graph_id, portion, store, &mut auditor)
+                .ingest_portion(&graph_id, portion, store, &mut auditor, is_identity_sync)
                 .await?
             {
                 manifests_received += 1;
-
-                // If this is our own identity graph, update the vault's anchor immediately
-                // so subsequent manifests in this turn can use the new authority state.
-                if is_identity_sync {
-                    // We need to peek at the CID we just stored
-                    // TODO: Optimization - return CID from ingest_portion
-                }
             } else {
                 blocks_received += 1;
             }
         }
 
-        // TODO: Push our surplus to peer if needed
+        // 6. Push local surplus to peer
+        let self_missing = comparison.self_surplus.missing().to_vec();
+        if !self_missing.is_empty() {
+            let push_stream = self.stream_surplus(store, self_missing).await;
+
+            // We need to track how many bytes we are pushing
+            // For now, we'll just send the stream and assume success
+            self.transport.push_portions(push_stream).await?;
+
+            // TODO: Accurate bytes_transferred update for push
+        }
+
+        // 7. Conflict detection
+        let conflicts_detected = if !comparison.peer_surplus.missing().is_empty()
+            && !comparison.self_surplus.missing().is_empty()
+        {
+            // ALPHA: Simple heuristic - if both sides have surplus, there might be a fork
+            // In v0.2 we'll use actual LCA analysis.
+            1
+        } else {
+            0
+        };
 
         Ok(SyncReport {
             graphs_synced: 1,
             manifests_received,
             blocks_received,
             bytes_transferred,
-            conflicts_detected: 0, // TODO: Detect conflicts
+            conflicts_detected,
         })
     }
 
     /// Verifies, audits, and ingests a single portion into the store.
-    /// Returns true if the portion was a manifest, false if it was a block.
     async fn ingest_portion(
         &self,
         graph_id: &GraphId,
-        portion: akshara_aadhaara::Portion,
+        portion: Portion,
         store: &InMemoryStore,
         auditor: &mut akshara_aadhaara::Auditor<'_, InMemoryStore>,
+        is_identity_sync: bool,
     ) -> Result<bool> {
         let expected_id = portion.id();
         let bytes = portion.data();
 
-        // 1. BLIND VERIFICATION: Recalculate hash before touching the DB
-        let actual_id = akshara_aadhaara::Address::try_from(bytes).map_err(|_| {
+        let actual_id = Address::try_from(bytes).map_err(|_| {
             Error::SyncFailed(format!("Malformed data in portion for {}", expected_id))
         })?;
 
@@ -167,13 +172,11 @@ impl SyncEngine {
             )));
         }
 
-        // 2. DISPATCH BY TYPE
         if expected_id.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
             let manifest =
                 akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Manifest>(bytes)
                     .map_err(|e| Error::SyncFailed(format!("Failed to parse manifest: {}", e)))?;
 
-            // 3. AUTHORITY AUDIT
             auditor
                 .audit_manifest(&manifest, Some(graph_id))
                 .await
@@ -184,8 +187,7 @@ impl SyncEngine {
                 .await
                 .map_err(Error::Protocol)?;
 
-            // Update vault if it's an identity update
-            if *graph_id == self.vault.get_identity_id().await? {
+            if is_identity_sync {
                 self.vault.update_identity_anchor(manifest.id());
             }
 
@@ -194,11 +196,56 @@ impl SyncEngine {
             let block = akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Block>(bytes)
                 .map_err(|e| Error::SyncFailed(format!("Failed to parse block: {}", e)))?;
 
-            // 4. INTEGRITY AUDIT
             auditor.audit_block(&block).map_err(Error::Protocol)?;
 
             store.put_block(&block).await.map_err(Error::Protocol)?;
             Ok(false)
         }
+    }
+
+    /// Streams local missing data for pushing to peer.
+    async fn stream_surplus(
+        &self,
+        store: &InMemoryStore,
+        missing: Vec<Address>,
+    ) -> Pin<Box<dyn Stream<Item = Result<Portion>> + Send>> {
+        let store = store.clone();
+
+        let s = stream::unfold((store, missing), |(store, mut missing)| async move {
+            if missing.is_empty() {
+                return None;
+            }
+            let addr = missing.remove(0);
+
+            let res = if addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
+                let mid = akshara_aadhaara::ManifestId::try_from(addr).unwrap();
+                match store.get_manifest(&mid).await {
+                    Ok(Some(m)) => akshara_aadhaara::to_canonical_bytes(&m)
+                        .map(|bytes| Portion::new(addr, bytes))
+                        .map_err(Error::Protocol),
+                    Ok(None) => Err(Error::Internal(format!(
+                        "Manifest {} missing during push",
+                        mid
+                    ))),
+                    Err(e) => Err(Error::Protocol(e)),
+                }
+            } else {
+                let bid = akshara_aadhaara::BlockId::try_from(addr).unwrap();
+                match store.get_block(&bid).await {
+                    Ok(Some(b)) => akshara_aadhaara::to_canonical_bytes(&b)
+                        .map(|bytes| Portion::new(addr, bytes))
+                        .map_err(Error::Protocol),
+                    Ok(None) => Err(Error::Internal(format!(
+                        "Block {} missing during push",
+                        bid
+                    ))),
+                    Err(e) => Err(Error::Protocol(e)),
+                }
+            };
+
+            Some((res, (store, missing)))
+        });
+
+        Box::pin(s)
     }
 }

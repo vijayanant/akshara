@@ -5,7 +5,7 @@ pub(crate) mod protocol;
 pub(crate) mod state;
 pub(crate) mod traversal;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
 // --- Public API ---

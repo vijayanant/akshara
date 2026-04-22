@@ -5,6 +5,7 @@ edition.workspace = true
 
 [features]
 wire = []
+test-utils = []
 
 [dependencies]
 # Workspace

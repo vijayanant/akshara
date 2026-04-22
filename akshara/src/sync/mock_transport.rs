@@ -13,22 +13,24 @@ use tokio::time::sleep;
 use super::transport::SyncTransport;
 use crate::error::{Error, Result};
 
+use std::sync::{Arc, RwLock};
+
 /// Mock transport that simulates a peer for testing.
-///
-/// Useful for demos and integration tests without a real relay.
 pub struct MockTransport {
-    /// Simulated network delay (default: 10ms)
+    /// Simulated network delay
     pub delay_ms: u64,
-    /// Probability of simulated failure (0.0 - 1.0)
+    /// Probability of simulated failure
     pub failure_rate: f64,
+    /// Recorded portions that were pushed to this transport
+    pub pushed_portions: Arc<RwLock<Vec<Portion>>>,
 }
 
 impl MockTransport {
-    /// Create a new mock transport with default settings.
     pub fn new() -> Self {
         Self {
             delay_ms: 10,
             failure_rate: 0.0,
+            pushed_portions: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -37,6 +39,7 @@ impl MockTransport {
         Self {
             delay_ms,
             failure_rate: 0.0,
+            pushed_portions: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -91,12 +94,21 @@ impl SyncTransport for MockTransport {
 
     async fn push_portions(
         &self,
-        _portions: Pin<Box<dyn Stream<Item = Result<Portion>> + Send>>,
+        mut portions: Pin<Box<dyn Stream<Item = Result<Portion>> + Send>>,
     ) -> Result<()> {
         self.simulate_delay().await;
         self.simulate_failure()?;
 
-        // Accept all portions (mock peer always accepts)
+        use futures::StreamExt;
+        while let Some(portion_result) = portions.next().await {
+            let portion = portion_result?;
+            let mut buffer = self
+                .pushed_portions
+                .write()
+                .map_err(|_| Error::Internal("Lock poisoned".to_string()))?;
+            buffer.push(portion);
+        }
+
         Ok(())
     }
 }

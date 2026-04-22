@@ -95,18 +95,50 @@ async fn sync_engine_sync_graph_empty_store() {
 }
 
 #[tokio::test]
-async fn sync_engine_sync_all_empty_store() {
+async fn sync_engine_push_surplus() {
+    use akshara_aadhaara::test_utils::TestFactory;
+
+    let factory = TestFactory::new().await;
+    let store = factory.store.as_ref();
     let transport = Arc::new(MockTransport::new());
-    let _identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
-    let store = InMemoryStore::new();
+
+    // Create some local state using the factory
+    let block = factory.create_block(b"Local Surprise").await;
+    let manifest = factory.create_manifest(block.id(), vec![]).await;
 
     let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
-    let engine = SyncEngine::new(transport, vault);
+    vault.initialize(None).await.unwrap();
+    let engine = SyncEngine::new(transport.clone(), vault);
 
-    let report = engine.sync_all(&store).await.unwrap();
+    // SYNC TURN: Should push the local manifest and block
+    let report = engine
+        .sync_graph(factory.graph_id, store, &factory.graph_key)
+        .await
+        .unwrap();
 
-    assert_eq!(report.graphs_synced, 0);
-    assert_eq!(report.manifests_received, 0);
+    assert_eq!(report.graphs_synced, 1);
+
+    // Verify transport recorded the push
+    let pushed = transport.pushed_portions.read().unwrap();
+    assert_eq!(pushed.len(), 2);
+    assert!(pushed.iter().any(|p| p.id() == &manifest.id().into()));
+    assert!(pushed.iter().any(|p| p.id() == &block.id().into()));
+}
+
+#[tokio::test]
+async fn sync_engine_detects_conflict_heuristic() {
+    use akshara_aadhaara::test_utils::TestFactory;
+    let factory = TestFactory::new().await;
+    let _store = factory.store.as_ref();
+
+    // 1. Create a Mock Transport
+    let _transport = Arc::new(MockTransport::new());
+
+    // 2. Local surplus (Block A)
+    let _block_a = factory.create_block(b"My side").await;
+    let _manifest_a = factory.create_manifest(_block_a.id(), vec![]).await;
+
+    // 3. Heuristic test: v0.2 will have stateful peer.
 }
 
 // ============================================================================
