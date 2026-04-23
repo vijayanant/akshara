@@ -242,10 +242,8 @@ pub struct GraphSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use akshara_aadhaara::SecretIdentity;
 
     async fn create_test_client() -> Client {
-        let _mnemonic = SecretIdentity::generate_mnemonic().unwrap();
         let config = ClientConfig::new()
             .with_ephemeral_vault()
             .with_in_memory_storage();
