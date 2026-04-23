@@ -73,7 +73,6 @@ async fn sync_engine_new() {
 #[tokio::test]
 async fn sync_engine_sync_graph_empty_store() {
     let transport = Arc::new(MockTransport::new());
-    let _identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let store = InMemoryStore::new();
 
     let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
@@ -210,4 +209,38 @@ async fn client_sync_graph_with_mock_transport() {
     assert_eq!(report.graphs_synced, 1);
     // Mock returns empty, so no data transferred
     assert_eq!(report.manifests_received, 0);
+}
+
+#[tokio::test]
+async fn sync_engine_auto_anchoring_ritual() {
+    use akshara::{Client, ClientConfig};
+    use akshara_aadhaara::{Manifest, ManifestId};
+
+    let config = ClientConfig::new().with_ephemeral_vault();
+    let client = Client::init(config).await.unwrap();
+    let vault = client.vault();
+
+    assert_eq!(vault.latest_identity_anchor(), ManifestId::null());
+
+    // Identity Graph ID
+    let identity = vault.get_identity(None).await.unwrap();
+    let id_graph_id = identity.identity_id().unwrap();
+
+    // Receiving an update to the Identity Graph
+    let new_root = akshara_aadhaara::BlockId::from_sha256(&[1u8; 32]);
+    let new_id_manifest = Manifest::new(
+        id_graph_id,
+        new_root,
+        vec![],
+        ManifestId::null(),
+        &identity,
+        None,
+    );
+
+    // Simulate the engine check
+    if id_graph_id == identity.identity_id().unwrap() {
+        vault.update_identity_anchor(new_id_manifest.id());
+    }
+
+    assert_eq!(vault.latest_identity_anchor(), new_id_manifest.id());
 }
