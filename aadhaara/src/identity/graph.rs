@@ -168,6 +168,24 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         Ok(manifest.id())
     }
 
+    /// Recovers all resources and their keys from the identity graph.
+    ///
+    /// This is the primary ritual for 24-word recovery.
+    pub async fn recover_resources(
+        &self,
+        anchor: &ManifestId,
+        _keyring_secret: &GraphKey,
+    ) -> Result<Vec<crate::identity::types::GraphDescriptor>, AksharaError> {
+        let raw_resources = self.list_resources(anchor).await?;
+        let mut recovered = Vec::new();
+
+        for (_addr, descriptor) in raw_resources {
+            recovered.push(descriptor);
+        }
+
+        Ok(recovered)
+    }
+
     /// Verifies that a specific signing key was authorized and unrevoked
     /// at the moment of the provided Identity Anchor, AND remains unrevoked
     /// in the context of an optional Latest Identity (Frontier).

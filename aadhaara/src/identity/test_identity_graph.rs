@@ -176,3 +176,32 @@ async fn test_identity_graph_revocation() {
         assert!(result_v2.is_err());
     }
 }
+
+#[tokio::test]
+async fn test_resource_index_rituals() {
+    use crate::IdentityGraph;
+    use crate::identity::types::MasterIdentity;
+    let store = InMemoryStore::new();
+    let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+    let master = MasterIdentity::from_mnemonic(mnemonic, "").unwrap();
+    let keyring_secret = master.derive_keyring_secret(0).unwrap();
+
+    // 2. Register resources using high-level API
+    let gid1 = GraphId::new();
+    let key1 = GraphKey::generate(&mut rand::rngs::OsRng);
+    let anchor = master
+        .register_resource(&store, gid1, &key1, Some("Project X".to_string()), true)
+        .await
+        .unwrap();
+
+    // 3. Recovery Ritual: Reconstruct world from 24 words
+    let recovered_id_graph = IdentityGraph::new(&store);
+    let resources = recovered_id_graph
+        .recover_resources(&anchor, &keyring_secret)
+        .await
+        .unwrap();
+
+    assert_eq!(resources.len(), 1);
+    assert_eq!(resources[0].graph_id, gid1);
+    assert_eq!(resources[0].label.as_ref().unwrap(), "Project X");
+}
