@@ -143,7 +143,6 @@ fn identity_derives_isolated_graph_keys() {
 async fn identity_adversarial_shadow_isolation() {
     let mnemonic = MNEMONIC_1;
     let master = crate::identity::types::MasterIdentity::from_mnemonic(mnemonic, "").unwrap();
-    let _alice = master.derive_child("m/44'/999'/0'/0'/0'", None).unwrap();
 
     let gid_a = GraphId::new();
     let gid_b = GraphId::new();
@@ -413,4 +412,27 @@ fn test_keyring_secret_synchronization() {
         rotated_secret.as_bytes(),
         "Rotated keyring secrets must be distinct"
     );
+}
+
+#[test]
+fn test_shadow_identity_rituals() {
+    let mnemonic = MNEMONIC_1;
+    let master = crate::identity::types::MasterIdentity::from_mnemonic(mnemonic, "").unwrap();
+    let executive = master.derive_child("m/44'/999'/0'/1'/0'", None).unwrap();
+    let gid = GraphId::new();
+
+    let shadow = executive.derive_shadow_identity(&gid).unwrap();
+
+    // 1. Isolation
+    assert_ne!(shadow.public_key(), executive.public_key());
+
+    // 2. Unforgeability (Previous Breach Test)
+    use hmac::{Hmac, Mac};
+    let pub_key = executive.public_key();
+    let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(pub_key.as_bytes()).unwrap();
+    hmac.update(b"akshara.v1.shadow_identity");
+    hmac.update(gid.as_bytes());
+    let forged = hmac.finalize().into_bytes();
+
+    assert_ne!(shadow.public_key().as_bytes(), &forged[..32]);
 }

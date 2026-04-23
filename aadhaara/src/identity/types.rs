@@ -205,6 +205,49 @@ impl MasterIdentity {
         Ok(GraphId::from_bytes(bytes))
     }
 
+    /// High-level ritual to register a graph in the user's Identity Graph.
+    ///
+    /// This encapsulates:
+    /// 1. Deriving the Keyring Secret (Branch 4).
+    /// 2. Encrypting the GraphKey.
+    /// 3. Constructing the Descriptor.
+    /// 4. Updating the Merkle-Index in the store.
+    pub async fn register_resource(
+        &self,
+        store: &impl crate::state::store::GraphStore,
+        graph_id: GraphId,
+        graph_key: &GraphKey,
+        label: Option<String>,
+        is_owned: bool,
+    ) -> Result<crate::base::address::ManifestId, AksharaError> {
+        let id_graph_id = self.identity_id()?;
+        let legislator = self.derive_child("m/44'/999'/0'/0'/0'", None)?;
+        let keyring_secret = self.derive_keyring_secret(0)?;
+
+        let mut rng = rand::rngs::OsRng;
+        let mut nonce = [0u8; 24];
+        rng.fill_bytes(&mut nonce);
+
+        let descriptor = GraphDescriptor {
+            graph_id,
+            label,
+            enc_graph_key: crate::base::crypto::BlockContent::encrypt(
+                graph_key.as_bytes(),
+                &keyring_secret,
+                nonce,
+                graph_id.as_bytes(),
+            )?,
+            keyring_version: 0,
+            created_at: 0,   // Rebirth Invariant: set to 0 for bit-permanence
+            shared_by: None, // TODO: Support shared_by in future
+        };
+
+        let id_graph = crate::identity::graph::IdentityGraph::new(store);
+        id_graph
+            .add_resource(descriptor, is_owned, &id_graph_id, &legislator)
+            .await
+    }
+
     fn init_discovery_hmac(&self) -> Result<Hmac<sha2::Sha256>, AksharaError> {
         // 1. Derive the stable Branch 5 Discovery Key
         let path = crate::identity::paths::format_akshara_path(
@@ -509,6 +552,31 @@ impl SecretIdentity {
         lakshana_bytes.copy_from_slice(&result[..32]);
 
         Ok(Lakshana::new(lakshana_bytes))
+    }
+
+    /// Signs a manifest header using a graph-isolated shadow identity.
+    ///
+    /// This method automatically:
+    /// 1. Derives the Shadow Identity for the given graph.
+    /// 2. Hashes the signer's derivation path for the manifest header.
+    /// 3. (Future) Attaches a Shadow Certificate if the anchor is not null.
+    pub fn sign_manifest_shadowed(
+        &self,
+        header: &mut crate::graph::ManifestHeader,
+        graph_id: &GraphId,
+    ) -> Result<(SigningPublicKey, Signature), AksharaError> {
+        let shadow = self.derive_shadow_identity(graph_id)?;
+
+        // Update header with the signer's path hash
+        let mut path_hasher = sha2::Sha256::new();
+        path_hasher.update(shadow.derivation_path().as_bytes());
+        header.signer_path_hash = path_hasher.finalize().into();
+
+        let shadow_pub = shadow.public().signing_key().clone();
+        let header_cid = crate::graph::Manifest::compute_header_id(header, &shadow_pub);
+        let signature = shadow.sign(header_cid.as_ref());
+
+        Ok((shadow_pub, signature))
     }
 
     /// Derives the Identity ID from this identity's key.
