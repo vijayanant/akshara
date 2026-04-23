@@ -28,17 +28,7 @@ impl IndexBuilder {
 
     /// Inserts an address into the virtual tree at the specified path.
     pub fn insert(&mut self, path: &str, address: Address) -> Result<(), AksharaError> {
-        let segments: Vec<&str> = path
-            .trim_matches('/')
-            .split('/')
-            .filter(|s| !s.is_empty())
-            .collect();
-        if segments.is_empty() {
-            return Err(AksharaError::InternalError(
-                "Path cannot be empty".to_string(),
-            ));
-        }
-
+        let segments = self.normalize_path(path)?;
         let mut current_map = &mut self.tree;
 
         for (i, segment) in segments.iter().enumerate() {
@@ -64,6 +54,104 @@ impl IndexBuilder {
         }
 
         Ok(())
+    }
+
+    /// Removes a path from the virtual tree.
+    pub fn remove(&mut self, path: &str) -> Result<(), AksharaError> {
+        let segments = self.normalize_path(path)?;
+        let mut current_map = &mut self.tree;
+
+        for (i, segment) in segments.iter().enumerate() {
+            let is_last = i == segments.len() - 1;
+
+            if is_last {
+                current_map.remove(*segment);
+                return Ok(());
+            } else {
+                match current_map.get_mut(*segment) {
+                    Some(IndexNode::Branch(next_map)) => current_map = next_map,
+                    _ => return Ok(()), // Path doesn't exist; nothing to remove
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Imports an existing Merkle-Index state into the builder.
+    ///
+    /// This allows for incremental updates by loading the current state
+    /// before applying changes.
+    pub async fn import_from_root<S: GraphStore + ?Sized>(
+        &mut self,
+        graph_id: &GraphId,
+        root: &BlockId,
+        store: &S,
+        key: &GraphKey,
+    ) -> Result<(), AksharaError> {
+        self.tree = self.load_node_recursive(graph_id, root, store, key).await?;
+        Ok(())
+    }
+
+    async fn load_node_recursive<S: GraphStore + ?Sized>(
+        &self,
+        graph_id: &GraphId,
+        block_id: &BlockId,
+        store: &S,
+        key: &GraphKey,
+    ) -> Result<BTreeMap<String, IndexNode>, AksharaError> {
+        let block = store.get_block(block_id).await?.ok_or_else(|| {
+            AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                "Index block {}",
+                block_id
+            )))
+        })?;
+
+        let plaintext = block.decrypt(graph_id, key)?;
+        let index_map: BTreeMap<String, Address> =
+            crate::base::encoding::from_canonical_bytes(&plaintext)?;
+
+        let mut virtual_map = BTreeMap::new();
+
+        for (name, addr) in index_map {
+            if addr.codec() == crate::base::address::CODEC_AKSHARA_BLOCK {
+                // Determine if this is a sub-index or a data leaf
+                // We must check the block type to be sure
+                let child_id = BlockId::try_from(addr)?;
+                let child_block = store.get_block(&child_id).await?.ok_or_else(|| {
+                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                        "Child block {}",
+                        child_id
+                    )))
+                })?;
+
+                if *child_block.block_type() == crate::graph::BlockType::AksharaIndexV1 {
+                    let sub_tree =
+                        Box::pin(self.load_node_recursive(graph_id, &child_id, store, key)).await?;
+                    virtual_map.insert(name, IndexNode::Branch(sub_tree));
+                } else {
+                    virtual_map.insert(name, IndexNode::Leaf(addr));
+                }
+            } else {
+                virtual_map.insert(name, IndexNode::Leaf(addr));
+            }
+        }
+
+        Ok(virtual_map)
+    }
+
+    fn normalize_path<'a>(&self, path: &'a str) -> Result<Vec<&'a str>, AksharaError> {
+        let segments: Vec<&str> = path
+            .trim_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+        if segments.is_empty() {
+            return Err(AksharaError::InternalError(
+                "Path cannot be empty".to_string(),
+            ));
+        }
+        Ok(segments)
     }
 
     /// Recursively builds and persists the Merkle-Index blocks to the store.

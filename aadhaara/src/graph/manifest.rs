@@ -28,6 +28,25 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Computes the identifier for a manifest header.
+    pub(crate) fn compute_header_id(
+        header: &ManifestHeader,
+        author: &SigningPublicKey,
+    ) -> ManifestId {
+        let mut hasher = Sha256::new();
+        hasher.update(header.graph_id.as_bytes());
+        hasher.update(header.content_root.as_ref());
+        for parent in &header.parents {
+            hasher.update(parent.as_ref());
+        }
+        hasher.update(header.identity_anchor.as_ref());
+        hasher.update(author.as_bytes());
+        hasher.update(header.signer_path_hash);
+        hasher.update(header.created_at.to_le_bytes());
+
+        ManifestId::from_sha256(&hasher.finalize())
+    }
+
     pub fn new(
         graph_id: GraphId,
         content_root: BlockId,
