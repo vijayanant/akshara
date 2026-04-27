@@ -188,7 +188,12 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
             }
         }
 
-        // 2. Discover genesis manifest author
+        // 2. GENESIS FAST-PATH: If this is the genesis, it IS the legislator.
+        if manifest.parents().is_empty() {
+            return self.discover_root_key(manifest).await;
+        }
+
+        // 3. Discover genesis manifest author
         let genesis_author = self.discover_graph_genesis_iterative(manifest).await?;
 
         // 3. Update cache
