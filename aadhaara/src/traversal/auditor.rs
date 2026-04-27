@@ -301,6 +301,18 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
                 if let Ok(Some(block)) = self.store.get_block(&block_id).await
                     && block.block_type() == &crate::graph::BlockType::AksharaTrustV1
                 {
+                    // SECURITY RITUAL: Only the Legislator can grant trust.
+                    let legislator = self.discover_graph_legislator(manifest).await?;
+                    if block.author() != &legislator {
+                        debug!(
+                            "Rejecting trust block at {} - signed by {} instead of legislator {}",
+                            addr,
+                            block.author().to_hex(),
+                            legislator.to_hex()
+                        );
+                        continue;
+                    }
+
                     // Success! Update cache
                     {
                         let mut cache = self.memoized_trusted_executives.write().map_err(|_| {
