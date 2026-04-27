@@ -19,7 +19,6 @@ use tracing::{Level, debug, span};
 /// `identity_anchor`. The genesis of the identity graph (signed by the
 /// Legislator branch) is the root of trust. All manifest signers must trace
 /// their authority back through the identity graph to that genesis.
-#[derive(Clone)]
 pub struct Auditor<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
     pub(crate) latest_identity: Option<ManifestId>,
@@ -36,6 +35,19 @@ pub struct Auditor<'a, S: GraphStore + ?Sized> {
             std::collections::HashMap<GraphId, std::collections::HashSet<SigningPublicKey>>,
         >,
     >,
+}
+
+impl<'a, S: GraphStore + ?Sized> Clone for Auditor<'a, S> {
+    fn clone(&self) -> Self {
+        Self {
+            store: self.store,
+            latest_identity: self.latest_identity,
+            graph_key: self.graph_key.clone(),
+            memoized_identity_roots: self.memoized_identity_roots.clone(),
+            memoized_graph_legislators: self.memoized_graph_legislators.clone(),
+            memoized_trusted_executives: self.memoized_trusted_executives.clone(),
+        }
+    }
 }
 
 impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
