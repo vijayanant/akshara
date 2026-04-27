@@ -23,8 +23,18 @@ pub struct Auditor<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
     pub(crate) latest_identity: Option<ManifestId>,
     pub(crate) graph_key: Option<crate::base::crypto::GraphKey>,
-    /// Memoized root key discovered during this session to avoid O(N^2) walks.
-    pub(crate) memoized_root_key: std::sync::Arc<std::sync::RwLock<Option<SigningPublicKey>>>,
+    /// Memoized identity root keys (anchor -> root_key) to avoid O(N^2) walks.
+    pub(crate) memoized_identity_roots:
+        std::sync::Arc<std::sync::RwLock<std::collections::HashMap<ManifestId, SigningPublicKey>>>,
+    /// Memoized graph legislators (graph_id -> root_key).
+    pub(crate) memoized_graph_legislators:
+        std::sync::Arc<std::sync::RwLock<std::collections::HashMap<GraphId, SigningPublicKey>>>,
+    /// Memoized trusted executives for a given graph.
+    pub(crate) memoized_trusted_executives: std::sync::Arc<
+        std::sync::RwLock<
+            std::collections::HashMap<GraphId, std::collections::HashSet<SigningPublicKey>>,
+        >,
+    >,
 }
 
 impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
@@ -34,7 +44,15 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
             store,
             latest_identity: None,
             graph_key: None,
-            memoized_root_key: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            memoized_identity_roots: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
+            memoized_graph_legislators: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
+            memoized_trusted_executives: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
         }
     }
 
@@ -53,32 +71,33 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         &self,
         manifest: &Manifest,
     ) -> Result<SigningPublicKey, AksharaError> {
+        let anchor = manifest.identity_anchor();
+
         // 1. Check memoization first
         {
-            let cache = self.memoized_root_key.read().map_err(|_| {
-                AksharaError::InternalError("memoized_root_key lock poisoned".to_string())
+            let cache = self.memoized_identity_roots.read().map_err(|_| {
+                AksharaError::InternalError("memoized_identity_roots lock poisoned".to_string())
             })?;
-            if let Some(ref key) = *cache {
+            if let Some(key) = cache.get(&anchor) {
                 return Ok(key.clone());
             }
         }
 
         // 2. Not in cache, perform discovery
-        let root_key = if manifest.identity_anchor() == ManifestId::null() {
+        let root_key = if anchor == ManifestId::null() {
             // Genesis manifest: the author IS the root of trust
             manifest.author().clone()
         } else {
             // Non-genesis: walk the identity graph to find the genesis
-            self.discover_identity_root_iterative(&manifest.identity_anchor())
-                .await?
+            self.discover_identity_root_iterative(&anchor).await?
         };
 
         // 3. Update cache
         {
-            let mut cache = self.memoized_root_key.write().map_err(|_| {
-                AksharaError::InternalError("memoized_root_key lock poisoned".to_string())
+            let mut cache = self.memoized_identity_roots.write().map_err(|_| {
+                AksharaError::InternalError("memoized_identity_roots lock poisoned".to_string())
             })?;
-            *cache = Some(root_key.clone());
+            cache.insert(anchor, root_key.clone());
         }
 
         Ok(root_key)
@@ -151,6 +170,157 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         })
     }
 
+    /// Discovers the root Legislator key for the graph this manifest belongs to.
+    async fn discover_graph_legislator(
+        &self,
+        manifest: &Manifest,
+    ) -> Result<SigningPublicKey, AksharaError> {
+        let graph_id = manifest.graph_id();
+
+        // 1. Check memoization
+        {
+            let cache = self.memoized_graph_legislators.read().map_err(|_| {
+                AksharaError::InternalError("memoized_graph_legislators lock poisoned".to_string())
+            })?;
+            if let Some(key) = cache.get(&graph_id) {
+                return Ok(key.clone());
+            }
+        }
+
+        // 2. Discover genesis manifest author
+        let genesis_author = self.discover_graph_genesis_iterative(manifest).await?;
+
+        // 3. Update cache
+        {
+            let mut cache = self.memoized_graph_legislators.write().map_err(|_| {
+                AksharaError::InternalError("memoized_graph_legislators lock poisoned".to_string())
+            })?;
+            cache.insert(graph_id, genesis_author.clone());
+        }
+
+        Ok(genesis_author)
+    }
+
+    /// Recursively walks the graph's manifest chain to find the genesis author.
+    async fn discover_graph_genesis_iterative(
+        &self,
+        manifest: &Manifest,
+    ) -> Result<SigningPublicKey, AksharaError> {
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(manifest.clone());
+
+        let mut visited = std::collections::HashSet::new();
+        let mut depth = 0;
+        const MAX_GRAPH_DEPTH: usize = 10000;
+
+        while let Some(current_manifest) = queue.pop_front() {
+            if !visited.insert(current_manifest.id()) {
+                continue;
+            }
+
+            depth += 1;
+            if depth > MAX_GRAPH_DEPTH {
+                return Err(AksharaError::Integrity(
+                    crate::base::error::IntegrityError::DepthLimitExceeded(MAX_GRAPH_DEPTH),
+                ));
+            }
+
+            if current_manifest.parents().is_empty() {
+                // Found genesis manifest of the graph!
+                // The graph legislator is the root of the genesis signer's identity.
+                return self.discover_root_key(&current_manifest).await;
+            }
+
+            for parent_id in current_manifest.parents() {
+                let parent = self.store.get_manifest(parent_id).await?.ok_or_else(|| {
+                    AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                        "Parent manifest {}",
+                        parent_id
+                    )))
+                })?;
+                queue.push_back(parent);
+            }
+        }
+
+        Err(AksharaError::Integrity(
+            crate::base::error::IntegrityError::UnauthorizedSigner(
+                "Could not find genesis manifest in the graph chain".to_string(),
+            ),
+        ))
+    }
+
+    /// Verifies if a root identity has been delegated authority via an AksharaTrustV1 block.
+    async fn verify_trust_delegation(
+        &self,
+        manifest: &Manifest,
+        root_key: &SigningPublicKey,
+    ) -> Result<bool, AksharaError> {
+        let graph_id = manifest.graph_id();
+
+        // 1. Check memoization
+        {
+            let cache = self.memoized_trusted_executives.read().map_err(|_| {
+                AksharaError::InternalError("memoized_trusted_executives lock poisoned".to_string())
+            })?;
+            if let Some(set) = cache.get(&graph_id)
+                && set.contains(root_key)
+            {
+                return Ok(true);
+            }
+        }
+
+        // 2. Genesis manifests cannot have trust delegations (must be signed by legislator)
+        if manifest.parents().is_empty() {
+            return Ok(false);
+        }
+
+        // 3. Scan parent states for a trust block
+        use crate::traversal::walker::GraphWalker;
+        let walker = GraphWalker::new(self.store);
+        let trust_path = format!(".akshara.trust/{}", root_key.to_hex());
+
+        for parent_id in manifest.parents() {
+            let parent = self.store.get_manifest(parent_id).await?.ok_or_else(|| {
+                AksharaError::Store(crate::base::error::StoreError::NotFound(format!(
+                    "Parent manifest {}",
+                    parent_id
+                )))
+            })?;
+
+            // Resolve trust path in parent's content_root.
+            // We use the graph_key if available, otherwise fallback to well-known identity key.
+            let fallback_key = crate::identity::graph::IDENTITY_GRAPH_KEY;
+            let key = self.graph_key.as_ref().unwrap_or(&fallback_key);
+
+            if let Ok(addr) = walker
+                .resolve_path(&graph_id, parent.content_root(), &trust_path, key)
+                .await
+            {
+                // Verify it's an AksharaTrustV1 block
+                let block_id = BlockId::try_from(addr)?;
+                if let Ok(Some(block)) = self.store.get_block(&block_id).await
+                    && block.block_type() == &crate::graph::BlockType::AksharaTrustV1
+                {
+                    // Success! Update cache
+                    {
+                        let mut cache = self.memoized_trusted_executives.write().map_err(|_| {
+                            AksharaError::InternalError(
+                                "memoized_trusted_executives lock poisoned".to_string(),
+                            )
+                        })?;
+                        cache
+                            .entry(graph_id)
+                            .or_insert_with(std::collections::HashSet::new)
+                            .insert(root_key.clone());
+                    }
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
     pub async fn audit_manifest(
         &self,
         manifest: &Manifest,
@@ -219,7 +389,26 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
             )
             .await?;
 
-        debug!("Manifest fully audited (Integrity + Authority)");
+        // AKSHARA RITUAL (Chain of Title):
+        // Verify that this root identity is authorized for THIS graph.
+        let graph_legislator = self.discover_graph_legislator(manifest).await?;
+
+        if key_to_verify != graph_legislator {
+            // Signer is not the legislator. Check for trust delegation in parent state.
+            let is_trusted = self
+                .verify_trust_delegation(manifest, &key_to_verify)
+                .await?;
+
+            if !is_trusted {
+                return Err(AksharaError::Integrity(
+                    crate::base::error::IntegrityError::UnauthorizedSigner(
+                        "Signer identity is valid, but not authorized for this graph (Chain of Title failure)".to_string(),
+                    ),
+                ));
+            }
+        }
+
+        debug!("Manifest fully audited (Integrity + Authority + Chain of Title)");
         Ok(())
     }
 

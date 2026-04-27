@@ -18,6 +18,9 @@ mod test_traversal;
 #[cfg(test)]
 mod test_merkle_index;
 
+#[cfg(test)]
+mod test_chain_of_title;
+
 // --- Internal Test Helpers ---
 // Strictly isolated to testing to ensure zero unwrap() in production.
 
