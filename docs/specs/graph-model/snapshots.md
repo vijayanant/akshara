@@ -101,6 +101,7 @@ A Manifest is encoded using **Canonical DAG-CBOR** and consists of:
     "content_root": <BlockId>,          // CID of root block
     "parents": [<ManifestId>, ...],     // Previous manifests (empty for genesis)
     "identity_anchor": <ManifestId>,    // Identity Graph CID (0x00...00 for genesis)
+    "schema_anchor": <Address>,         // NEW: Schema Graph Address (null = 0x00...00)
     "signer_path": <bytes>,             // SHA2-256 hash of the BIP-32 path
     "created_at": <u64>                 // Unix timestamp (metadata only)
   },
