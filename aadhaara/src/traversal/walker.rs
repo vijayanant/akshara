@@ -17,12 +17,18 @@ pub struct GraphWalker<'a, S: GraphStore + ?Sized> {
 }
 
 impl<'a, S: GraphStore + ?Sized> GraphWalker<'a, S> {
-    /// Creates a new GraphWalker bound to a specific root of trust.
+    /// Creates a new GraphWalker.
     pub fn new(store: &'a S) -> Self {
         Self {
             store,
             auditor: Auditor::new(store),
         }
+    }
+
+    /// Binds an existing Auditor to this walker to share caches.
+    pub fn with_auditor(mut self, auditor: Auditor<'a, S>) -> Self {
+        self.auditor = auditor;
+        self
     }
 
     /// Resolves a human-readable path sequence into an Address.

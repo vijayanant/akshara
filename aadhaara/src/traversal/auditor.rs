@@ -19,6 +19,7 @@ use tracing::{Level, debug, span};
 /// `identity_anchor`. The genesis of the identity graph (signed by the
 /// Legislator branch) is the root of trust. All manifest signers must trace
 /// their authority back through the identity graph to that genesis.
+#[derive(Clone)]
 pub struct Auditor<'a, S: GraphStore + ?Sized> {
     pub(crate) store: &'a S,
     pub(crate) latest_identity: Option<ManifestId>,
@@ -276,7 +277,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
 
         // 3. Scan parent states for a trust block
         use crate::traversal::walker::GraphWalker;
-        let walker = GraphWalker::new(self.store);
+        let walker = GraphWalker::new(self.store).with_auditor(self.clone());
         let trust_path = format!(".akshara.trust/{}", root_key.to_hex());
 
         for parent_id in manifest.parents() {
