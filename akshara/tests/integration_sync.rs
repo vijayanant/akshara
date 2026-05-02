@@ -233,6 +233,7 @@ async fn sync_engine_auto_anchoring_ritual() {
         new_root,
         vec![],
         ManifestId::null(),
+        akshara_aadhaara::Address::null(),
         &identity,
         None,
     );

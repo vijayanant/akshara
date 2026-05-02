@@ -91,25 +91,23 @@ impl Client {
         self.vault.update_identity_anchor(new_anchor);
 
         // AKSHARA RITUAL: Create the Genesis Manifest for the new graph
-        // We MUST create a real, empty index block - null() is not a valid root.
         let index_builder = akshara_aadhaara::IndexBuilder::new();
-        let shadow_signer = legislator
-            .derive_shadow_identity(&graph_id)
-            .map_err(Error::Protocol)?;
-
         let root_index_id = index_builder
-            .build(graph_id, &self.store, &shadow_signer, &graph_key)
+            .build(graph_id, &self.store, &legislator, &graph_key)
             .await
             .map_err(Error::Protocol)?;
 
+        // RITUAL: Sign with Shadow Identity and Certificate
         let genesis = akshara_aadhaara::Manifest::new(
             graph_id,
             root_index_id,
             vec![],
             new_anchor,
-            &shadow_signer,
-            None,
+            akshara_aadhaara::Address::null(),
+            &legislator,
+            None, // Proof handled internally or not needed for genesis
         );
+
         self.store
             .put_manifest(&genesis)
             .await

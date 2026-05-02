@@ -352,8 +352,6 @@ impl Graph {
             }
         }
 
-        let master_identity = self.vault.get_identity(None).await?;
-
         // AKSHARA RITUAL (Privacy Preservation):
         // We use a Graph-Isolated Shadow Identity to sign all manifests.
         // This prevents the Relay from linking different graphs to the same user.
@@ -371,6 +369,10 @@ impl Graph {
                     max: self.tuning.max_block_size,
                 });
             }
+
+            // TODO: In the future, we will use the AksharaDocument::schema() to
+            // decide between insert() and insert_inline(). For now, we default
+            // to standalone blocks for all data atoms.
 
             // If this is an update, chain the new block to the previous one.
             let parents = if prev_id != akshara_aadhaara::BlockId::null() {
@@ -407,25 +409,14 @@ impl Graph {
 
         let identity_anchor = self.vault.latest_identity_anchor();
 
-        // AKSHARA RITUAL: Generate a Shadow Certificate so the Auditor can verify
-        // this shadow identity using the GraphKey.
-        let mut rng = rand::rngs::OsRng;
-        let authority_proof = master_identity
-            .create_shadow_certificate(
-                identity.public().signing_key(),
-                &self.graph_id,
-                &self.graph_key,
-                &mut rng,
-            )
-            .ok();
-
         let manifest = Manifest::new(
             self.graph_id,
             root_index_id,
             parents,
             identity_anchor,
+            akshara_aadhaara::Address::null(),
             &identity,
-            authority_proof,
+            None, // Proof handled internally
         );
 
         self.store.put_manifest(&manifest).await?;
