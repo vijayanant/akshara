@@ -58,7 +58,5 @@ pub use store::InMemoryStore;
 pub use sync::SyncTransport;
 pub use vault::Vault;
 
-pub use akshara_derive::AksharaDocument;
-
 // Re-export commonly used aadhaara types
 pub use akshara_aadhaara::{GraphId, GraphKey, Lakshana, SecretIdentity};

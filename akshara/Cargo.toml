@@ -11,7 +11,6 @@ categories = ["cryptography", "data-structures"]
 [dependencies]
 # Internal
 akshara-aadhaara = { workspace = true }
-akshara-derive = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
@@ -44,6 +43,7 @@ chrono = { workspace = true }
 
 [dev-dependencies]
 akshara-aadhaara = { path = "../aadhaara", features = ["test-utils"] }
+akshara-schema = { workspace = true, features = ["derive"] }
 tempfile = { workspace = true }
 tokio-test = { workspace = true }
 proptest = { workspace = true }

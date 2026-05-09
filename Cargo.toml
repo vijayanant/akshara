@@ -2,7 +2,8 @@
 members = [
     "aadhaara",
     "akshara",
-    "derive",
+    "schema-macros",
+    "schema",
     # "relay",  # TODO: Fix dependencies on sovereign_core and sovereign_wire
 ]
 resolver = "2"
@@ -13,7 +14,8 @@ edition = "2024"
 [workspace.dependencies]
 # Internal
 akshara-aadhaara = { version = "0.1.0-alpha.1", path = "./aadhaara" }
-akshara-derive = { version = "0.1.0-alpha.1", path = "./derive" }
+akshara-schema = { version = "0.1.0-alpha.1", path = "./schema" }
+akshara-schema-macros = { version = "0.1.0-alpha.1", path = "./schema-macros" }
 
 # Async runtime
 tokio = { version = "1.38.0", features = ["full"] }

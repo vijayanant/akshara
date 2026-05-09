@@ -23,23 +23,23 @@ pub fn derive_akshara_document(input: TokenStream) -> TokenStream {
     for field in fields {
         let field_name = field.ident.as_ref().unwrap().to_string();
 
-        let mut mode = quote!(::akshara_aadhaara::BlockMode::Block); // Default
+        let mut mode = quote!(::akshara_schema::BlockMode::Block); // Default
         let mut is_lazy = quote!(false);
 
         for attr in &field.attrs {
             if attr.path().is_ident("collection") {
-                mode = quote!(::akshara_aadhaara::BlockMode::Collection);
+                mode = quote!(::akshara_schema::BlockMode::Collection);
             } else if attr.path().is_ident("lazy") {
                 is_lazy = quote!(true);
             } else if attr.path().is_ident("chunked") {
-                mode = quote!(::akshara_aadhaara::BlockMode::Chunked);
+                mode = quote!(::akshara_schema::BlockMode::Chunked);
             } else if attr.path().is_ident("block") {
-                mode = quote!(::akshara_aadhaara::BlockMode::Block);
+                mode = quote!(::akshara_schema::BlockMode::Block);
             }
         }
 
         field_descriptors.push(quote! {
-            ::akshara_aadhaara::FieldDescriptor {
+            ::akshara_schema::FieldDescriptor {
                 path: #field_name.to_string(),
                 mode: #mode,
                 is_lazy: #is_lazy,
@@ -49,9 +49,9 @@ pub fn derive_akshara_document(input: TokenStream) -> TokenStream {
 
     // 2. Generate the Trait implementation
     let expanded = quote! {
-        impl ::akshara_aadhaara::AksharaDocument for #name {
-            fn schema() -> ::akshara_aadhaara::DocumentSchema {
-                ::akshara_aadhaara::DocumentSchema {
+        impl ::akshara_schema::AksharaDocument for #name {
+            fn schema() -> ::akshara_schema::DocumentSchema {
+                ::akshara_schema::DocumentSchema {
                     type_name: stringify!(#name).to_string(),
                     version: 1,
                     fields: vec![
@@ -60,8 +60,8 @@ pub fn derive_akshara_document(input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn to_bytes(&self) -> Result<Vec<u8>, ::akshara_aadhaara::AksharaError> {
-                ::akshara_aadhaara::to_canonical_bytes(self)
+            fn to_bytes(&self) -> Result<Vec<u8>, ::akshara_schema::AksharaError> {
+                ::akshara_schema::to_canonical_bytes(self)
             }
         }
     };

@@ -1,7 +1,6 @@
-use akshara::AksharaDocument as AksharaDocumentMacro;
-use akshara_aadhaara::{AksharaDocument, BlockMode};
+use akshara_schema::{AksharaDocument, BlockMode};
 
-#[derive(AksharaDocumentMacro, serde::Serialize, serde::Deserialize)]
+#[derive(AksharaDocument, serde::Serialize, serde::Deserialize)]
 struct Patient {
     pub name: String,
     #[lazy]

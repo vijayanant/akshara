@@ -1,0 +1,19 @@
+[package]
+name = "akshara-schema"
+version = "0.1.0-alpha.1"
+edition = "2021"
+
+[features]
+default = ["derive"]
+derive = ["akshara-schema-macros"]
+
+[dependencies]
+# Internal
+akshara-aadhaara = { workspace = true }
+akshara-schema-macros = { workspace = true, optional = true }
+
+# Workspace
+serde = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

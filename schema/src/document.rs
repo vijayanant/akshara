@@ -1,7 +1,6 @@
 //! Foundational traits and types for structured document patterns.
 
-use crate::base::address::Address;
-use crate::base::error::AksharaError;
+use akshara_aadhaara::{Address, AksharaError};
 use serde::{Deserialize, Serialize};
 
 /// How a field in an Akshara document maps to physical storage units (Blocks).
@@ -49,12 +48,12 @@ pub trait AksharaDocument: Serialize + for<'de> Deserialize<'de> {
 
     /// Serializes the document to canonical DAG-CBOR bytes.
     fn to_bytes(&self) -> Result<Vec<u8>, AksharaError> {
-        crate::base::encoding::to_canonical_bytes(self)
+        akshara_aadhaara::to_canonical_bytes(self)
     }
 
     /// Deserializes a document from canonical DAG-CBOR bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, AksharaError> {
-        crate::base::encoding::from_canonical_bytes(bytes)
+        akshara_aadhaara::from_canonical_bytes(bytes)
     }
 
     /// Returns all paths within the document that are marked as lazy.
