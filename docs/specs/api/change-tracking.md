@@ -1,9 +1,12 @@
 # Spec 9: Collaborative Change Tracking & Diffing
 
-**Status:** Draft — For Review  
+**Status:** Implemented (v0.1 MVP - History & Metadata Types) / Deferred (v0.2 - Diffing & Merging)  
 **Date:** 2026-06-01  
 **Derived from:** [API Design Principles](../blueprint/sdk/api-design-principles.md), [Spec 2: Typed Documents](./typed-documents.md), [Spec 8: Audit](./audit.md)  
 **Cross-references:** [Client & Graph](./client-and-graph.md), [Conflicts](./conflicts.md), [Errors](./errors.md)
+
+> [!NOTE]
+> Section 1 (Metadata Types) and Section 2 (History Traversal Queries) are fully implemented and verified in the Akshara L1 SDK v0.1. Section 3 (Diffing) and Section 4 (Sign-off) are deferred to v0.2.
 
 ---
 

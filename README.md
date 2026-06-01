@@ -50,6 +50,10 @@ Akshara is engineered around six key design decisions that set it apart from sta
 * **The Concept:** Define complex data models directly in standard Rust structures annotated with `#[derive(AksharaDocument)]`.
 * **Why it matters:** Attributes like `#[collaborative_text]` (sentence-level splitting for concurrent edits) or `#[chunked]` (automatic Merkle-linked file slicing) are resolved automatically by compile-time macros, eliminating thousands of lines of cryptographic boilerplate.
 
+### 📜 7. Cryptographic Lineage & History Auditing
+* **The Concept:** Document edits are tracked as Merkle-DAG revisions, retaining block-level signatures, author public keys, and timestamps.
+* **Why it matters:** Standard database history systems can be tampered with or overwritten by database admins. Akshara makes history cryptographically non-refutable. You can query the typed or raw history of any document or field directly (`Graph::history::<T>` and `Graph::get_history`), attributing every single change to its specific author and signature.
+
 ---
 
 ## Akshara in 60 Seconds
@@ -132,6 +136,21 @@ if graph.exists("/cases/alpha").await? {
     let paths = graph.list("/cases").await?;
     println!("Active cases: {:?}", paths); // Output: ["/cases/alpha"]
 }
+
+// 4. Query full cryptographic edit history of a document
+let typed_history = graph.history::<CaseFolder>("/cases/alpha").await?;
+for version in typed_history {
+    println!(
+        "Version committed by {} at {}: {}",
+        version.author_fingerprint,
+        version.authored_at,
+        version.value.client_name
+    );
+}
+
+// 5. Query raw byte lineage revision trail for audit
+let raw_history = graph.get_history("/cases/alpha/.akshara.document").await?;
+println!("Total raw edits: {}", raw_history.len());
 ```
 
 ---
