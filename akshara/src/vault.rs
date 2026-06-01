@@ -183,10 +183,16 @@ impl Vault for PlatformVault {
             .map_err(Error::Protocol)
     }
 
-    async fn derive_keyring_secret(&self, _version: u32) -> Result<GraphKey> {
-        Err(Error::Vault(VaultError::DerivationFailed(
-            "Keyring derivation in PlatformVault requires Master Seed".to_string(),
-        )))
+    async fn derive_keyring_secret(&self, version: u32) -> Result<GraphKey> {
+        if version != 0 {
+            return Err(Error::Vault(VaultError::DerivationFailed(
+                "Keyring derivation for versions > 0 requires Master Seed".to_string(),
+            )));
+        }
+        let branch4_bytes = self.load_branch(paths::BRANCH_KEYRING)?;
+        let branch4 = SecretIdentity::from_bytes(&branch4_bytes).map_err(Error::Protocol)?;
+        let pub_key_bytes = branch4.public().signing_key().as_bytes();
+        Ok(GraphKey::new(*pub_key_bytes))
     }
 
     async fn get_identity_id(&self) -> Result<GraphId> {

@@ -441,3 +441,25 @@ fn block_handles_large_payload() {
     assert_eq!(decrypted.len(), large_payload.len());
     assert_eq!(decrypted, large_payload);
 }
+
+#[test]
+fn test_block_type_serde() {
+    let t1 = BlockType::AksharaDataV1;
+    let t2 = BlockType::Custom("my-app.post".to_string());
+
+    let b1 = crate::base::encoding::to_canonical_bytes(&t1).unwrap();
+    let b2 = crate::base::encoding::to_canonical_bytes(&t2).unwrap();
+
+    let d1: BlockType = crate::base::encoding::from_canonical_bytes(&b1).unwrap();
+    let d2: BlockType = crate::base::encoding::from_canonical_bytes(&b2).unwrap();
+
+    assert_eq!(d1, t1);
+    assert_eq!(d2, t2);
+
+    // Verify deserialization fails on custom types starting with akshara.
+    let malicious = BlockType::Custom("akshara.malicious".to_string());
+    let mal_bytes = crate::base::encoding::to_canonical_bytes(&malicious).unwrap();
+    let mal_deser: Result<BlockType, _> = crate::base::encoding::from_canonical_bytes(&mal_bytes);
+    assert!(mal_deser.is_err());
+}
+

@@ -14,7 +14,7 @@ use tracing::{Level, info, span};
 ///
 /// Follows the Reserved Codec Registry (AIP-001). Types starting with
 /// 'akshara.' are reserved for the foundation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockType {
     #[serde(rename = "akshara.index.v1")]
@@ -95,6 +95,50 @@ impl fmt::Display for BlockType {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum RawBlockType {
+    #[serde(rename = "akshara.index.v1")]
+    AksharaIndexV1,
+    #[serde(rename = "akshara.data.v1")]
+    AksharaDataV1,
+    #[serde(rename = "akshara.auth.v1")]
+    AksharaAuthV1,
+    #[serde(rename = "akshara.revocation.v1")]
+    AksharaRevocationV1,
+    #[serde(rename = "akshara.trust.v1")]
+    AksharaTrustV1,
+    #[serde(rename = "akshara.succession.v1")]
+    AksharaSuccessionV1,
+    Custom(String),
+}
+
+impl<'de> Deserialize<'de> for BlockType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawBlockType::deserialize(deserializer)?;
+        match raw {
+            RawBlockType::AksharaIndexV1 => Ok(Self::AksharaIndexV1),
+            RawBlockType::AksharaDataV1 => Ok(Self::AksharaDataV1),
+            RawBlockType::AksharaAuthV1 => Ok(Self::AksharaAuthV1),
+            RawBlockType::AksharaRevocationV1 => Ok(Self::AksharaRevocationV1),
+            RawBlockType::AksharaTrustV1 => Ok(Self::AksharaTrustV1),
+            RawBlockType::AksharaSuccessionV1 => Ok(Self::AksharaSuccessionV1),
+            RawBlockType::Custom(s) => {
+                if s.starts_with("akshara.") {
+                    Err(serde::de::Error::custom(format!(
+                        "BlockType: '{s}' uses reserved akshara.* namespace"
+                    )))
+                } else {
+                    Ok(Self::Custom(s))
+                }
+            }
+        }
+    }
+}
+
 /// A `Block` is the atomic unit of content in Akshara.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
@@ -119,12 +163,7 @@ impl Block {
         // We use a deterministic nonce derived from (Key + Plaintext).
         // This ensures that identical content in the same graph results in the same CID,
         // enabling massive storage and sync savings (Pillar 2: Permanence).
-        let mut hmac = Hmac::<Sha256>::new_from_slice(key.as_bytes())
-            .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
-        hmac.update(&plaintext);
-        let hmac_result = hmac.finalize().into_bytes();
-        let mut nonce = [0u8; 24];
-        nonce.copy_from_slice(&hmac_result[..24]);
+        let nonce = Self::derive_nonce(key, &plaintext)?;
 
         let ad = Self::compute_ad(&graph_id, &signer.public_key(), &block_type, &parents);
         let content = BlockContent::encrypt(&plaintext, key, nonce, &ad)?;
@@ -142,12 +181,7 @@ impl Block {
         let plaintext = crate::base::encoding::to_canonical_bytes(&index)?;
 
         // Deterministic Nonce for Index deduplication
-        let mut hmac = Hmac::<Sha256>::new_from_slice(key.as_bytes())
-            .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
-        hmac.update(&plaintext);
-        let hmac_result = hmac.finalize().into_bytes();
-        let mut nonce = [0u8; 24];
-        nonce.copy_from_slice(&hmac_result[..24]);
+        let nonce = Self::derive_nonce(key, &plaintext)?;
 
         let ad = Self::compute_ad(
             &graph_id,
@@ -164,6 +198,16 @@ impl Block {
             parents,
             signer,
         ))
+    }
+
+    fn derive_nonce(key: &GraphKey, plaintext: &[u8]) -> Result<[u8; 24], AksharaError> {
+        let mut hmac = Hmac::<Sha256>::new_from_slice(key.as_bytes())
+            .map_err(|e| AksharaError::InternalError(format!("HMAC init failed: {}", e)))?;
+        hmac.update(plaintext);
+        let hmac_result = hmac.finalize().into_bytes();
+        let mut nonce = [0u8; 24];
+        nonce.copy_from_slice(&hmac_result[..24]);
+        Ok(nonce)
     }
 
     fn create(

@@ -352,6 +352,11 @@ impl Graph {
             }
         }
 
+        let modified_paths: std::collections::HashSet<String> = coalesced
+            .iter()
+            .map(|op| op.path().to_string())
+            .collect();
+
         // AKSHARA RITUAL (Privacy Preservation):
         // We use a Graph-Isolated Shadow Identity to sign all manifests.
         // This prevents the Relay from linking different graphs to the same user.
@@ -361,40 +366,41 @@ impl Graph {
         let mut blocks_created = 0;
         let mut bytes_flushed = 0;
 
-        for (path, (data, prev_id)) in current_state {
-            if data.len() > self.tuning.max_block_size {
-                return Err(Error::BlockSizeExceeded {
-                    path: path.clone(),
-                    size: data.len(),
-                    max: self.tuning.max_block_size,
-                });
-            }
+        for (path, (data, block_or_prev_id)) in current_state {
+            if modified_paths.contains(&path) {
+                if data.len() > self.tuning.max_block_size {
+                    return Err(Error::BlockSizeExceeded {
+                        path: path.clone(),
+                        size: data.len(),
+                        max: self.tuning.max_block_size,
+                    });
+                }
 
-            // TODO: In the future, we will use the AksharaDocument::schema() to
-            // decide between insert() and insert_inline(). For now, we default
-            // to standalone blocks for all data atoms.
+                // If this is an update, chain the new block to the previous one.
+                let parents = if block_or_prev_id != akshara_aadhaara::BlockId::null() {
+                    vec![block_or_prev_id]
+                } else {
+                    vec![]
+                };
 
-            // If this is an update, chain the new block to the previous one.
-            let parents = if prev_id != akshara_aadhaara::BlockId::null() {
-                vec![prev_id]
+                let block = Block::new(
+                    self.graph_id,
+                    data.clone(),
+                    BlockType::AksharaDataV1,
+                    parents,
+                    &self.graph_key,
+                    &identity,
+                )?;
+
+                self.store.put_block(&block).await?;
+                blocks_created += 1;
+                bytes_flushed += data.len();
+
+                index_builder.insert(&path, akshara_aadhaara::Address::from(block.id()))?;
             } else {
-                vec![]
-            };
-
-            let block = Block::new(
-                self.graph_id,
-                data.clone(),
-                BlockType::AksharaDataV1,
-                parents,
-                &self.graph_key,
-                &identity,
-            )?;
-
-            self.store.put_block(&block).await?;
-            blocks_created += 1;
-            bytes_flushed += data.len();
-
-            index_builder.insert(&path, akshara_aadhaara::Address::from(block.id()))?;
+                // For unmodified files, simply re-insert the existing block ID
+                index_builder.insert(&path, akshara_aadhaara::Address::from(block_or_prev_id))?;
+            }
         }
 
         let root_index_id = index_builder
