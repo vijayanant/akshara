@@ -1,4 +1,4 @@
-use akshara_schema::{AksharaDocument, BlockMode};
+use akshara::schema::{AksharaDocument, BlockMode};
 
 #[derive(AksharaDocument, serde::Serialize, serde::Deserialize)]
 struct Patient {

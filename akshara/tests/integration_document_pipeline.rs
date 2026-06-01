@@ -1,6 +1,6 @@
+use akshara::schema::AksharaDocument;
 use akshara::{Client, ClientConfig, Graph};
 use akshara_aadhaara::GraphStore;
-use akshara_schema::AksharaDocument;
 use rand::RngCore;
 
 #[derive(AksharaDocument, serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
@@ -36,7 +36,7 @@ async fn test_document_pipeline_e2e_roundtrip() {
     rng.fill_bytes(&mut evidence);
 
     // Set a custom small chunk size for testing chunk boundary logic
-    akshara_schema::adapters::ChunkedBlockAdapter::set_chunk_size(4 * 1024); // 4 KB chunks
+    akshara::layout::ChunkedLayout::set_chunk_size(4 * 1024); // 4 KB chunks
 
     let original = LegalCase {
         title: "State vs. Doe".to_string(),
@@ -74,5 +74,5 @@ async fn test_document_pipeline_e2e_roundtrip() {
     assert!(graph.exists(&schema_path).await.unwrap());
 
     // Clean up static config
-    akshara_schema::adapters::ChunkedBlockAdapter::set_chunk_size(1024 * 1024);
+    akshara::layout::ChunkedLayout::set_chunk_size(1024 * 1024);
 }

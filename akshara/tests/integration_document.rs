@@ -1,7 +1,7 @@
+use akshara::schema::{AksharaDocument, BlockMode, DocumentSchema, FieldDescriptor, LazyField};
 use akshara_aadhaara::{
     Address, BlockId, GraphId, GraphKey, GraphStore, InMemoryStore, SecretIdentity,
 };
-use akshara_schema::{AksharaDocument, BlockMode, DocumentSchema, FieldDescriptor, LazyField};
 use serde::{Deserialize, Serialize};
 
 // 1. Test LazyField unit behavior

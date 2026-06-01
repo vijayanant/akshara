@@ -41,18 +41,23 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod graph;
+pub mod layout;
 pub mod ordering;
 pub mod staging;
 pub mod store;
 pub mod sync;
 pub mod vault;
 
-// Re-export main types for convenience
+#[cfg(feature = "schema")]
+pub mod schema;
+
 pub use client::{Client, GraphSummary};
 pub use config::{ClientConfig, StorageConfig};
 pub use error::Error;
-pub use graph::{Graph, SyncReport};
+pub use graph::{DocumentVersion, Graph, RevisionEntry, SyncReport};
 pub use ordering::{FractionalIndex, midpoint, parse_index};
+#[cfg(feature = "schema")]
+pub use schema::{AksharaDocument, CollaborativeText, DocField, ParagraphNode};
 pub use staging::{StagedOperation, StagingStore};
 pub use store::InMemoryStore;
 pub use sync::SyncTransport;
