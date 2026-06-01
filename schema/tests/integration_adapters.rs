@@ -1,4 +1,4 @@
-use akshara_aadhaara::{GraphId, GraphKey, InMemoryStore, SecretIdentity};
+use akshara_aadhaara::{Address, GraphId, GraphKey, GraphStore, InMemoryStore, SecretIdentity};
 use akshara_schema::adapters::{
     BlockAdapter, ChunkedBlockAdapter, CollectionBlockAdapter, StandaloneBlockAdapter,
     TextDocumentAdapter,
@@ -118,4 +118,156 @@ async fn test_collection_block_adapter_roundtrip() {
             .unwrap();
 
     assert_eq!(items, recovered);
+}
+
+#[tokio::test]
+async fn test_adapter_decryption_failure() {
+    let mut rng = rand::rngs::OsRng;
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
+    let graph_id = GraphId::new();
+    let key = GraphKey::generate(&mut rng);
+    let wrong_key = GraphKey::generate(&mut rng);
+    let store = InMemoryStore::new();
+
+    let value = "Secret data".to_string();
+
+    let address =
+        StandaloneBlockAdapter::serialize(&value, &graph_id, &key, &identity, &store, "secret")
+            .await
+            .unwrap();
+
+    // Attempt deserialize with wrong key -> should fail with Crypto / Decryption error
+    let res: Result<String, _> =
+        StandaloneBlockAdapter::deserialize(&address, &graph_id, &wrong_key, &store).await;
+    assert!(res.is_err());
+}
+
+#[tokio::test]
+async fn test_adapter_not_found_failure() {
+    let mut rng = rand::rngs::OsRng;
+    let graph_id = GraphId::new();
+    let key = GraphKey::generate(&mut rng);
+    let store = InMemoryStore::new();
+
+    // Create a random block ID and address that is NOT in the store
+    let fake_block_id = akshara_aadhaara::BlockId::from_sha256(&[0x99; 32]);
+    let address = Address::from(fake_block_id);
+
+    // Attempt deserialize -> should fail because block is not found
+    let res: Result<String, _> =
+        StandaloneBlockAdapter::deserialize(&address, &graph_id, &key, &store).await;
+    assert!(res.is_err());
+}
+
+#[tokio::test]
+async fn test_adapter_type_mismatch_failure() {
+    let mut rng = rand::rngs::OsRng;
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
+    let graph_id = GraphId::new();
+    let key = GraphKey::generate(&mut rng);
+    let store = InMemoryStore::new();
+
+    // Create a manifest address (which has CODEC_AKSHARA_MANIFEST instead of CODEC_AKSHARA_BLOCK)
+    let content_root = akshara_aadhaara::BlockId::from_sha256(&[0x11; 32]);
+    let manifest = akshara_aadhaara::Manifest::new(
+        graph_id,
+        content_root,
+        vec![],
+        akshara_aadhaara::ManifestId::null(),
+        Address::null(),
+        &identity,
+        None,
+    );
+    let address = Address::from(manifest.id());
+
+    // Attempt deserialize -> should fail because of codec/type mismatch
+    let res: Result<String, _> =
+        StandaloneBlockAdapter::deserialize(&address, &graph_id, &key, &store).await;
+    assert!(res.is_err());
+}
+
+#[tokio::test]
+async fn test_text_adapter_malformed_index_failure() {
+    let mut rng = rand::rngs::OsRng;
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
+    let graph_id = GraphId::new();
+    let key = GraphKey::generate(&mut rng);
+    let store = InMemoryStore::new();
+
+    // Write malformed CBOR content as the index block (e.g. just raw bytes of a string instead of BTreeMap)
+    let malformed_index_data =
+        akshara_aadhaara::to_canonical_bytes(&"Not a BTreeMap".to_string()).unwrap();
+    let block = akshara_aadhaara::Block::new(
+        graph_id,
+        malformed_index_data,
+        akshara_aadhaara::BlockType::AksharaIndexV1,
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
+    store.put_block(&block).await.unwrap();
+
+    let address = Address::from(block.id());
+
+    // TextDocumentAdapter::deserialize expects a BTreeMap index, so it should fail
+    let res = TextDocumentAdapter::deserialize(&address, &graph_id, &key, &store).await;
+    assert!(res.is_err());
+}
+
+#[tokio::test]
+async fn test_chunked_adapter_malformed_index_failure() {
+    let mut rng = rand::rngs::OsRng;
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
+    let graph_id = GraphId::new();
+    let key = GraphKey::generate(&mut rng);
+    let store = InMemoryStore::new();
+
+    // Write malformed CBOR (e.g. just a String) instead of Vec<Address> for chunked index
+    let malformed_index_data =
+        akshara_aadhaara::to_canonical_bytes(&"Not a Vec".to_string()).unwrap();
+    let block = akshara_aadhaara::Block::new(
+        graph_id,
+        malformed_index_data,
+        akshara_aadhaara::BlockType::AksharaIndexV1,
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
+    store.put_block(&block).await.unwrap();
+
+    let address = Address::from(block.id());
+
+    let res = ChunkedBlockAdapter::deserialize(&address, &graph_id, &key, &store).await;
+    assert!(res.is_err());
+}
+
+#[tokio::test]
+async fn test_collection_adapter_malformed_index_failure() {
+    let mut rng = rand::rngs::OsRng;
+    let identity = SecretIdentity::generate(&mut rng).unwrap();
+    let graph_id = GraphId::new();
+    let key = GraphKey::generate(&mut rng);
+    let store = InMemoryStore::new();
+
+    // Write malformed CBOR (e.g. just a String) instead of BTreeMap<String, Address>
+    let malformed_index_data =
+        akshara_aadhaara::to_canonical_bytes(&"Not a BTreeMap".to_string()).unwrap();
+    let block = akshara_aadhaara::Block::new(
+        graph_id,
+        malformed_index_data,
+        akshara_aadhaara::BlockType::AksharaIndexV1,
+        vec![],
+        &key,
+        &identity,
+    )
+    .unwrap();
+    store.put_block(&block).await.unwrap();
+
+    let address = Address::from(block.id());
+
+    let res: Result<Vec<String>, _> =
+        CollectionBlockAdapter::deserialize(&address, &graph_id, &key, &store).await;
+    assert!(res.is_err());
 }

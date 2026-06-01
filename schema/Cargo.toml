@@ -20,3 +20,5 @@ async-trait = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true }
 rand = { workspace = true }
+akshara-aadhaara = { workspace = true, features = ["test-utils"] }
+

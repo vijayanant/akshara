@@ -97,7 +97,7 @@ pub trait AksharaDocument: Serialize + for<'de> Deserialize<'de> + Send + Sync {
 
 /// `LazyField` acts as a placeholder for document fields that are stored
 /// in the graph but not yet fetched into memory.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LazyField<T> {
     /// The coordinate path where the data is located.
     path: String,
