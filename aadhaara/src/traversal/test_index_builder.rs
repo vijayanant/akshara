@@ -30,9 +30,9 @@ fn test_index_builder_path_conflict_leaf_to_branch() {
     let addr1 = Address::from(BlockId::from_sha256(&[0x11; 32]));
     let addr2 = Address::from(BlockId::from_sha256(&[0x22; 32]));
 
-    builder.insert("folder", addr1).unwrap();
+    builder.insert("cases", addr1).unwrap();
 
-    let result = builder.insert("folder/file.txt", addr2);
+    let result = builder.insert("cases/summary", addr2);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("Path conflict"));
 }
@@ -43,9 +43,9 @@ fn test_index_builder_path_conflict_branch_to_leaf() {
     let addr1 = Address::from(BlockId::from_sha256(&[0x33; 32]));
     let addr2 = Address::from(BlockId::from_sha256(&[0x44; 32]));
 
-    builder.insert("folder/file.txt", addr1).unwrap();
+    builder.insert("cases/summary", addr1).unwrap();
 
-    let result = builder.insert("folder", addr2);
+    let result = builder.insert("cases", addr2);
 
     assert!(result.is_ok());
 }
@@ -56,8 +56,8 @@ fn test_index_builder_allows_sibling_paths() {
     let addr1 = Address::from(BlockId::from_sha256(&[0x55; 32]));
     let addr2 = Address::from(BlockId::from_sha256(&[0x66; 32]));
 
-    builder.insert("folder/file1.txt", addr1).unwrap();
-    let result = builder.insert("folder/file2.txt", addr2);
+    builder.insert("cases/summary1", addr1).unwrap();
+    let result = builder.insert("cases/summary2", addr2);
     assert!(result.is_ok());
 }
 
@@ -66,7 +66,7 @@ fn test_index_builder_handles_leading_trailing_slashes() {
     let mut builder = IndexBuilder::new();
     let addr = Address::from(BlockId::from_sha256(&[0x77; 32]));
 
-    let result = builder.insert("/folder/file.txt/", addr);
+    let result = builder.insert("/cases/summary/", addr);
     assert!(result.is_ok());
 }
 
@@ -75,7 +75,7 @@ fn test_index_builder_handles_multiple_consecutive_slashes() {
     let mut builder = IndexBuilder::new();
     let addr = Address::from(BlockId::from_sha256(&[0x88; 32]));
 
-    let result = builder.insert("folder//subfolder///file.txt", addr);
+    let result = builder.insert("cases//alpha///summary", addr);
     assert!(result.is_ok());
 }
 

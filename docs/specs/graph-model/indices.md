@@ -52,7 +52,7 @@ For the full design decisions, see:
 
 ## 2. Overview
 
-This document describes the **Merkle-Index** structure, which provides the mechanism for resolving human-readable path sequences (e.g., `/notes/ideas.txt`) into cryptographically verifiable `Address` objects.
+This document describes the **Merkle-Index** structure, which provides the mechanism for resolving human-readable path sequences (e.g., `/cases/alpha/summary`) into cryptographically verifiable `Address` objects.
 
 ### Key Concepts
 
@@ -72,14 +72,14 @@ This document describes the **Merkle-Index** structure, which provides the mecha
 │  Manifest (0x58)                                            │
 │    content_root → Root Index (0x57, type="index")           │
 │                        │                                    │
-│                        ├─→ "notes" → Index Block            │
+│                        ├─→ "cases" → Index Block            │
 │                        │      │                             │
-│                        │      ├─→ "meeting.md" → Data Block │
-│                        │      └─→ "ideas.md" → Data Block   │
+│                        │      ├─→ "summary" → Data Block    │
+│                        │      └─→ "transcripts" → Data Block│
 │                        │                                    │
-│                        └─→ "attachments" → Index Block      │
+│                        └─→ "evidence" → Index Block         │
 │                               │                             │
-│                               └─→ "logo.png" → Data Block   │
+│                               └─→ "mri_scan" → Data Block   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -107,15 +107,15 @@ The encrypted `content` of an index block consists of a **BTreeMap<String, Addre
 
 ```cbor
 {
-  "notes": <BlockId>,           // Can point to index or data block
-  "attachments": <BlockId>,
-  "README.md": <BlockId>
+  "cases": <BlockId>,           // Points to sub-index block
+  "evidence": <BlockId>,        // Points to sub-index block
+  "client_name": <BlockId>      // Points to data block
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| **Key** | UTF-8 string | Path segment (e.g., `"notes"`, `"README.md"`) |
+| **Key** | UTF-8 string | Path segment (e.g., "cases", "client_name") |
 | **Value** | Address (BlockId) | Points to index block or leaf data block |
 
 ### 3.3. Encryption
@@ -251,18 +251,18 @@ Output: new_root_cid, error (optional)
 11. Return current_cid (new root)
 ```
 
-### 5.2. Example: Inserting `/a/b/c.txt`
+### 5.2. Example: Inserting `/cases/alpha/summary`
 
 ```
-Step 1: Create data block for c.txt → CID_C
-Step 2: Create/update index for /a/b/ → maps "c.txt" to CID_C → CID_AB
-Step 3: Create/update index for /a/ → maps "b" to CID_AB → CID_A
-Step 4: Update manifest → content_root = CID_A
+Step 1: Create data block for summary → CID_S
+Step 2: Create/update index for /cases/alpha/ → maps "summary" to CID_S → CID_CA
+Step 3: Create/update index for /cases/ → maps "alpha" to CID_CA → CID_C
+Step 4: Update manifest → content_root = CID_C
 
 Result:
-  Root (CID_A)
-    └─→ "b" → Index (CID_AB)
-              └─→ "c.txt" → Block (CID_C)
+  Root (CID_C)
+    └─→ "alpha" → Index (CID_CA)
+              └─→ "summary" → Block (CID_S)
 ```
 
 ---

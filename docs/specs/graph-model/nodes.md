@@ -243,7 +243,7 @@ Output: valid (bool), error (optional)
 
 | Field | Value |
 |-------|-------|
-| **Content** | Encrypted BTreeMap: `{ "file.txt": <BlockId> }` |
+| **Content** | Encrypted BTreeMap: `{ "summary": <BlockId> }` |
 | **Type** | `"index"` |
 | **Parents** | `[]` |
 | **Graph Key** | (same as Test Vector 1) |

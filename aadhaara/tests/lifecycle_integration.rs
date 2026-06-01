@@ -34,7 +34,7 @@ async fn test_sync_recursive_index_structure() {
 
     let mut builder = IndexBuilder::new();
     builder
-        .insert("folder/sub/file.txt", Address::from(leaf.id()))
+        .insert("cases/alpha/summary", Address::from(leaf.id()))
         .unwrap();
     let root_index_id: akshara_aadhaara::BlockId = builder
         .build(graph_id, &laptop_store, &identity, &graph_key)
