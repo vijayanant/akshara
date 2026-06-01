@@ -462,4 +462,3 @@ fn test_block_type_serde() {
     let mal_deser: Result<BlockType, _> = crate::base::encoding::from_canonical_bytes(&mal_bytes);
     assert!(mal_deser.is_err());
 }
-

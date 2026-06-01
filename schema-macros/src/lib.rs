@@ -2,9 +2,21 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
+fn is_lazy_field_type(ty: &syn::Type) -> bool {
+    if let syn::Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            return segment.ident == "LazyField";
+        }
+    }
+    false
+}
+
 /// `#[derive(AksharaDocument)]` automatically generates the physical layout
 /// schema for a struct, mapping its fields to Merkle-DAG coordinates.
-#[proc_macro_derive(AksharaDocument, attributes(block, collection, lazy, chunked))]
+#[proc_macro_derive(
+    AksharaDocument,
+    attributes(block, collection, lazy, chunked, collaborative_text)
+)]
 pub fn derive_akshara_document(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -19,24 +31,37 @@ pub fn derive_akshara_document(input: TokenStream) -> TokenStream {
     };
 
     let mut field_descriptors = Vec::new();
+    let mut serialize_calls = Vec::new();
+    let mut deserialize_calls = Vec::new();
 
     for field in fields {
-        let field_name = field.ident.as_ref().unwrap().to_string();
+        let field_ident = field.ident.as_ref().unwrap();
+        let field_name = field_ident.to_string();
 
         let mut mode = quote!(::akshara_schema::BlockMode::Block); // Default
         let mut is_lazy = quote!(false);
+        let mut adapter = None;
 
         for attr in &field.attrs {
             if attr.path().is_ident("collection") {
                 mode = quote!(::akshara_schema::BlockMode::Collection);
+                adapter = Some(quote!(::akshara_schema::adapters::CollectionBlockAdapter));
             } else if attr.path().is_ident("lazy") {
                 is_lazy = quote!(true);
             } else if attr.path().is_ident("chunked") {
                 mode = quote!(::akshara_schema::BlockMode::Chunked);
+                adapter = Some(quote!(::akshara_schema::adapters::ChunkedBlockAdapter));
+            } else if attr.path().is_ident("collaborative_text") {
+                mode = quote!(::akshara_schema::BlockMode::CollaborativeText);
+                adapter = Some(quote!(::akshara_schema::adapters::TextDocumentAdapter));
             } else if attr.path().is_ident("block") {
                 mode = quote!(::akshara_schema::BlockMode::Block);
+                adapter = Some(quote!(::akshara_schema::adapters::StandaloneBlockAdapter));
             }
         }
+
+        let adapter = adapter.unwrap_or(quote!(::akshara_schema::adapters::StandaloneBlockAdapter));
+        let is_lazy_field = is_lazy_field_type(&field.ty);
 
         field_descriptors.push(quote! {
             ::akshara_schema::FieldDescriptor {
@@ -45,10 +70,49 @@ pub fn derive_akshara_document(input: TokenStream) -> TokenStream {
                 is_lazy: #is_lazy,
             }
         });
+
+        if is_lazy_field {
+            deserialize_calls.push(quote! {
+                let field_path = format!("{}/{}", doc_path, #field_name);
+                let walker = ::akshara_aadhaara::GraphWalker::new(store);
+                if let Ok(address) = walker.resolve_path(graph_id, *content_root, &field_path, key).await {
+                    self.#field_ident.set_address(address);
+                }
+            });
+        } else {
+            serialize_calls.push(quote! {
+                let field_path = format!("{}/{}", doc_path, #field_name);
+                let addr = #adapter::serialize(
+                    &self.#field_ident,
+                    graph_id,
+                    key,
+                    signer,
+                    store,
+                    &field_path,
+                )
+                .await?;
+                fields.push((#field_name.to_string(), addr));
+            });
+
+            deserialize_calls.push(quote! {
+                let field_path = format!("{}/{}", doc_path, #field_name);
+                let walker = ::akshara_aadhaara::GraphWalker::new(store);
+                if let Ok(address) = walker.resolve_path(graph_id, *content_root, &field_path, key).await {
+                    self.#field_ident = #adapter::deserialize(
+                        &address,
+                        graph_id,
+                        key,
+                        store,
+                    )
+                    .await?;
+                }
+            });
+        }
     }
 
     // 2. Generate the Trait implementation
     let expanded = quote! {
+        #[::async_trait::async_trait]
         impl ::akshara_schema::AksharaDocument for #name {
             fn schema() -> ::akshara_schema::DocumentSchema {
                 ::akshara_schema::DocumentSchema {
@@ -62,6 +126,33 @@ pub fn derive_akshara_document(input: TokenStream) -> TokenStream {
 
             fn to_bytes(&self) -> Result<Vec<u8>, ::akshara_schema::AksharaError> {
                 ::akshara_schema::to_canonical_bytes(self)
+            }
+
+            async fn serialize_fields<S: ::akshara_aadhaara::GraphStore + ?Sized>(
+                &self,
+                graph_id: &::akshara_aadhaara::GraphId,
+                key: &::akshara_aadhaara::GraphKey,
+                signer: &::akshara_aadhaara::SecretIdentity,
+                store: &S,
+                doc_path: &str,
+            ) -> Result<Vec<(String, ::akshara_aadhaara::Address)>, ::akshara_schema::AksharaError> {
+                use ::akshara_schema::adapters::BlockAdapter;
+                let mut fields = Vec::new();
+                #(#serialize_calls)*
+                Ok(fields)
+            }
+
+            async fn deserialize_fields<S: ::akshara_aadhaara::GraphStore + ?Sized>(
+                &mut self,
+                graph_id: &::akshara_aadhaara::GraphId,
+                key: &::akshara_aadhaara::GraphKey,
+                store: &S,
+                doc_path: &str,
+                content_root: &::akshara_aadhaara::BlockId,
+            ) -> Result<(), ::akshara_schema::AksharaError> {
+                use ::akshara_schema::adapters::BlockAdapter;
+                #(#deserialize_calls)*
+                Ok(())
             }
         }
     };

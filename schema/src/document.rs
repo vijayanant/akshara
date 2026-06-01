@@ -1,6 +1,7 @@
 //! Foundational traits and types for structured document patterns.
 
-use akshara_aadhaara::{Address, AksharaError};
+use akshara_aadhaara::{Address, AksharaError, GraphId, GraphKey, GraphStore, SecretIdentity};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// How a field in an Akshara document maps to physical storage units (Blocks).
@@ -14,6 +15,8 @@ pub enum BlockMode {
     /// The data is split into multiple chunks (sub-blocks) organized in a Merkle tree.
     /// Recommended for large binary payloads (> 1MB).
     Chunked,
+    /// Sentence-level collaborative text block splitting.
+    CollaborativeText,
 }
 
 /// Metadata describing a specific field within an Akshara document pattern.
@@ -42,7 +45,8 @@ pub struct DocumentSchema {
 ///
 /// It allows the SDK to automatically transform Rust structs into
 /// patterns of Merkle blocks while preserving bit-verifiable integrity.
-pub trait AksharaDocument: Serialize + for<'de> Deserialize<'de> {
+#[async_trait]
+pub trait AksharaDocument: Serialize + for<'de> Deserialize<'de> + Send + Sync {
     /// Returns the schema describing how this type maps to blocks.
     fn schema() -> DocumentSchema;
 
@@ -54,6 +58,30 @@ pub trait AksharaDocument: Serialize + for<'de> Deserialize<'de> {
     /// Deserializes a document from canonical DAG-CBOR bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, AksharaError> {
         akshara_aadhaara::from_canonical_bytes(bytes)
+    }
+
+    /// Serializes all fields that require block adapters and returns their relative paths and Addresses.
+    async fn serialize_fields<S: GraphStore + ?Sized>(
+        &self,
+        _graph_id: &GraphId,
+        _key: &GraphKey,
+        _signer: &SecretIdentity,
+        _store: &S,
+        _doc_path: &str,
+    ) -> Result<Vec<(String, Address)>, AksharaError> {
+        Ok(vec![])
+    }
+
+    /// Deserializes all fields that require block adapters and updates self.
+    async fn deserialize_fields<S: GraphStore + ?Sized>(
+        &mut self,
+        _graph_id: &GraphId,
+        _key: &GraphKey,
+        _store: &S,
+        _doc_path: &str,
+        _content_root: &akshara_aadhaara::BlockId,
+    ) -> Result<(), AksharaError> {
+        Ok(())
     }
 
     /// Returns all paths within the document that are marked as lazy.
@@ -97,5 +125,10 @@ impl<T> LazyField<T> {
     /// Returns the address of the data, if resolved.
     pub fn address(&self) -> Option<&Address> {
         self.address.as_ref()
+    }
+
+    /// Sets the resolved block address of this lazy field.
+    pub fn set_address(&mut self, address: Address) {
+        self.address = Some(address);
     }
 }

@@ -4,14 +4,22 @@ use std::sync::Arc;
 use zeroize::Zeroizing;
 
 use akshara_aadhaara::{
-    Block, BlockType, GraphId, GraphKey, GraphStore, InMemoryStore, IndexBuilder, Manifest,
-    ManifestId,
+    Address, Block, BlockType, GraphId, GraphKey, GraphStore, InMemoryStore, IndexBuilder,
+    Manifest, ManifestId,
 };
+
+use akshara_schema::AksharaDocument;
 
 use crate::config::TuningConfig;
 use crate::error::{Error, Result};
 use crate::staging::{InMemoryStagingStore, StagedOperation, StagingStore};
 use crate::vault::Vault;
+
+#[derive(Debug, Clone)]
+enum StateValue {
+    Data(Vec<u8>),
+    Link(Address),
+}
 
 /// Handle to a single graph for read/write operations.
 ///
@@ -341,7 +349,17 @@ impl Graph {
                     current_state.insert(
                         path.clone(),
                         (
-                            data.clone(),
+                            StateValue::Data(data.clone()),
+                            prev_id_opt.unwrap_or(akshara_aadhaara::BlockId::null()),
+                        ),
+                    );
+                }
+                StagedOperation::Link { path, address, .. } => {
+                    let prev_id_opt = current_state.get(path).map(|(_, id)| *id);
+                    current_state.insert(
+                        path.clone(),
+                        (
+                            StateValue::Link(*address),
                             prev_id_opt.unwrap_or(akshara_aadhaara::BlockId::null()),
                         ),
                     );
@@ -352,10 +370,8 @@ impl Graph {
             }
         }
 
-        let modified_paths: std::collections::HashSet<String> = coalesced
-            .iter()
-            .map(|op| op.path().to_string())
-            .collect();
+        let modified_paths: std::collections::HashSet<String> =
+            coalesced.iter().map(|op| op.path().to_string()).collect();
 
         // AKSHARA RITUAL (Privacy Preservation):
         // We use a Graph-Isolated Shadow Identity to sign all manifests.
@@ -366,40 +382,48 @@ impl Graph {
         let mut blocks_created = 0;
         let mut bytes_flushed = 0;
 
-        for (path, (data, block_or_prev_id)) in current_state {
-            if modified_paths.contains(&path) {
-                if data.len() > self.tuning.max_block_size {
-                    return Err(Error::BlockSizeExceeded {
-                        path: path.clone(),
-                        size: data.len(),
-                        max: self.tuning.max_block_size,
-                    });
+        for (path, (val, block_or_prev_id)) in current_state {
+            match val {
+                StateValue::Data(data) => {
+                    if modified_paths.contains(&path) {
+                        if data.len() > self.tuning.max_block_size {
+                            return Err(Error::BlockSizeExceeded {
+                                path: path.clone(),
+                                size: data.len(),
+                                max: self.tuning.max_block_size,
+                            });
+                        }
+
+                        // If this is an update, chain the new block to the previous one.
+                        let parents = if block_or_prev_id != akshara_aadhaara::BlockId::null() {
+                            vec![block_or_prev_id]
+                        } else {
+                            vec![]
+                        };
+
+                        let block = Block::new(
+                            self.graph_id,
+                            data.clone(),
+                            BlockType::AksharaDataV1,
+                            parents,
+                            &self.graph_key,
+                            &identity,
+                        )?;
+
+                        self.store.put_block(&block).await?;
+                        blocks_created += 1;
+                        bytes_flushed += data.len();
+
+                        index_builder.insert(&path, akshara_aadhaara::Address::from(block.id()))?;
+                    } else {
+                        // For unmodified files, simply re-insert the existing block ID
+                        index_builder
+                            .insert(&path, akshara_aadhaara::Address::from(block_or_prev_id))?;
+                    }
                 }
-
-                // If this is an update, chain the new block to the previous one.
-                let parents = if block_or_prev_id != akshara_aadhaara::BlockId::null() {
-                    vec![block_or_prev_id]
-                } else {
-                    vec![]
-                };
-
-                let block = Block::new(
-                    self.graph_id,
-                    data.clone(),
-                    BlockType::AksharaDataV1,
-                    parents,
-                    &self.graph_key,
-                    &identity,
-                )?;
-
-                self.store.put_block(&block).await?;
-                blocks_created += 1;
-                bytes_flushed += data.len();
-
-                index_builder.insert(&path, akshara_aadhaara::Address::from(block.id()))?;
-            } else {
-                // For unmodified files, simply re-insert the existing block ID
-                index_builder.insert(&path, akshara_aadhaara::Address::from(block_or_prev_id))?;
+                StateValue::Link(address) => {
+                    index_builder.insert(&path, address)?;
+                }
             }
         }
 
@@ -443,7 +467,7 @@ impl Graph {
     /// O(N) in the number of blocks — an LRU cache is planned for v0.2.
     async fn load_current_state(
         &self,
-    ) -> Result<std::collections::BTreeMap<String, (Vec<u8>, akshara_aadhaara::BlockId)>> {
+    ) -> Result<std::collections::BTreeMap<String, (StateValue, akshara_aadhaara::BlockId)>> {
         let heads = self
             .store
             .get_heads(&self.graph_id)
@@ -474,7 +498,7 @@ impl Graph {
         &self,
         index_id: akshara_aadhaara::BlockId,
         prefix: &str,
-        state: &mut std::collections::BTreeMap<String, (Vec<u8>, akshara_aadhaara::BlockId)>,
+        state: &mut std::collections::BTreeMap<String, (StateValue, akshara_aadhaara::BlockId)>,
     ) -> Result<()> {
         let block = self
             .store
@@ -509,7 +533,7 @@ impl Graph {
                         let data = child_block
                             .decrypt(&self.graph_id, &self.graph_key)
                             .map_err(|e| Error::Internal(format!("Decryption failed: {}", e)))?;
-                        state.insert(full_path, (data, block_id));
+                        state.insert(full_path, (StateValue::Data(data), block_id));
                     }
                 }
             }
@@ -524,6 +548,138 @@ impl Graph {
         engine
             .sync_graph(self.graph_id, &self.store, &self.graph_key)
             .await
+    }
+
+    /// Insert a typed document at the specified path.
+    pub async fn insert_document<D: AksharaDocument>(&self, path: &str, doc: &D) -> Result<()> {
+        validate_path(path)?;
+
+        // 1. Serialize the main document struct
+        let doc_bytes = doc
+            .to_bytes()
+            .map_err(|e| Error::Internal(format!("Failed to serialize document: {}", e)))?;
+
+        let doc_internal_path = format!("{}/.akshara.document", path);
+        let op = StagedOperation::Insert {
+            path: doc_internal_path,
+            data: doc_bytes,
+            timestamp: current_timestamp(),
+        };
+        self.staging.stage_operation(op).await?;
+
+        // 2. Serialize and stage the schema metadata
+        let schema = D::schema();
+        let schema_bytes = akshara_aadhaara::to_canonical_bytes(&schema)
+            .map_err(|e| Error::Internal(format!("Failed to serialize schema: {}", e)))?;
+
+        let schema_path = format!("{}/.akshara.schema", path);
+        let schema_op = StagedOperation::Insert {
+            path: schema_path,
+            data: schema_bytes,
+            timestamp: current_timestamp(),
+        };
+        self.staging.stage_operation(schema_op).await?;
+
+        // 3. Serialize all fields requiring block adapters
+        let identity = self.vault.get_identity(Some(&self.graph_id)).await?;
+        let field_links = doc
+            .serialize_fields(
+                &self.graph_id,
+                &self.graph_key,
+                &identity,
+                &self.store,
+                path,
+            )
+            .await
+            .map_err(|e| Error::Internal(format!("Field serialization failed: {}", e)))?;
+
+        // 4. Stage Link operations for each field resolved address
+        for (field_rel_path, address) in field_links {
+            let field_path = format!("{}/{}", path, field_rel_path);
+            let link_op = StagedOperation::Link {
+                path: field_path,
+                address,
+                timestamp: current_timestamp(),
+            };
+            self.staging.stage_operation(link_op).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Retrieve and reassemble a typed document from the specified path.
+    pub async fn get_document<D: AksharaDocument>(&self, path: &str) -> Result<D> {
+        validate_path(path)?;
+
+        // 1. Locate the latest manifest content root to resolve field CIDs
+        let heads = self
+            .store
+            .get_heads(&self.graph_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get heads: {}", e)))?;
+
+        if heads.is_empty() {
+            return Err(Error::PathNotFound(format!(
+                "No manifest sealed yet for document path: {}",
+                path
+            )));
+        }
+
+        let manifest_id = heads[0];
+        let manifest = self
+            .store
+            .get_manifest(&manifest_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
+            .ok_or_else(|| Error::Internal("Manifest not found".to_string()))?;
+
+        // 2. Fetch and deserialize the main document root block from doc_path/.akshara.document
+        let doc_internal_path = format!("{}/.akshara.document", path);
+        let walker = akshara_aadhaara::GraphWalker::new(&self.store);
+        let doc_address = walker
+            .resolve_path(
+                &self.graph_id,
+                manifest.content_root(),
+                &doc_internal_path,
+                &self.graph_key,
+            )
+            .await
+            .map_err(|e| {
+                Error::PathNotFound(format!(
+                    "Document not found at '{}': {}",
+                    doc_internal_path, e
+                ))
+            })?;
+
+        let block_id = akshara_aadhaara::BlockId::try_from(doc_address)
+            .map_err(|e| Error::Internal(format!("Invalid block id: {}", e)))?;
+
+        let block = self
+            .store
+            .get_block(&block_id)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to get block: {}", e)))?
+            .ok_or_else(|| Error::PathNotFound(format!("Block not found: {}", block_id)))?;
+
+        let main_bytes = block
+            .decrypt(&self.graph_id, &self.graph_key)
+            .map_err(|e| Error::Internal(format!("Decryption failed: {}", e)))?;
+
+        let mut doc = D::from_bytes(&main_bytes)
+            .map_err(|e| Error::Internal(format!("Failed to deserialize document: {}", e)))?;
+
+        // 3. Reassemble all adapter fields using the manifest content root
+        doc.deserialize_fields(
+            &self.graph_id,
+            &self.graph_key,
+            &self.store,
+            path,
+            &manifest.content_root(),
+        )
+        .await
+        .map_err(|e| Error::Internal(format!("Field deserialization failed: {}", e)))?;
+
+        Ok(doc)
     }
 }
 

@@ -3,6 +3,7 @@
 //! This crate provides the high-level abstractions for defining structured
 //! document patterns and mapping them to the Merkle-DAG physics.
 
+pub mod adapters;
 pub mod document;
 
 pub use document::{AksharaDocument, BlockMode, DocumentSchema, FieldDescriptor, LazyField};

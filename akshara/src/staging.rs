@@ -26,15 +26,22 @@ pub enum StagedOperation {
     },
     /// Delete content at path
     Delete { path: String, timestamp: u64 },
+    /// Link an existing Address at path (used by document adapters)
+    Link {
+        path: String,
+        address: akshara_aadhaara::Address,
+        timestamp: u64,
+    },
 }
 
 impl StagedOperation {
     /// Get the path for this operation.
     pub fn path(&self) -> &str {
         match self {
-            Self::Insert { path, .. } | Self::Update { path, .. } | Self::Delete { path, .. } => {
-                path
-            }
+            Self::Insert { path, .. }
+            | Self::Update { path, .. }
+            | Self::Delete { path, .. }
+            | Self::Link { path, .. } => path,
         }
     }
 
@@ -43,7 +50,8 @@ impl StagedOperation {
         match self {
             Self::Insert { timestamp, .. }
             | Self::Update { timestamp, .. }
-            | Self::Delete { timestamp, .. } => *timestamp,
+            | Self::Delete { timestamp, .. }
+            | Self::Link { timestamp, .. } => *timestamp,
         }
     }
 }
@@ -121,7 +129,7 @@ impl StagingStore for InMemoryStagingStore {
                 StagedOperation::Insert { data, .. } | StagedOperation::Update { data, .. } => {
                     data.len()
                 }
-                StagedOperation::Delete { .. } => 0,
+                StagedOperation::Delete { .. } | StagedOperation::Link { .. } => 0,
             })
             .sum();
         Ok(size)
@@ -138,8 +146,10 @@ pub fn coalesce_operations(operations: Vec<StagedOperation>) -> Vec<StagedOperat
         let path = op.path().to_string();
 
         match op {
-            StagedOperation::Insert { .. } | StagedOperation::Update { .. } => {
-                // Insert/Update replaces any prior operation at same path
+            StagedOperation::Insert { .. }
+            | StagedOperation::Update { .. }
+            | StagedOperation::Link { .. } => {
+                // Insert/Update/Link replaces any prior operation at same path
                 by_path.insert(path, op);
             }
             StagedOperation::Delete { .. } => {

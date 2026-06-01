@@ -18,7 +18,9 @@ pub use base::crypto::{
     SigningPublicKey,
 };
 pub use base::encoding::{from_canonical_bytes, to_canonical_bytes};
-pub use base::error::{AksharaError, IntegrityError};
+pub use base::error::{
+    AksharaError, CryptoError, IdentityError, IntegrityError, ProtocolError, StoreError,
+};
 
 pub use graph::{Block, BlockType, Manifest};
 pub use identity::{
