@@ -6,8 +6,8 @@ use akshara_aadhaara::{
     ManifestId, SecretIdentity, Signature,
 };
 
-use crate::error::{Error, Result, VaultError};
 use super::Vault;
+use crate::error::{Error, Result, VaultError};
 
 pub struct EphemeralVault {
     mnemonic: Mutex<Option<Zeroizing<String>>>,

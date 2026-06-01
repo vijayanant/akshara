@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, HashSet};
 
-use akshara_aadhaara::{Block, BlockType, GraphStore, IndexBuilder, Manifest, ManifestId};
+use super::{Graph, core::StateValue};
 use crate::error::{Error, Result};
 use crate::staging::{StagedOperation, StagingStore};
-use super::{Graph, core::StateValue};
+use akshara_aadhaara::{Block, BlockType, GraphStore, IndexBuilder, Manifest, ManifestId};
 
 /// Report from a flush operation.
 #[derive(Debug, Clone)]

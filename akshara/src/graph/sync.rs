@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::error::Result;
 use super::Graph;
+use crate::error::Result;
 
 /// Report from a synchronization operation.
 #[derive(Debug, Clone)]

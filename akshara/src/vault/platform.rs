@@ -6,8 +6,8 @@ use akshara_aadhaara::{
     ManifestId, SecretIdentity, Signature, paths,
 };
 
-use crate::error::{Error, Result, VaultError};
 use super::Vault;
+use crate::error::{Error, Result, VaultError};
 
 /// Vault implementation using platform-native secure storage.
 pub struct PlatformVault {

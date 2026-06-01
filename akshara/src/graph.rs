@@ -1,10 +1,10 @@
 //! Graph handle for working with individual graphs.
 
 pub mod core;
-pub mod ops;
 pub mod flush;
-pub mod sync;
 pub mod history;
+pub mod ops;
+pub mod sync;
 
 #[cfg(feature = "schema")]
 pub mod document;
@@ -14,8 +14,8 @@ pub mod tests;
 
 pub use core::Graph;
 pub use flush::FlushReport;
-pub use sync::SyncReport;
 pub use history::RevisionEntry;
+pub use sync::SyncReport;
 
 #[cfg(feature = "schema")]
 pub use history::DocumentVersion;

@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 
-use akshara_aadhaara::{Block, BlockId, GraphStore, ManifestId, Signature, SigningPublicKey};
+use super::{Graph, validate_path_read};
 use crate::error::{Error, Result};
-use super::{validate_path_read, Graph};
+use akshara_aadhaara::{Block, BlockId, GraphStore, ManifestId, Signature, SigningPublicKey};
 
 #[cfg(feature = "schema")]
 use crate::schema::AksharaDocument;
@@ -92,17 +92,18 @@ impl Graph {
                     .map(|last: &RevisionEntry| last.block_id == block_id)
                     .unwrap_or(false);
 
-                if !is_duplicate {
-                    if let Some((block, content)) = self.decrypt_block_at(&block_id).await {
-                        revisions.push(RevisionEntry {
-                            value: content,
-                            block_id,
-                            manifest_id: current_manifest_id,
-                            signature: block.signature().clone(),
-                            author: block.author().clone(),
-                            timestamp: DateTime::<Utc>::from_timestamp(manifest.created_at(), 0).unwrap_or_default(),
-                        });
-                    }
+                if !is_duplicate
+                    && let Some((block, content)) = self.decrypt_block_at(&block_id).await
+                {
+                    revisions.push(RevisionEntry {
+                        value: content,
+                        block_id,
+                        manifest_id: current_manifest_id,
+                        signature: block.signature().clone(),
+                        author: block.author().clone(),
+                        timestamp: DateTime::<Utc>::from_timestamp(manifest.created_at(), 0)
+                            .unwrap_or_default(),
+                    });
                 }
             }
 

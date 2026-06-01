@@ -1,7 +1,7 @@
-use akshara_aadhaara::GraphStore;
+use super::{Graph, current_timestamp, validate_path, validate_path_read};
 use crate::error::{Error, Result};
 use crate::staging::{StagedOperation, StagingStore};
-use super::{current_timestamp, validate_path, validate_path_read, Graph};
+use akshara_aadhaara::GraphStore;
 
 impl Graph {
     /// Insert new content at the specified path.
@@ -79,9 +79,7 @@ impl Graph {
                 &self.graph_key,
             )
             .await
-            .map_err(|e| {
-                Error::PathNotFound(format!("Path not found '{}': {}", path, e))
-            })?;
+            .map_err(|e| Error::PathNotFound(format!("Path not found '{}': {}", path, e)))?;
 
         let block_id = akshara_aadhaara::BlockId::try_from(address)
             .map_err(|e| Error::Internal(format!("Invalid block id: {}", e)))?;
