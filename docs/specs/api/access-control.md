@@ -185,21 +185,38 @@ pub struct RevocationReport {
 - It does NOT delete data already decrypted and cached on the recipient's device. This is a physical limitation.
 - It does NOT rotate the graph key. Existing grantees who cached data before revocation can still read that cached data. Key rotation is a separate operation for a future `revoke_with_rotation()` API.
 
-### 1.9 Future Hard Revocation
+### 1.9 Hard Revocation & Key Rotation `[Planned for v0.2+]`
 
-The API is designed to accommodate future hard revocation modes without breaking changes:
+To prevent a revoked grantee from reading *new* data updates even if their device was compromised and they cached the old graph key, the SDK will support hard revocation with key rotation:
 
 ```rust
-// Future API — not yet implemented
 impl Graph {
-    /// Revoke and rotate the graph key.
-    /// All grantees (including non-revoked ones) need new lockboxes.
-    /// O(N) where N is the number of blocks.
+    /// Revoke a capability and rotate the graph key.
+    ///
+    /// Generates a new graph key, re-encrypts all blocks under the scope, 
+    /// and generates new lockboxes for all remaining valid grantees.
+    /// 
+    /// O(N) in the number of blocks within the scope prefix.
     pub async fn revoke_with_rotation(&self, grant_id: &str) -> Result<HardRevocationReport, Error>;
+}
+
+pub struct HardRevocationReport {
+    pub grant_id: String,
+    pub new_graph_key_id: BlockId,
+    pub blocks_re_encrypted: usize,
+    pub active_grants_updated: usize,
 }
 ```
 
-This method does not exist yet. The current `revoke_access()` is soft revocation only.
+**Rotation Protocol:**
+1. Generate a new `GraphKey` for the graph or scope.
+2. Walk the Merkle Index for all paths under the revoked grant's `scope_prefix`.
+3. For each data block:
+   - Decrypt with the old key, and re-encrypt with the new key.
+   - Put the new block into storage, generating a new `BlockId` (CID).
+4. Rebuild the local Merkle Index branch with the new block CIDs.
+5. Create new lockboxes for all **other** active (non-revoked) grantees using the new key.
+6. Commit the rotated state under a new manifest. The old owner can no longer read future blocks.
 
 ---
 

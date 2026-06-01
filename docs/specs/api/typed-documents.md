@@ -377,6 +377,19 @@ Manual implementation of the `AksharaDocument` trait would be error-prone: the d
 
 Fractional indexing preserves insertion order without re-CIDing siblings. Array-index-based approaches (0, 1, 2) require renumbering every element after an insertion, which changes every CID and invalidates sync state. Fractional indexing creates new indices between existing ones without touching neighbors.
 
+### 7.4 Dynamic Field-Level Loading `[Planned for v0.3+]`
+For extremely large documents where downloading or deserializing the entire document is inefficient, the SDK will support querying a single field directly from its path coordinates in the Merkle Index tree, without loading the parent document struct:
+
+```rust
+impl Graph {
+    /// Retrieve a single field of a structured document without loading the parent struct.
+    pub async fn get_document_field<T, F>(&self, doc_path: &str, field_path: &str) -> Result<F, Error>
+    where
+        T: AksharaDocument,
+        F: for<'de> Deserialize<'de>;
+}
+```
+
 ---
 
 ## 8. Cross-Reference Index

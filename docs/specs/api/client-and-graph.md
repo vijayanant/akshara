@@ -248,7 +248,7 @@ pub struct Graph { /* opaque */ }
 
 `Graph` is a handle to a single graph. It is `Clone` — cloning creates a new handle to the same graph (shared client, shared storage, shared staging).
 
-The handle does **not** hold the graph key in memory. The key is derived from the vault on each cryptographic operation.
+The handle holds the graph key in memory wrapped in a `Zeroizing<GraphKey>` container. This ensures that the key is immediately cleared from memory when the handle is dropped, avoiding keychain IPC bottlenecks on every operation while preventing secret leakage.
 
 ### 3.2 `Graph::id`
 
@@ -449,18 +449,28 @@ impl Graph {
 
 ```rust
 impl Graph {
+    /// Walk the full manifest history to get all versions of a document.
     pub async fn history<T>(&self, path: &str) -> Result<Vec<DocumentVersion<T>>, Error>
+    where
+        T: AksharaDocument;
+
+    /// Get a paginated list of historical document versions. `[Planned for v0.2]`
+    pub async fn history_page<T>(
+        &self,
+        path: &str,
+        cursor: Option<ManifestId>,
+        limit: usize,
+    ) -> Result<HistoryPage<T>, Error>
     where
         T: AksharaDocument;
 }
 ```
 
 **Behavior:**
-
-1. Walks the manifest chain from current head back to genesis
-2. For each manifest, resolves `path` in its index tree
-3. If found (and not tombstoned in that manifest), decrypts and deserializes the block
-4. Returns a vector of versions in chronological order (oldest first)
+1. Walks the manifest chain from current head back to genesis.
+2. For each manifest, resolves `path` in its index tree.
+3. If found (and not tombstoned in that manifest), decrypts and deserializes the block.
+4. Returns a vector of versions.
 
 ```rust
 pub struct DocumentVersion<T> {
@@ -470,9 +480,14 @@ pub struct DocumentVersion<T> {
     pub authored_at: DateTime<Utc>,  // From manifest header
     pub author_fingerprint: String,  // Obfuscated path hash of signer
 }
+
+pub struct HistoryPage<T> {
+    pub versions: Vec<DocumentVersion<T>>,
+    pub next_cursor: Option<ManifestId>,
+}
 ```
 
-**Performance:** This is O(M × D) where M is the number of manifests and D is the path depth. For long-lived graphs this can be expensive. Pagination is planned for v0.2.
+**Performance:** `history()` is O(M × D) where M is the number of manifests and D is the path depth. For long-lived graphs this can be expensive. Pagination (`history_page()`) is planned for v0.2 to limit execution cost.
 
 ### 3.13 `Graph::fetch_blob`
 
@@ -510,6 +525,31 @@ See [Sync](./sync.md).
 ### 3.15 `Graph::grant_access`
 
 See [Access Control](./access-control.md).
+
+### 3.16 Transaction / Batch Writes `[Planned for v0.2]`
+
+To perform atomic multi-path write operations (e.g. updating multiple document fields concurrently without risking split-flushes or intermediate states), the SDK will support a Transaction API:
+
+```rust
+impl Graph {
+    /// Begin a new transaction batch for writing.
+    pub fn begin_transaction(&self) -> Transaction;
+}
+
+pub struct Transaction {
+    /* opaque staging reference */
+}
+
+impl Transaction {
+    pub async fn insert(&mut self, path: &str, data: impl Into<Vec<u8>>) -> Result<(), Error>;
+    pub async fn update(&mut self, path: &str, data: impl Into<Vec<u8>>) -> Result<(), Error>;
+    pub async fn delete(&mut self, path: &str) -> Result<(), Error>;
+    pub async fn insert_document<D: AksharaDocument>(&mut self, path: &str, doc: &D) -> Result<(), Error>;
+
+    /// Commit all staged writes in this transaction batch atomically in a single flush/manifest.
+    pub async fn commit(self) -> Result<FlushReport, Error>;
+}
+```
 
 ---
 

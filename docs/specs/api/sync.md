@@ -44,6 +44,7 @@ impl Graph {
 6. For each portion:
    - Blindly verifies the CID (recomputes hash from portion data)
    - Audits manifest authority (signer is in identity graph and unrevoked)
+   - Audits data block authority (signer is authorized in identity graph at the time of block creation)
    - Ingests into the local store
 7. If the identity graph has new manifests, updates the vault's `latest_identity_anchor`
 8. Returns `SyncReport`
@@ -214,8 +215,9 @@ Developer calls: graph.sync_scope("record/consultations")
     │
     ├─ 7. For each Portion:
     │     a. Recalculate CID from portion data → verify match
-    │     b. Auditor::verify_manifest_authority() → pass
-    │     c. store.put_block() / store.put_manifest()
+    │     b. If Manifest: Auditor::verify_manifest_authority() → pass
+    │     c. If Block: Auditor::verify_block_authority() → pass
+    │     d. store.put_block() / store.put_manifest()
     │
     ├─ 8. Check if identity graph manifest received
     │     → If yes, vault.update_identity_anchor(new_manifest_id)
@@ -251,7 +253,17 @@ The remote peer (relay or another device) is untrusted. A malicious peer could s
 
 ---
 
-## 7. Cross-Reference Index
+## 7. Future Planned Items
+
+### 7.1 Client-Guided Sync (Incremental Graph Walk) `[Planned for v0.2]`
+When synchronizing extremely deep or large indices, exchanging a single root CID may not be sufficient for fine-grained delta building without pulling too much index metadata. In a future release, the SDK will support client-guided sync where the client incrementally traverses the index tree, requesting sub-indices as needed during the reconciliation loop.
+
+### 7.2 Blind Mailboxes and Relay Synchronization `[Planned for v0.2]`
+The integration of `SyncTransport` with the `relay` protocol will leverage ephemeral Blind Mailboxes. A client posts its latest manifest ID to a relay-hosted mailbox (addressed by the graph's obfuscated Lakshana). Peers poll or stream from this mailbox to discover updates, preserving anonymity.
+
+---
+
+## 8. Cross-Reference Index
 
 | Concept | Defined here | Used in |
 |---|---|---|
