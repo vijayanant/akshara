@@ -63,7 +63,7 @@ impl StagedOperation {
 /// Staging store trait for buffering operations.
 ///
 /// Implementations should use interior mutability (e.g., `Arc<Mutex<>>`).
-#[async_trait::async_trait]
+#[allow(async_fn_in_trait)]
 pub trait StagingStore: Send + Sync {
     /// Stage an operation for later sealing.
     async fn stage_operation(&self, op: StagedOperation) -> Result<()>;

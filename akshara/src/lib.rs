@@ -43,6 +43,7 @@ pub mod error;
 pub mod graph;
 pub mod layout;
 pub mod ordering;
+pub mod path;
 pub mod staging;
 pub mod store;
 pub mod sync;

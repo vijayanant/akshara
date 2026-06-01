@@ -24,7 +24,6 @@ impl Default for InMemoryStagingStore {
     }
 }
 
-#[async_trait::async_trait]
 impl StagingStore for InMemoryStagingStore {
     async fn stage_operation(&self, op: StagedOperation) -> Result<()> {
         let mut ops = self.operations.lock().await;
