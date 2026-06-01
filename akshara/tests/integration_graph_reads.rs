@@ -333,3 +333,78 @@ async fn graph_get_multiple_reads() {
         assert_eq!(data, format!("content {}", i).as_bytes());
     }
 }
+
+// ============================================================================
+// Graph History Tests
+// ============================================================================
+
+#[tokio::test]
+async fn graph_history_queries() {
+    let client = create_test_client().await;
+    let graph = client.create_graph().await.unwrap();
+    let path = "/test/doc-history";
+
+    // 1. First write (v1)
+    graph.insert(path, b"v1".to_vec()).await.unwrap();
+    graph.flush().await.unwrap();
+
+    // 2. Second write (v2)
+    graph.update(path, b"v2".to_vec()).await.unwrap();
+    graph.flush().await.unwrap();
+
+    // 3. Third write (v3)
+    graph.update(path, b"v3".to_vec()).await.unwrap();
+    graph.flush().await.unwrap();
+
+    // 4. Retrieve raw history
+    let raw_history = graph.get_history(path).await.unwrap();
+    assert_eq!(raw_history.len(), 3);
+    assert_eq!(raw_history[0].value, b"v1");
+    assert_eq!(raw_history[1].value, b"v2");
+    assert_eq!(raw_history[2].value, b"v3");
+
+    // Check that CIDs differ
+    assert_ne!(raw_history[0].block_id, raw_history[1].block_id);
+    assert_ne!(raw_history[1].block_id, raw_history[2].block_id);
+
+    // 5. Retrieve typed history (using a basic String schema or wrapper)
+    // Since String implements AksharaDocument via adapters or raw bytes:
+    // Wait, let's see: String is not directly implementing AksharaDocument by default,
+    // but we can define a simple struct in this test scope or use custom wrapper.
+    // Let's define a simple Note struct with AksharaDocument derive.
+    #[derive(
+        akshara::schema::AksharaDocument,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        PartialEq,
+        Eq,
+        Debug,
+    )]
+    struct TestNote {
+        pub text: String,
+    }
+
+    let note_path = "/test/note-history";
+    let n1 = TestNote {
+        text: "v1".to_string(),
+    };
+    graph.insert_document(note_path, &n1).await.unwrap();
+    graph.flush().await.unwrap();
+
+    let n2 = TestNote {
+        text: "v2".to_string(),
+    };
+    graph.insert_document(note_path, &n2).await.unwrap();
+    graph.flush().await.unwrap();
+
+    let typed_history = graph.history::<TestNote>(note_path).await.unwrap();
+    assert_eq!(typed_history.len(), 2);
+    assert_eq!(typed_history[0].value.text, "v1");
+    assert_eq!(typed_history[1].value.text, "v2");
+    assert_eq!(typed_history[0].author_fingerprint.len(), 16); // 8 bytes in hex = 16 chars
+
+    // Verify load works as well
+    let loaded = graph.get_document::<TestNote>(note_path).await.unwrap();
+    assert_eq!(loaded.text, "v2");
+}
