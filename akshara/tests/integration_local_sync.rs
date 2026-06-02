@@ -71,3 +71,83 @@ async fn test_local_in_memory_sync_between_two_clients() {
     let allergies_b = graph_b.get("/patient/allergies").await.unwrap();
     assert_eq!(allergies_b, b"Penicillin");
 }
+
+#[tokio::test]
+async fn test_local_sync_sovereign_collaborative_workflow() {
+    // 1. Initialize Patient Client A and Collaborator Client B
+    let client_a = Client::init(
+        ClientConfig::new()
+            .with_ephemeral_vault()
+            .with_in_memory_storage(),
+    )
+    .await
+    .unwrap();
+    let client_b = Client::init(
+        ClientConfig::new()
+            .with_ephemeral_vault()
+            .with_in_memory_storage(),
+    )
+    .await
+    .unwrap();
+
+    let identity_b = client_b.vault().get_identity(None).await.unwrap();
+
+    // 2. Client A creates a graph and inserts demographics
+    let graph_a = client_a.create_graph().await.unwrap();
+    let graph_id = graph_a.id();
+    let graph_key = graph_a.key().clone();
+
+    graph_a
+        .insert("/patient/demographics", b"Priya Sharma".to_vec())
+        .await
+        .unwrap();
+    graph_a.flush().await.unwrap();
+
+    // 3. Client A authorizes Client B's root signing key
+    graph_a
+        .authorize_collaborator(identity_b.public().signing_key())
+        .await
+        .unwrap();
+    graph_a.flush().await.unwrap();
+
+    // 4. Set up Client B's graph handle (simulating lockbox retrieval)
+    let dummy_b = client_b.create_graph().await.unwrap();
+    let store_b = dummy_b.store().clone();
+    let graph_b = Graph::new(
+        graph_id,
+        graph_key.clone(),
+        client_b.vault().clone(),
+        store_b.clone(),
+        Arc::new(akshara::staging::InMemoryStagingStore::new()),
+        akshara::config::TuningConfig::default(),
+    );
+
+    // 5. Sync from A to B (B pulls A's graph state and A's Identity Graph)
+    let transport_a_to_b = Arc::new(LocalMemoryTransport::new(store_b.clone()));
+    let sync_engine_a =
+        akshara::sync::SyncEngine::new(transport_a_to_b, client_a.vault().clone());
+    sync_engine_a
+        .sync_graph(graph_id, graph_a.store(), &graph_key)
+        .await
+        .unwrap();
+
+    // 6. Client B adds a consultation note and flushes
+    graph_b
+        .insert("/consultations/0", b"Note by Dr. Mehta".to_vec())
+        .await
+        .unwrap();
+    graph_b.flush().await.unwrap();
+
+    // 7. Sync back from B to A (A pulls B's updates + B's Identity Graph)
+    let transport_b_to_a = Arc::new(LocalMemoryTransport::new(graph_a.store().clone()));
+    let sync_engine_b =
+        akshara::sync::SyncEngine::new(transport_b_to_a, client_b.vault().clone());
+    sync_engine_b
+        .sync_graph(graph_id, graph_b.store(), &graph_key)
+        .await
+        .unwrap();
+
+    // 8. Verify Client A can read B's consultation note
+    let note = graph_a.get("/consultations/0").await.unwrap();
+    assert_eq!(note, b"Note by Dr. Mehta");
+}
