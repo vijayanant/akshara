@@ -124,8 +124,7 @@ async fn test_local_sync_sovereign_collaborative_workflow() {
 
     // 5. Sync from A to B (B pulls A's graph state and A's Identity Graph)
     let transport_a_to_b = Arc::new(LocalMemoryTransport::new(store_b.clone()));
-    let sync_engine_a =
-        akshara::sync::SyncEngine::new(transport_a_to_b, client_a.vault().clone());
+    let sync_engine_a = akshara::sync::SyncEngine::new(transport_a_to_b, client_a.vault().clone());
     sync_engine_a
         .sync_graph(graph_id, graph_a.store(), &graph_key)
         .await
@@ -140,8 +139,7 @@ async fn test_local_sync_sovereign_collaborative_workflow() {
 
     // 7. Sync back from B to A (A pulls B's updates + B's Identity Graph)
     let transport_b_to_a = Arc::new(LocalMemoryTransport::new(graph_a.store().clone()));
-    let sync_engine_b =
-        akshara::sync::SyncEngine::new(transport_b_to_a, client_b.vault().clone());
+    let sync_engine_b = akshara::sync::SyncEngine::new(transport_b_to_a, client_b.vault().clone());
     sync_engine_b
         .sync_graph(graph_id, graph_b.store(), &graph_key)
         .await
