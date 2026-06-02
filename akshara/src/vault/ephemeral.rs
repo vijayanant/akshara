@@ -143,6 +143,19 @@ impl Vault for EphemeralVault {
         }
     }
 
+    async fn get_executive_identity(&self) -> Result<SecretIdentity> {
+        let stored = self.mnemonic.lock().await;
+        let mnemonic = stored.as_ref().ok_or_else(|| {
+            Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
+        })?;
+
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+            .map_err(Error::Protocol)?;
+        master
+            .derive_child("m/44'/999'/0'/1'/0'", None)
+            .map_err(Error::Protocol)
+    }
+
     fn latest_identity_anchor(&self) -> ManifestId {
         match self.anchor.try_lock() {
             Ok(anchor) => *anchor,

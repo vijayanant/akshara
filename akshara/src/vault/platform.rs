@@ -158,6 +158,11 @@ impl Vault for PlatformVault {
         }
     }
 
+    async fn get_executive_identity(&self) -> Result<SecretIdentity> {
+        let branch_bytes = self.load_branch(paths::BRANCH_EXECUTIVE)?;
+        SecretIdentity::from_bytes(&branch_bytes).map_err(Error::Protocol)
+    }
+
     fn latest_identity_anchor(&self) -> ManifestId {
         match self.anchor.try_lock() {
             Ok(anchor) => *anchor,

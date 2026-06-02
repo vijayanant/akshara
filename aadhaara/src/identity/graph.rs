@@ -101,6 +101,7 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         is_owned: bool,
         identity_graph_id: &GraphId,
         signer: &impl crate::base::crypto::AksharaSigner,
+        executive_pub: &SigningPublicKey,
     ) -> Result<ManifestId, AksharaError> {
         // 1. Create the descriptor block
         let plaintext = crate::base::encoding::to_canonical_bytes(&descriptor)?;
@@ -140,6 +141,22 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
                 builder.insert(&format!("{}/{}", b_path, desc.graph_id.to_hex()), addr)?;
             }
+        } else {
+            // BOOTSTRAP: Register the creator's executive key in their new identity graph
+            let auth_block = crate::graph::Block::new(
+                *identity_graph_id,
+                vec![],
+                BlockType::AksharaAuthV1,
+                vec![],
+                &IDENTITY_GRAPH_KEY,
+                signer,
+            )?;
+            self.store.put_block(&auth_block).await?;
+            let signer_hex = executive_pub.to_hex();
+            builder.insert(
+                &format!("credentials/{}", signer_hex),
+                Address::from(auth_block.id()),
+            )?;
         }
 
         let base_path = if is_owned {
@@ -216,7 +233,17 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
         // 3. LATEST STATE PROTECTION: Prevent "Ghost Branches" by checking the latest known state.
         // If a revocation exists at the frontier, this manifest is rejected regardless of its local anchor.
-        if let Some(latest) = latest_identity.filter(|&l| l != anchor) {
+        let mut check_latest = false;
+        if let Some(latest) = latest_identity.filter(|&l| l != anchor)
+            && let Ok(Some(anchor_manifest)) = self.store.get_manifest(anchor).await
+            && let Ok(Some(latest_manifest)) = self.store.get_manifest(latest).await
+            && anchor_manifest.graph_id() == latest_manifest.graph_id()
+        {
+            check_latest = true;
+        }
+
+        if check_latest {
+            let latest = latest_identity.unwrap();
             match self.check_authorization_at(signer, latest).await {
                 Ok(_) => { /* Still valid at frontier */ }
                 Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
@@ -293,6 +320,11 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
         let resolution_result = walker
             .resolve_path(&graph_id, devices_root, &path, &IDENTITY_GRAPH_KEY)
             .await;
+
+        debug!(
+            "check_authorization_at: looking for path: {}, graph_id: {}, anchor: {}, resolve_result: {:?}",
+            path, graph_id, anchor, resolution_result
+        );
 
         if let Ok(addr) = resolution_result {
             self.verify_block_is_not_revocation(&addr).await?;

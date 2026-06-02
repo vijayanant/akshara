@@ -423,11 +423,9 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         // Verify that this root identity is authorized for THIS graph.
         let graph_legislator = self.discover_graph_legislator(manifest).await?;
 
-        if key_to_verify != graph_legislator {
+        if root_key != graph_legislator {
             // Signer is not the legislator. Check for trust delegation in parent state.
-            let is_trusted = self
-                .verify_trust_delegation(manifest, &key_to_verify)
-                .await?;
+            let is_trusted = self.verify_trust_delegation(manifest, &root_key).await?;
 
             if !is_trusted {
                 return Err(AksharaError::Integrity(

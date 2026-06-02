@@ -242,9 +242,18 @@ impl MasterIdentity {
             shared_by: None, // TODO: Support shared_by in future
         };
 
+        let executive = self.derive_child("m/44'/999'/0'/1'/0'", None)?;
+        let executive_pub = executive.public().signing_key().clone();
+
         let id_graph = crate::identity::graph::IdentityGraph::new(store);
         id_graph
-            .add_resource(descriptor, is_owned, &id_graph_id, &legislator)
+            .add_resource(
+                descriptor,
+                is_owned,
+                &id_graph_id,
+                &legislator,
+                &executive_pub,
+            )
             .await
     }
 

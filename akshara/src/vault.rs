@@ -54,6 +54,9 @@ pub trait Vault: Send + Sync {
     /// Get a fresh identity for verification purposes.
     async fn get_identity(&self, graph_id: Option<&GraphId>) -> Result<SecretIdentity>;
 
+    /// Gets the unshadowed Executive identity.
+    async fn get_executive_identity(&self) -> Result<SecretIdentity>;
+
     /// Get the latest known identity anchor CID.
     fn latest_identity_anchor(&self) -> ManifestId;
 
