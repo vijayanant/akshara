@@ -3,7 +3,7 @@
 **Status:** Draft — For Review  
 **Date:** 2026-04-10  
 **Derived from:** [API Design Principles](../blueprint/sdk/api-design-principles.md), [Developer Walkthrough](../blueprint/sdk/developer-walkthrough.md)  
-**Cross-references:** [Client & Graph](./client-and-graph.md), [Typed Documents](./typed-documents.md), [Sync](./sync.md), [Access Control](./access-control.md), [Conflicts](./conflicts.md), [Reactive](./reactive.md), [Audit](./audit.md)
+**Cross-references:** [Client & Graph](./client-and-graph.md), [Typed Documents](./typed-documents.md), [Sync](./sync.md), [Access Control](./access-control.md), [Conflicts](./conflicts.md), [Reactive](./reactive.md), [Audit](./audit.md), [Diagnostics](../observability/diagnostics.md)
 
 ---
 
