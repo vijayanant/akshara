@@ -187,6 +187,8 @@ async fn test_full_lifecycle_stateless_journey() {
         let id_gid = master.identity_id().unwrap();
         let id_lak = master.derive_identity_lakshana().unwrap();
         let laptop_identity = master.derive_child("m/44'/999'/0'/0'/0'", None).unwrap();
+        let executive = master.derive_child("m/44'/999'/0'/1'/0'", None).unwrap();
+        let executive_pub = executive.public().signing_key().clone();
 
         // Alice creates a private project graph
         let project_id = GraphId::new();
@@ -222,7 +224,7 @@ async fn test_full_lifecycle_stateless_journey() {
 
         let identity_graph = IdentityGraph::new(&relay_store);
         identity_graph
-            .add_resource(descriptor, true, &id_gid, &laptop_identity)
+            .add_resource(descriptor, true, &id_gid, &laptop_identity, &executive_pub)
             .await
             .unwrap();
 
