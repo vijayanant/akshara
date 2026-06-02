@@ -3,6 +3,7 @@ members = [
     "aadhaara",
     "akshara",
     "schema-macros",
+    "demos",
     # "relay",  # TODO: Fix dependencies on sovereign_core and sovereign_wire
 ]
 resolver = "2"
