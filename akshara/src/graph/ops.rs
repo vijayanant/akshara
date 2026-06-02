@@ -253,4 +253,39 @@ impl Graph {
 
         Ok(())
     }
+
+    /// Authorizes a collaborator's legislator root key for this graph.
+    ///
+    /// This creates an `AksharaTrustV1` block signed by the graph legislator,
+    /// writes it to the store, and stages a `Link` operation to put it in the index.
+    pub async fn authorize_collaborator(
+        &self,
+        collaborator_pub: &akshara_aadhaara::SigningPublicKey,
+    ) -> Result<()> {
+        let legislator = self.vault.get_identity(None).await?;
+        let trust_block = akshara_aadhaara::Block::new(
+            self.graph_id,
+            vec![], // Empty payload
+            akshara_aadhaara::BlockType::AksharaTrustV1,
+            vec![],
+            &self.graph_key,
+            &legislator,
+        )
+        .map_err(Error::Protocol)?;
+
+        self.store
+            .put_block(&trust_block)
+            .await
+            .map_err(Error::Protocol)?;
+
+        let path = format!(".akshara.trust/{}", collaborator_pub.to_hex());
+        let op = StagedOperation::Link {
+            path,
+            address: akshara_aadhaara::Address::from(trust_block.id()),
+            timestamp: current_timestamp(),
+        };
+
+        self.staging.stage_operation(op).await?;
+        Ok(())
+    }
 }

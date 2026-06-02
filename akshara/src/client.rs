@@ -82,19 +82,40 @@ impl Client {
             shared_by: None,
         };
 
+        let executive = self.vault.get_executive_identity().await?;
+
         let identity_graph = IdentityGraph::new(&self.store);
         let new_anchor = identity_graph
-            .add_resource(descriptor, true, &identity_id, &legislator)
+            .add_resource(
+                descriptor,
+                true,
+                &identity_id,
+                &legislator,
+                executive.public().signing_key(),
+            )
             .await
             .map_err(Error::Protocol)?;
 
         self.vault.update_identity_anchor(new_anchor);
 
+        let identity = self.vault.get_identity(Some(&graph_id)).await?;
+
         // AKSHARA RITUAL: Create the Genesis Manifest for the new graph
         let index_builder = akshara_aadhaara::IndexBuilder::new();
         let root_index_id = index_builder
-            .build(graph_id, &self.store, &legislator, &graph_key)
+            .build(graph_id, &self.store, &identity, &graph_key)
             .await
+            .map_err(Error::Protocol)?;
+
+        let master_identity = self.vault.get_executive_identity().await?;
+        let mut rng = rand::rngs::OsRng;
+        let authority_proof = master_identity
+            .create_shadow_certificate(
+                identity.public().signing_key(),
+                &graph_id,
+                &graph_key,
+                &mut rng,
+            )
             .map_err(Error::Protocol)?;
 
         // RITUAL: Sign with Shadow Identity and Certificate
@@ -104,8 +125,8 @@ impl Client {
             vec![],
             new_anchor,
             akshara_aadhaara::Address::null(),
-            &legislator,
-            None, // Proof handled internally or not needed for genesis
+            &identity,
+            Some(authority_proof),
         );
 
         self.store

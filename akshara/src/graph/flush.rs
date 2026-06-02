@@ -133,6 +133,17 @@ impl Graph {
 
         let identity_anchor = self.vault.latest_identity_anchor();
 
+        let master_identity = self.vault.get_executive_identity().await?;
+        let mut rng = rand::rngs::OsRng;
+        let authority_proof = master_identity
+            .create_shadow_certificate(
+                identity.public().signing_key(),
+                &self.graph_id,
+                &self.graph_key,
+                &mut rng,
+            )
+            .map_err(Error::Protocol)?;
+
         let manifest = Manifest::new(
             self.graph_id,
             root_index_id,
@@ -140,7 +151,7 @@ impl Graph {
             identity_anchor,
             akshara_aadhaara::Address::null(),
             &identity,
-            None, // Proof handled internally
+            Some(authority_proof),
         );
 
         self.store.put_manifest(&manifest).await?;
