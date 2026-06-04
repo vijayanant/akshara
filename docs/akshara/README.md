@@ -395,23 +395,36 @@ let idx = parse_index(&new_index)?;
 
 ### 5.5 Storage Backends
 
-**SQLite (Primary):**
+Akshara abstracts physical storage behind a decoupled byte-level trait. The SDK crate implements a production-grade SQLite backend and a memory-based testing backend:
 
-- Persistent, ACID-compliant
-- Works on desktop, mobile, server
-- Single file, no external dependencies
+#### 5.5.1 SQLite Store (`SqliteStore`)
+SQLite serves as the default persistent storage engine for native desktop, mobile, and server-side relay nodes.
 
-**IndexedDB (WASM):**
+##### 1. Architectural Placement (L1 vs. L0)
+To ensure core portability, the core protocol crate `akshara-aadhaara` (L0) contains no C-library bindings and compiles directly to pure-Rust targets like WebAssembly (WASM). Since SQLite requires linking against native C code (via `rusqlite`), the `SqliteStore` is implemented at the SDK level (L1, `akshara`). This lets web-based applications swap out SQLite for IndexedDB or OPFS at runtime without dragging in heavy C-linkage dependencies.
 
-- Browser-based apps
-- Quota-managed by browser
-- Async-native
+##### 2. Concurrency Model (Read Pooling & WAL)
+- **WAL Mode**: `SqliteStore` configures the database in Write-Ahead Logging (`WAL`) mode, allowing multiple concurrent read connections alongside a single active writer.
+- **Mutex Read Pool**: While thread-safe, a standard `Mutex<Connection>` wrapper serializes all read queries, defeating WAL mode's concurrent reads. `SqliteStore` implements a lightweight, zero-dependency connection pool (`Arc<Mutex<Vec<Connection>>>`):
+  - **Writes** are serialized using a dedicated write connection mutex.
+  - **Reads** checkout independent read-only connections via a custom `ConnectionWrapper` that automatically returns the connection to the idle pool when dropped.
+  - In-memory SQLite databases automatically fallback to write-connection locking to preserve isolated state in testing rigs.
 
-**In-Memory (Testing):**
+##### 3. Prepared Query Caching (`prepare_cached`)
+Compiling SQL statements inside high-frequency operations (like block and manifest read/writes) incurs parsing overhead. `SqliteStore` executes all queries using `.prepare_cached(...)` to reuse prepared statement handles.
 
-- Ephemeral
-- Fast tests
-- No persistence
+##### 4. Relational Database Schema
+- `blocks`: Immutable table storing raw bytes of CAS data blocks.
+- `manifests`: Immutable table storing signed DAG manifests.
+- `graph_heads`: Tracks active frontier leaf manifests per graph. Manifest writes atomically delete parent CIDs and insert the new manifest head in a single transaction.
+- `lockboxes`: Stores blinded invitation lockbox payloads indexed by their blinded destination address (`lakshana`).
+- `prekey_bundles`: Stores base device identities, signed prekeys, and signatures.
+- `one_time_prekeys`: Partitioned one-time cryptographic keys. Reads on this table are wrapped in an isolated read-and-delete transaction to enforce Forward Secrecy (X3DH).
+
+#### 5.5.2 In-Memory Store (`InMemoryStore`)
+- Located in `akshara-aadhaara` core, this is an ephemeral testing backend.
+- It uses fine-grained read-write locks (`RwLock`) on individual tables (`HashMap`) to minimize global contention.
+- Atomic operations (e.g. prekey consumption) are protected by write locks to match SQL transaction semantics.
 
 ---
 

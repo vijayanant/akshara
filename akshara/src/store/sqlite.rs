@@ -1,3 +1,5 @@
+//! SQLite Storage Backend for Akshara.
+
 use akshara_aadhaara::{AksharaError, BlockId, GraphId, GraphStore, ManifestId, StoreError};
 use async_trait::async_trait;
 use rusqlite::Connection;
