@@ -24,8 +24,8 @@ pub use base::error::{
 
 pub use graph::{Block, BlockType, Manifest};
 pub use identity::{
-    GraphDescriptor, IdentityGraph, MasterIdentity, SecretIdentity, graph::IDENTITY_GRAPH_KEY,
-    paths,
+    GraphDescriptor, IdentityGraph, MasterIdentity, PreKeyBundle, SecretIdentity,
+    graph::IDENTITY_GRAPH_KEY, paths,
 };
 pub use protocol::{Comparison, Delta, Heads, Portion, Reconciler};
 pub use state::{GraphStore, InMemoryStore};

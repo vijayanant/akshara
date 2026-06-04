@@ -1,8 +1,6 @@
-use crate::base::address::{BlockId, GraphId, Lakshana, ManifestId};
-use crate::base::crypto::{EncryptionPublicKey, SigningPublicKey};
+use crate::base::address::{BlockId, GraphId, ManifestId};
 use crate::base::error::{AksharaError, StoreError};
 
-use crate::identity::types::PreKeyBundle;
 use crate::state::store::GraphStore;
 use async_trait::async_trait;
 use metrics::counter;
@@ -10,8 +8,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, trace};
 
-type LockboxMap = HashMap<Lakshana, Vec<Vec<u8>>>;
-type PreKeyMap = HashMap<SigningPublicKey, Vec<u8>>;
+type LockboxMap = HashMap<Vec<u8>, Vec<Vec<u8>>>;
+type PreKeyMap = HashMap<Vec<u8>, Vec<u8>>;
+type OneTimePreKeyMap = HashMap<Vec<u8>, HashMap<u32, Vec<u8>>>;
 
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryStore {
@@ -20,6 +19,7 @@ pub struct InMemoryStore {
     pub(crate) heads: Arc<RwLock<HashMap<GraphId, Vec<ManifestId>>>>,
     pub(crate) lockboxes: Arc<RwLock<LockboxMap>>,
     pub(crate) prekeys: Arc<RwLock<PreKeyMap>>,
+    pub(crate) one_time_prekeys: Arc<RwLock<OneTimePreKeyMap>>,
 }
 
 /// The maximum number of concurrent heads allowed per graph to prevent "Head Explosion" DoS attacks.
@@ -39,7 +39,7 @@ impl GraphStore for InMemoryStore {
             .write()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
         debug!(id = ?id, "Storing block bytes");
-        blocks.insert(id.clone(), data.to_vec());
+        blocks.insert(*id, data.to_vec());
         counter!("akshara.store.put", "type" => "block").increment(1);
         Ok(())
     }
@@ -74,7 +74,7 @@ impl GraphStore for InMemoryStore {
                 .manifests
                 .write()
                 .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-            manifests.insert(id.clone(), data.to_vec());
+            manifests.insert(*id, data.to_vec());
         }
 
         // 2. Update Heads
@@ -82,7 +82,7 @@ impl GraphStore for InMemoryStore {
             .heads
             .write()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        let graph_heads = heads_map.entry(graph_id.clone()).or_default();
+        let graph_heads = heads_map.entry(*graph_id).or_default();
 
         // If this manifest replaces parents, remove those parents from heads
         for parent in parents {
@@ -91,7 +91,7 @@ impl GraphStore for InMemoryStore {
 
         // Add this manifest as a new head
         if !graph_heads.contains(id) {
-            graph_heads.push(id.clone());
+            graph_heads.push(*id);
         }
 
         // ENFORCE FRONTIER CAP: Prevent "Head Explosion" DoS
@@ -127,18 +127,18 @@ impl GraphStore for InMemoryStore {
         Ok(heads)
     }
 
-    async fn put_lockbox_bytes(&self, lakshana: Lakshana, data: &[u8]) -> Result<(), AksharaError> {
+    async fn put_lockbox_bytes(&self, lakshana: &[u8], data: &[u8]) -> Result<(), AksharaError> {
         let mut lockboxes = self
             .lockboxes
             .write()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        let entries = lockboxes.entry(lakshana).or_default();
+        let entries = lockboxes.entry(lakshana.to_vec()).or_default();
         entries.push(data.to_vec());
         counter!("akshara.store.put", "type" => "lockbox").increment(1);
         Ok(())
     }
 
-    async fn get_lockboxes_bytes(&self, lakshana: &Lakshana) -> Result<Vec<Vec<u8>>, AksharaError> {
+    async fn get_lockboxes_bytes(&self, lakshana: &[u8]) -> Result<Vec<Vec<u8>>, AksharaError> {
         let lockboxes = self
             .lockboxes
             .read()
@@ -148,20 +148,24 @@ impl GraphStore for InMemoryStore {
         Ok(entries)
     }
 
-    async fn put_prekey_bundle_bytes(&self, device_key: &SigningPublicKey, data: &[u8]) -> Result<(), AksharaError> {
+    async fn put_prekey_bundle_bytes(
+        &self,
+        device_key: &[u8],
+        data: &[u8],
+    ) -> Result<(), AksharaError> {
         let mut prekeys = self
             .prekeys
             .write()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        debug!(device = ?device_key, "Storing pre-key bundle bytes");
-        prekeys.insert(device_key.clone(), data.to_vec());
+        debug!("Storing pre-key bundle bytes");
+        prekeys.insert(device_key.to_vec(), data.to_vec());
         counter!("akshara.store.put", "type" => "prekey_bundle").increment(1);
         Ok(())
     }
 
     async fn get_prekey_bundle_bytes(
         &self,
-        device_key: &SigningPublicKey,
+        device_key: &[u8],
     ) -> Result<Option<Vec<u8>>, AksharaError> {
         let prekeys = self
             .prekeys
@@ -172,33 +176,52 @@ impl GraphStore for InMemoryStore {
         Ok(result)
     }
 
-    async fn consume_prekey(
+    async fn put_one_time_prekeys_bytes(
         &self,
-        device_key: &SigningPublicKey,
-        prekey_index: u32,
-    ) -> Result<Option<EncryptionPublicKey>, AksharaError> {
-        let mut prekeys = self
-            .prekeys
+        device_key: &[u8],
+        prekeys: &[(u32, &[u8])],
+    ) -> Result<(), AksharaError> {
+        let mut one_time_prekeys = self
+            .one_time_prekeys
             .write()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        let entries = one_time_prekeys.entry(device_key.to_vec()).or_default();
+        for (index, key_bytes) in prekeys {
+            entries.insert(*index, key_bytes.to_vec());
+        }
+        Ok(())
+    }
 
-        if let Some(bytes) = prekeys.get_mut(device_key) {
-            // THE ATOMIC CONSUMPTION:
-            // 1. Deserialize the prekey bundle from bytes.
-            let mut bundle: PreKeyBundle = serde_ipld_dagcbor::from_slice(bytes)
-                .map_err(|e| AksharaError::InternalError(format!("CBOR deserialization error: {}", e)))?;
-            
-            // 2. Remove the key.
-            let key = bundle.pre_keys.remove(&prekey_index);
+    async fn get_one_time_prekeys_bytes(
+        &self,
+        device_key: &[u8],
+    ) -> Result<Vec<(u32, Vec<u8>)>, AksharaError> {
+        let one_time_prekeys = self
+            .one_time_prekeys
+            .read()
+            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        let entries = one_time_prekeys
+            .get(device_key)
+            .cloned()
+            .unwrap_or_default();
+        let result = entries.into_iter().collect();
+        Ok(result)
+    }
 
+    async fn consume_one_time_prekey_bytes(
+        &self,
+        device_key: &[u8],
+        prekey_index: u32,
+    ) -> Result<Option<Vec<u8>>, AksharaError> {
+        let mut one_time_prekeys = self
+            .one_time_prekeys
+            .write()
+            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        if let Some(entries) = one_time_prekeys.get_mut(device_key) {
+            let key = entries.remove(&prekey_index);
             if key.is_some() {
-                debug!(device = ?device_key, index = prekey_index, "Consumed one-time pre-key");
+                debug!(index = prekey_index, "Consumed one-time pre-key");
                 counter!("akshara.store.consume", "type" => "prekey").increment(1);
-
-                // 3. Serialize back and update store.
-                let updated_bytes = serde_ipld_dagcbor::to_vec(&bundle)
-                    .map_err(|e| AksharaError::InternalError(format!("CBOR serialization error: {}", e)))?;
-                *bytes = updated_bytes;
             }
             Ok(key)
         } else {

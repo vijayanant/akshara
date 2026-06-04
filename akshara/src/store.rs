@@ -1,8 +1,8 @@
 //! Storage backends for Akshara.
 //!
-//! Re-exports storage from akshara-aadhaara.
+//! Re-exports storage from akshara-aadhaara and provides SQLite persistent storage.
 
 pub use akshara_aadhaara::InMemoryStore;
 
-// TODO: Implement SQLite store later
-// For now, use InMemoryStore from aadhaara
+pub mod sqlite;
+pub use sqlite::SqliteStore;
