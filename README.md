@@ -236,10 +236,10 @@ Akshara is currently in **v0.1.0-alpha**. All core local cryptography, staging, 
 * **Cryptography:** XChaCha20-Poly1305 authenticated symmetric encryption, Ed25519 signatures, X25519 key exchange.
 * **Document Engine:** Custom `AksharaDocument` derive macro with `#[collection]`, `#[chunked]`, `#[collaborative_text]` modifiers.
 * **Security Guardrails:** Shadow identities for graph isolation, OS Keychain integration for branch secrets, and re-verification of incoming CIDs.
+* **Storage Engine:** We updated `GraphStore` to be a pure byte-oriented trait (no cryptographic type leakage to DB drivers!). Plus, we wrote a fast persistent SQLite adapter with prepared query caching and a simple read connection pool to get parallel readers under WAL mode.
 * **Sync Core:** Reconciler for local/remote head convergence, Auditor for chain-of-title checks, and mock transport layers.
 
 ### Next Milestones (v0.2)
-* [ ] SQLite storage backend
 * [ ] Production gRPC Relay client
 * [ ] Lockbox-based async sharing flows
 * [ ] WASM targets for web and mobile integration
