@@ -1,9 +1,9 @@
 ---
 title: "Storage Interface Specification"
-subtitle: "The GraphStore Trait and Atomic API Laws"
-version: "0.1.0-alpha.2"
+subtitle: "The Decoupled GraphStore Trait and Persistent Adapters"
+version: "0.1.0-alpha.3"
 status: "Accepted"
-date: "2026-03-14
+date: "2026-06-04"
 ---
 
 # Storage Interface Specification
@@ -11,337 +11,192 @@ date: "2026-03-14
 ## 1. Motivation
 
 ### The Problem
+Previously, the `GraphStore` trait was directly coupled to high-level domain structures and cryptographic types, such as `Block`, `Manifest`, `PubKey`, and `PreKeyBundle`. This created several architectural issues:
+- **Tight Coupling**: Database drivers had to compile against the core cryptographic and serialization libraries, forcing a change in the storage driver whenever a domain struct was modified.
+- **Leaked Domain Knowledge**: Relays and cloud storage backends had to understand the internal schemas of the data they stored, violating the **Zero-Knowledge** principle of a blind relay.
+- **Forward Secrecy Complexity**: To enforce Forward Secrecy (X3DH), one-time prekeys must be atomically retrieved and deleted. Implementing this at the database layer required the driver to parse CBOR blocks to find and remove individual keys, which is error-prone and slow.
 
-The core logic needs to store and retrieve blocks/manifests. But:
+### The Decoupled Solution
+Akshara defines a fully decoupled **`GraphStore`** trait. The trait operates exclusively on **raw byte slices (`&[u8]`)** for storage payloads, and uses simple primitive identifiers (e.g., indexes and address slices) for partitioning.
 
-- **Different backends:** Memory (testing), SQLite (mobile), Relay (server), IPFS (distributed)
-- **Async required:** Non-blocking for high concurrency
-- **Content-addressed:** Look up by CID, not path
-- **Head tracking:** Track manifest frontiers per graph
-
-How do we support all backends without changing core logic?
-
-### The Akshara Solution
-
-**`GraphStore` trait** — a unified interface:
-
-```rust
-trait GraphStore: Send + Sync {
-    // Data operations
-    async fn put_block(&mut self, block: &Block) -> Result<()>;
-    async fn get_block(&self, id: &BlockId) -> Result<Option<Block>>;
-
-    // Manifest operations
-    async fn put_manifest(&mut self, manifest: &Manifest) -> Result<()>;
-    async fn get_manifest(&self, id: &ManifestId) -> Result<Option<Manifest>>;
-    async fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>>;
-
-    // Discovery operations
-    async fn put_lockbox(&mut self, recipient: &PubKey, lockbox: &Lockbox) -> Result<()>;
-    async fn get_lockboxes(&self, recipient: &PubKey) -> Result<Vec<Lockbox>>;
-}
-```
-
-**Implementations:**
-- `InMemoryStore` — Testing, caching
-- `SqliteStore` — Mobile, desktop persistence
-- `RelayStore` — Server-side storage
-- `IPFSStore` — Distributed storage
-
-**Key properties:**
-- **Pluggable:** Swap backends without changing core
-- **Content-addressed:** All lookups by CID
-- **Atomic:** Head updates are atomic
-- **Thread-safe:** Send + Sync for concurrency
-
----
-
-## 2. Overview
-
-This document defines the **`GraphStore`** trait, which serves as the primary interface between the Akshara logic and the physical storage medium. All implementations MUST adhere to these non-blocking, asynchronous standards.
-
-### Key Concepts
-
-| Term | Meaning |
-|------|---------|
-| **GraphStore** | Trait for content-addressed storage |
-| **Heads** | Manifest CIDs with no children (frontier) |
-| **Port** | Storage backend implementation |
-
-### Architecture
+All serialization/deserialization (using CBOR/DAG-CBOR) is handled in the trait's **default methods**, making the storage adapters "dumb" persistence engines that have zero knowledge of the underlying data structures.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Akshara Core                                               │
-│  (Pure logic, no I/O)                                       │
-│                                                             │
-│  fn sync(graph_id, store: &impl GraphStore) {               │
-│      let heads = store.get_heads(graph_id)?;                │
-│      let manifest = store.get_manifest(&heads[0])?;         │
-│      // ...                                                 │
-│  }                                                          │
+│  Akshara Domain Logic (Block, Manifest, PreKeyBundle)       │
 └─────────────────────────────────────────────────────────────┘
-                          │
-                          │ GraphStore trait
-                          ▼
+                           │
+                           │  CBOR (de)serialization
+                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Storage Implementations                                    │
-│                                                             │
-│  InMemoryStore  SqliteStore  RelayStore  IPFSStore         │
+│  GraphStore Trait (Default Methods)                         │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           │  Raw Bytes (&[u8] / Vec<u8>)
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Storage Adapters (InMemoryStore, SqliteStore, etc.)        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Core API
+## 2. Core API: The `GraphStore` Trait
 
-The interface is divided into functional domains for data, metadata, and discovery.
+Defined in `akshara-aadhaara` core, the trait exposes low-level byte hooks for database adapters to override, and high-level typed interfaces for application use.
 
-### 3.1. Data Block Operations
-
-#### `put_block`
-
-```rust
-async fn put_block(&mut self, block: &Block) -> Result<()>;
-```
-
-**Purpose:** Persists an encrypted data unit.
-
-**Invariants:**
-- MUST verify CID matches content hash
-- MUST be idempotent (same CID = no-op)
-
-**Errors:**
-- `IntegrityError` — CID doesn't match content
-- `IOError` — Storage failure
-
----
-
-#### `get_block`
+### 2.1 Low-Level Byte API
+Database adapters must implement these asynchronous, non-blocking methods:
 
 ```rust
-async fn get_block(&self, id: &BlockId) -> Result<Option<Block>>;
-```
+#[async_trait]
+pub trait GraphStore: Send + Sync {
+    // --- Content-Addressable Storage (CAS) ---
+    async fn put_block_bytes(&self, id: &BlockId, data: &[u8]) -> Result<(), AksharaError>;
+    async fn get_block_bytes(&self, id: &BlockId) -> Result<Option<Vec<u8>>, AksharaError>;
+    async fn put_manifest_bytes(&self, id: &ManifestId, graph_id: &GraphId, parents: &[ManifestId], data: &[u8]) -> Result<(), AksharaError>;
+    async fn get_manifest_bytes(&self, id: &ManifestId) -> Result<Option<Vec<u8>>, AksharaError>;
 
-**Purpose:** Retrieves a block by its identifier.
+    // --- DAG Frontier / Heads ---
+    async fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, AksharaError>;
 
-**Returns:**
-- `Some(Block)` — Block found
-- `None` — Block not found
+    // --- User Discovery / Lockboxes ---
+    async fn put_lockbox_bytes(&self, lakshana: &[u8], data: &[u8]) -> Result<(), AksharaError>;
+    async fn get_lockboxes_bytes(&self, lakshana: &[u8]) -> Result<Vec<Vec<u8>>, AksharaError>;
 
----
-
-### 3.2. Graph Snapshot Operations
-
-#### `put_manifest`
-
-```rust
-async fn put_manifest(&mut self, manifest: &Manifest) -> Result<()>;
-```
-
-**Purpose:** Persists a signed graph snapshot and updates the "Heads" registry.
-
-**Invariants:**
-- MUST verify CID matches content hash
-- MUST atomically update heads (add new, remove parents)
-- MUST be idempotent
-
-**Algorithm:**
-```
-1. Verify CID matches manifest header hash
-2. Store manifest data
-3. For each parent in manifest.header.parents:
-       heads.remove(parent)
-4. heads.add(manifest.cid)
-```
-
----
-
-#### `get_manifest`
-
-```rust
-async fn get_manifest(&self, id: &ManifestId) -> Result<Option<Manifest>>;
-```
-
-**Purpose:** Retrieves a manifest by its identifier.
-
-**Returns:**
-- `Some(Manifest)` — Manifest found
-- `None` — Manifest not found
-
----
-
-#### `get_heads`
-
-```rust
-async fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>>;
-```
-
-**Purpose:** Returns the current frontier (unmerged manifests) for a specific graph.
-
-**Returns:**
-- List of manifest CIDs with no children
-
----
-
-### 3.3. Discovery Operations
-
-#### `put_lockbox`
-
-```rust
-async fn put_lockbox(&mut self, recipient: &PubKey, lockbox: &Lockbox) -> Result<()>;
-```
-
-**Purpose:** Stores a discovery credential for a specific public key.
-
-**Invariants:**
-- MUST be indexed by recipient's public key
-- MUST support multiple lockboxes per recipient
-
----
-
-#### `get_lockboxes`
-
-```rust
-async fn get_lockboxes(&self, recipient: &PubKey) -> Result<Vec<Lockbox>>;
-```
-
-**Purpose:** Retrieves all pending invitations for a specific public key.
-
-**Returns:**
-- List of lockboxes addressed to recipient
-
----
-
-## 4. Operational Invariants
-
-Every `GraphStore` implementation MUST guarantee:
-
-| Invariant | Requirement |
-|-----------|-------------|
-| **Representational Integrity** | MUST verify CID matches payload hash on `put` |
-| **Idempotency** | Same CID multiple times MUST be no-op |
-| **Atomic Head Pruning** | MUST atomically update heads on manifest store |
-| **Thread Safety** | MUST implement `Send + Sync` |
-
-### 4.1. CID Verification
-
-```rust
-// On put_block:
-let computed_cid = CID(0x57, SHA2-256(DAG-CBOR(block)));
-if computed_cid != expected_cid {
-    return Err(IntegrityError::CidMismatch);
+    // --- Key Exchange (X3DH Session Prekeys) ---
+    async fn put_prekey_bundle_bytes(&self, device_key: &[u8], data: &[u8]) -> Result<(), AksharaError>;
+    async fn get_prekey_bundle_bytes(&self, device_key: &[u8]) -> Result<Option<Vec<u8>>, AksharaError>;
+    async fn put_one_time_prekeys_bytes(&self, device_key: &[u8], prekeys: &[(u32, &[u8])]) -> Result<(), AksharaError>;
+    async fn get_one_time_prekeys_bytes(&self, device_key: &[u8]) -> Result<Vec<(u32, Vec<u8>)>, AksharaError>;
+    async fn consume_one_time_prekey_bytes(&self, device_key: &[u8], prekey_index: u32) -> Result<Option<Vec<u8>>, AksharaError>;
 }
 ```
 
-### 4.2. Atomic Head Update
+### 2.2 High-Level Typed API
+These default implementations automatically handle CBOR serialization and partition mapping:
+- `put_block(&self, block: &Block)`: Serializes the block to CBOR and calls `put_block_bytes`.
+- `get_block(&self, id: &BlockId)`: Retrieves the bytes and deserializes them back into a `Block`.
+- `put_prekey_bundle(&self, bundle: &PreKeyBundle)`: Persists the base prekey bundle metadata, serializes individual one-time prekeys, and writes them to the partitioned one-time prekey store.
+- `consume_prekey(&self, device_key: &SigningPublicKey, prekey_index: u32)`: Requests atomic byte consumption of a specific one-time prekey, and deserializes the returned bytes into an `EncryptionPublicKey`.
 
-```rust
-// On put_manifest:
-let tx = store.begin_transaction()?;
-tx.store_manifest(manifest)?;
-for parent in &manifest.header.parents {
-    tx.remove_head(graph_id, parent)?;
-}
-tx.add_head(graph_id, manifest.cid)?;
-tx.commit()?;  // All or nothing
+---
+
+## 3. SQLite Storage Adapter (`SqliteStore`)
+
+The `SqliteStore` is implemented at the SDK level (L1) to maintain clean dependency boundaries (L0 does not depend on C/SQLite bindings).
+
+### 3.1 Relational Schema Design
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+-- Immutable CAS Blocks
+CREATE TABLE IF NOT EXISTS blocks (
+    block_id BLOB PRIMARY KEY,
+    data BLOB NOT NULL
+);
+
+-- Immutable CAS Manifests
+CREATE TABLE IF NOT EXISTS manifests (
+    manifest_id BLOB PRIMARY KEY,
+    graph_id BLOB NOT NULL,
+    data BLOB NOT NULL
+);
+
+-- Active DAG frontiers
+CREATE TABLE IF NOT EXISTS graph_heads (
+    graph_id BLOB,
+    manifest_id BLOB,
+    PRIMARY KEY (graph_id, manifest_id)
+);
+
+-- Blinded User Lockboxes
+CREATE TABLE IF NOT EXISTS lockboxes (
+    lakshana BLOB NOT NULL,
+    data BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lockboxes_lakshana ON lockboxes(lakshana);
+
+-- Base Prekey Bundles (Identity, Signed Prekey, Signature)
+CREATE TABLE IF NOT EXISTS prekey_bundles (
+    device_key BLOB PRIMARY KEY,
+    data BLOB NOT NULL
+);
+
+-- One-Time Prekeys (Partitioned for atomic consumption)
+CREATE TABLE IF NOT EXISTS one_time_prekeys (
+    device_key BLOB NOT NULL,
+    prekey_index INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (device_key, prekey_index),
+    FOREIGN KEY (device_key) REFERENCES prekey_bundles(device_key) ON DELETE CASCADE
+);
+```
+
+### 3.2 Concurrency & Performance Enhancements
+To scale for multi-user client apps and high-concurrency relays, the following optimizations are implemented:
+1. **Prepared Query Caching (`prepare_cached`)**: Compilation of SQL statements is cached per connection. Repeated operations on blocks and manifests reuse compiled statement handles, avoiding SQL re-parsing overhead.
+2. **Read Connection Pooling**: A single serialized connection bottleneck prevents parallel queries. `SqliteStore` maintains a thread-safe read pool (`Arc<Mutex<Vec<Connection>>>`). Reads lease dedicated read connections, unlocking parallel execution under SQLite's Write-Ahead Logging (`WAL`) mode.
+
+---
+
+## 4. In-Memory Storage Adapter (`InMemoryStore`)
+
+For testing, `InMemoryStore` implements thread-safe memory maps:
+- **Lock Isolation**: Individual read-write locks (`RwLock`) on each map prevent global contention.
+- **Partitioned Session Prekeys**: One-time prekeys are partitioned into a nested map (`HashMap<Vec<u8>, HashMap<u32, Vec<u8>>>`).
+- **Atomic Deletion**: Key consumption uses a write-lock guard to perform an atomic key removal (`remove(&prekey_index)`), ensuring identical forward-secrecy semantics as the database transactions.
+
+---
+
+## 5. Operational Invariants
+
+### 5.1 Atomic Head Re-indexing
+During `put_manifest_bytes`, the database transaction MUST prune parent references and add the new leaf manifest in one atomic operation:
+```sql
+BEGIN TRANSACTION;
+INSERT OR IGNORE INTO manifests (manifest_id, graph_id, data) VALUES (?1, ?2, ?3);
+-- For each parent:
+DELETE FROM graph_heads WHERE graph_id = ?1 AND manifest_id = ?2;
+-- Finally:
+INSERT OR IGNORE INTO graph_heads (graph_id, manifest_id) VALUES (?1, ?2);
+COMMIT;
+```
+
+### 5.2 Atomic Prekey Consumption (Forward Secrecy)
+To guarantee session key uniqueness, prekey reads and deletes MUST occur in a serialized transaction:
+```sql
+BEGIN TRANSACTION;
+SELECT data FROM one_time_prekeys WHERE device_key = ?1 AND prekey_index = ?2;
+-- If found:
+DELETE FROM one_time_prekeys WHERE device_key = ?1 AND prekey_index = ?2;
+COMMIT; -- Else rollback
 ```
 
 ---
 
-## 5. Error Semantics
+## 6. Architectural Decision Records (ADR): SQLite Placement & Design
 
-Implementations MUST return context-rich errors:
+### 6.1 Placement: Why L1 `akshara` and not L0 `aadhaara`?
+1. **WebAssembly (WASM) & Pure Rust Portability**:
+   - `akshara-aadhaara` (L0) contains core cryptographic models, Merkle-DAG operations, and sync logic. It is designed to be highly portable, targeting platforms like **WebAssembly (WASM)**, native clients, and relays.
+   - Including `rusqlite` (which links against the C library of SQLite) in L0 would tie the entire core library to C-linkage, breaking compilation for pure WASM contexts (e.g. standard browsers).
+2. **Developer-Facing Cohesion (L1 SDK)**:
+   - The `akshara` crate is the L1 Developer SDK. Developers building native applications expect a zero-configuration persistent storage engine right out of the box.
+   - Bundling the `SqliteStore` directly inside the `akshara` crate avoids crate proliferation (e.g. creating `akshara-sqlite`), simplifying dependencies.
 
-| Error | When Returned |
-|-------|---------------|
-| **`NotFound`** | Requested CID doesn't exist |
-| **`IntegrityError`** | CID doesn't match content hash |
-| **`Conflict`** | Atomic update violates constraint |
-| **`IOError`** | Physical failure (disk full, timeout) |
-| **`InvalidArgument`** | Malformed CID or data |
+### 6.2 Placement: Why not a separate crate (e.g., `akshara-sqlite`)?
+- **Lean Dependency Graph**: Maintaining separate version cycles, Cargo workspace boundaries, and API publication routes for a single storage driver increases maintenance overhead.
+- **SQLite as Default Client Persistence**: SQLite is the primary storage engine for all client applications. Separating it would require developers to explicitly import another crate for basic database features, raising onboarding friction.
 
-### Error Example
-
-```rust
-match store.get_block(&cid).await {
-    Ok(Some(block)) => Ok(block),
-    Ok(None) => Err(StorageError::NotFound(cid)),
-    Err(e) => Err(StorageError::IOError(e)),
-}
-```
+### 6.3 Concurrency Considerations: Thread-Safe Pooling
+- Standard `Arc<Mutex<Connection>>` models in SQLite serialize all database queries, which causes lock contention and prevents parallel execution of concurrent reads.
+- By structuring `SqliteStore` with a dedicated serialized write lock and a pooled set of read-only connections, we unlock SQLite's **Write-Ahead Logging (WAL)** concurrency model—allowing multiple concurrent readers alongside a single active writer without introducing complex external pooling dependencies (like `r2d2`).
 
 ---
 
-## 6. Test Vectors
-
-### Test Vector 1: Put/Get Block
-
-```
-Input:
-  block: Block { content: "Hello", type: "data", parents: [], ... }
-
-Process:
-  1. store.put_block(&block)
-  2. retrieved = store.get_block(&block.cid)
-
-Expected:
-  retrieved == Some(block)
-```
-
-### Test Vector 2: Idempotent Put
-
-```
-Process:
-  1. store.put_block(&block)  // First time
-  2. store.put_block(&block)  // Second time (same CID)
-
-Expected:
-  Both calls return Ok(())
-  Storage size unchanged (no duplicate)
-```
-
-### Test Vector 3: Atomic Head Update
-
-```
-Setup:
-  Heads: [A, B]
-
-Process:
-  store.put_manifest(Manifest C, parents: [A])
-
-Expected:
-  Heads: [B, C]  // A removed, C added
-```
-
----
-
-## 7. Security Considerations
-
-### What This Protects Against
-
-| Threat | Mitigation |
-|--------|------------|
-| **Data corruption** | CID verification on put |
-| **Head tampering** | Atomic updates |
-| **DoS via storage** | Quotas, limits per graph |
-
-### Assumptions
-
-1. **Storage durability:** Backend persists data reliably
-2. **CID integrity:** Storage doesn't modify content
-3. **Head security:** Heads registry protected from tampering
-
-### Implementation Notes
-
-1. **Encryption:** Store encrypted content; don't decrypt in storage layer
-2. **Caching:** Implement LRU cache for hot CIDs
-3. **Batching:** Support batch operations for efficiency
-
----
-
-## 8. References
-
-- [Storage Overview](README.md)
+## 7. References
+- [Storage Semantics](semantics.md)
 - [Graph Model Specification](../graph-model/README.md)
 - [Synchronization Specification](../synchronization/README.md)
