@@ -1,24 +1,83 @@
 use akshara_aadhaara::{AksharaError, BlockId, GraphId, GraphStore, ManifestId, StoreError};
 use async_trait::async_trait;
 use rusqlite::Connection;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+
+/// A helper to map SQLite errors into Akshara errors.
+fn sqlite_err(e: rusqlite::Error) -> AksharaError {
+    AksharaError::Store(StoreError::IoError(e.to_string()))
+}
+
+/// A connection wrapper that either holds a mutex lock for writes
+/// or represents a connection checked out from a thread-safe read pool.
+enum ConnectionWrapper<'a> {
+    Locked(std::sync::MutexGuard<'a, Connection>),
+    Pooled {
+        conn: Option<Connection>,
+        pool: Arc<Mutex<Vec<Connection>>>,
+    },
+}
+
+impl<'a> std::ops::Deref for ConnectionWrapper<'a> {
+    type Target = Connection;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Locked(guard) => guard,
+            Self::Pooled { conn, .. } => conn.as_ref().unwrap(),
+        }
+    }
+}
+
+impl<'a> std::ops::DerefMut for ConnectionWrapper<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Locked(guard) => guard,
+            Self::Pooled { conn, .. } => conn.as_mut().unwrap(),
+        }
+    }
+}
+
+impl<'a> Drop for ConnectionWrapper<'a> {
+    fn drop(&mut self) {
+        let (conn, pool) = match self {
+            Self::Pooled { conn, pool } => (conn, pool),
+            _ => return,
+        };
+        let c = match conn.take() {
+            Some(c) => c,
+            None => return,
+        };
+        let mut p = match pool.lock() {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        if p.len() < 16 {
+            p.push(c);
+        }
+    }
+}
 
 /// A persistent storage backend backed by SQLite.
 #[derive(Clone)]
 pub struct SqliteStore {
-    conn: Arc<Mutex<Connection>>,
+    path: Option<PathBuf>,
+    write_conn: Arc<Mutex<Connection>>,
+    read_pool: Arc<Mutex<Vec<Connection>>>,
 }
 
 impl SqliteStore {
     /// Opens a connection to a SQLite database on disk.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, AksharaError> {
-        let conn = Connection::open(path).map_err(|e| {
+        let path_buf = path.as_ref().to_path_buf();
+        let write_conn = Connection::open(&path_buf).map_err(|e| {
             AksharaError::Store(StoreError::IoError(format!("SQLite open error: {}", e)))
         })?;
 
         let store = Self {
-            conn: Arc::new(Mutex::new(conn)),
+            path: Some(path_buf),
+            write_conn: Arc::new(Mutex::new(write_conn)),
+            read_pool: Arc::new(Mutex::new(Vec::new())),
         };
         store.init_tables()?;
         Ok(store)
@@ -26,7 +85,7 @@ impl SqliteStore {
 
     /// Opens an in-memory SQLite database connection (useful for testing).
     pub fn in_memory() -> Result<Self, AksharaError> {
-        let conn = Connection::open_in_memory().map_err(|e| {
+        let write_conn = Connection::open_in_memory().map_err(|e| {
             AksharaError::Store(StoreError::IoError(format!(
                 "SQLite in_memory open error: {}",
                 e
@@ -34,7 +93,9 @@ impl SqliteStore {
         })?;
 
         let store = Self {
-            conn: Arc::new(Mutex::new(conn)),
+            path: None,
+            write_conn: Arc::new(Mutex::new(write_conn)),
+            read_pool: Arc::new(Mutex::new(Vec::new())),
         };
         store.init_tables()?;
         Ok(store)
@@ -42,10 +103,14 @@ impl SqliteStore {
 
     fn init_tables(&self) -> Result<(), AksharaError> {
         let conn = self
-            .conn
+            .write_conn
             .lock()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        Self::setup_conn(&conn)?;
+        Ok(())
+    }
 
+    fn setup_conn(conn: &Connection) -> Result<(), AksharaError> {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA foreign_keys = ON;
@@ -88,12 +153,40 @@ impl SqliteStore {
         )
         .map_err(|e| {
             AksharaError::Store(StoreError::IoError(format!(
-                "SQLite table init error: {}",
+                "SQLite table setup error: {}",
                 e
             )))
         })?;
-
         Ok(())
+    }
+
+    fn get_read_conn(&self) -> Result<ConnectionWrapper<'_>, AksharaError> {
+        if let Some(ref path) = self.path {
+            let mut pool = self
+                .read_pool
+                .lock()
+                .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+            if let Some(conn) = pool.pop() {
+                return Ok(ConnectionWrapper::Pooled {
+                    conn: Some(conn),
+                    pool: Arc::clone(&self.read_pool),
+                });
+            }
+            // Open a new read-only connection to the file database
+            let conn = Connection::open(path).map_err(sqlite_err)?;
+            Self::setup_conn(&conn)?;
+            Ok(ConnectionWrapper::Pooled {
+                conn: Some(conn),
+                pool: Arc::clone(&self.read_pool),
+            })
+        } else {
+            // Fallback for in-memory databases (connections are isolated, so must share write connection)
+            let guard = self
+                .write_conn
+                .lock()
+                .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+            Ok(ConnectionWrapper::Locked(guard))
+        }
     }
 }
 
@@ -101,35 +194,24 @@ impl SqliteStore {
 impl GraphStore for SqliteStore {
     async fn put_block_bytes(&self, id: &BlockId, data: &[u8]) -> Result<(), AksharaError> {
         let conn = self
-            .conn
+            .write_conn
             .lock()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        conn.execute(
-            "INSERT OR IGNORE INTO blocks (block_id, data) VALUES (?1, ?2)",
-            (id.to_bytes(), data),
-        )
-        .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        let mut stmt = conn
+            .prepare_cached("INSERT OR IGNORE INTO blocks (block_id, data) VALUES (?1, ?2)")
+            .map_err(sqlite_err)?;
+        stmt.execute((id.to_bytes(), data)).map_err(sqlite_err)?;
         Ok(())
     }
 
     async fn get_block_bytes(&self, id: &BlockId) -> Result<Option<Vec<u8>>, AksharaError> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        let conn = self.get_read_conn()?;
         let mut stmt = conn
-            .prepare("SELECT data FROM blocks WHERE block_id = ?1")
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-        let mut rows = stmt
-            .query((id.to_bytes(),))
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-        if let Some(row) = rows
-            .next()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?
-        {
-            let data: Vec<u8> = row
-                .get(0)
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            .prepare_cached("SELECT data FROM blocks WHERE block_id = ?1")
+            .map_err(sqlite_err)?;
+        let mut rows = stmt.query((id.to_bytes(),)).map_err(sqlite_err)?;
+        if let Some(row) = rows.next().map_err(sqlite_err)? {
+            let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
             Ok(Some(data))
         } else {
             Ok(None)
@@ -144,59 +226,56 @@ impl GraphStore for SqliteStore {
         data: &[u8],
     ) -> Result<(), AksharaError> {
         let mut conn = self
-            .conn
+            .write_conn
             .lock()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        let tx = conn.transaction().map_err(sqlite_err)?;
 
         // 1. Insert manifest metadata
-        tx.execute(
-            "INSERT OR IGNORE INTO manifests (manifest_id, graph_id, data) VALUES (?1, ?2, ?3)",
-            (id.to_bytes(), graph_id.as_bytes().as_ref(), data),
-        )
-        .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO manifests (manifest_id, graph_id, data) VALUES (?1, ?2, ?3)",
+                )
+                .map_err(sqlite_err)?;
+            stmt.execute((id.to_bytes(), graph_id.as_bytes().as_ref(), data))
+                .map_err(sqlite_err)?;
+        }
 
         // 2. Remove parent manifest IDs from heads list
-        for parent in parents {
-            tx.execute(
-                "DELETE FROM graph_heads WHERE graph_id = ?1 AND manifest_id = ?2",
-                (graph_id.as_bytes().as_ref(), parent.to_bytes()),
-            )
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        {
+            let mut stmt = tx
+                .prepare_cached("DELETE FROM graph_heads WHERE graph_id = ?1 AND manifest_id = ?2")
+                .map_err(sqlite_err)?;
+            for parent in parents {
+                stmt.execute((graph_id.as_bytes().as_ref(), parent.to_bytes()))
+                    .map_err(sqlite_err)?;
+            }
         }
 
         // 3. Insert the new manifest as a current head
-        tx.execute(
-            "INSERT OR IGNORE INTO graph_heads (graph_id, manifest_id) VALUES (?1, ?2)",
-            (graph_id.as_bytes().as_ref(), id.to_bytes()),
-        )
-        .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO graph_heads (graph_id, manifest_id) VALUES (?1, ?2)",
+                )
+                .map_err(sqlite_err)?;
+            stmt.execute((graph_id.as_bytes().as_ref(), id.to_bytes()))
+                .map_err(sqlite_err)?;
+        }
 
-        tx.commit()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        tx.commit().map_err(sqlite_err)?;
         Ok(())
     }
 
     async fn get_manifest_bytes(&self, id: &ManifestId) -> Result<Option<Vec<u8>>, AksharaError> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        let conn = self.get_read_conn()?;
         let mut stmt = conn
-            .prepare("SELECT data FROM manifests WHERE manifest_id = ?1")
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-        let mut rows = stmt
-            .query((id.to_bytes(),))
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-        if let Some(row) = rows
-            .next()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?
-        {
-            let data: Vec<u8> = row
-                .get(0)
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            .prepare_cached("SELECT data FROM manifests WHERE manifest_id = ?1")
+            .map_err(sqlite_err)?;
+        let mut rows = stmt.query((id.to_bytes(),)).map_err(sqlite_err)?;
+        if let Some(row) = rows.next().map_err(sqlite_err)? {
+            let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
             Ok(Some(data))
         } else {
             Ok(None)
@@ -204,25 +283,17 @@ impl GraphStore for SqliteStore {
     }
 
     async fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, AksharaError> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        let conn = self.get_read_conn()?;
         let mut stmt = conn
-            .prepare("SELECT manifest_id FROM graph_heads WHERE graph_id = ?1")
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            .prepare_cached("SELECT manifest_id FROM graph_heads WHERE graph_id = ?1")
+            .map_err(sqlite_err)?;
         let mut rows = stmt
             .query((graph_id.as_bytes().as_ref(),))
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            .map_err(sqlite_err)?;
 
         let mut heads = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?
-        {
-            let bytes: Vec<u8> = row
-                .get(0)
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        while let Some(row) = rows.next().map_err(sqlite_err)? {
+            let bytes: Vec<u8> = row.get(0).map_err(sqlite_err)?;
             let manifest_id = ManifestId::try_from(bytes.as_slice())?;
             heads.push(manifest_id);
         }
@@ -231,37 +302,26 @@ impl GraphStore for SqliteStore {
 
     async fn put_lockbox_bytes(&self, lakshana: &[u8], data: &[u8]) -> Result<(), AksharaError> {
         let conn = self
-            .conn
+            .write_conn
             .lock()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        conn.execute(
-            "INSERT INTO lockboxes (lakshana, data) VALUES (?1, ?2)",
-            (lakshana, data),
-        )
-        .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        let mut stmt = conn
+            .prepare_cached("INSERT INTO lockboxes (lakshana, data) VALUES (?1, ?2)")
+            .map_err(sqlite_err)?;
+        stmt.execute((lakshana, data)).map_err(sqlite_err)?;
         Ok(())
     }
 
     async fn get_lockboxes_bytes(&self, lakshana: &[u8]) -> Result<Vec<Vec<u8>>, AksharaError> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        let conn = self.get_read_conn()?;
         let mut stmt = conn
-            .prepare("SELECT data FROM lockboxes WHERE lakshana = ?1")
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-        let mut rows = stmt
-            .query((lakshana,))
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            .prepare_cached("SELECT data FROM lockboxes WHERE lakshana = ?1")
+            .map_err(sqlite_err)?;
+        let mut rows = stmt.query((lakshana,)).map_err(sqlite_err)?;
 
         let mut lockboxes = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?
-        {
-            let data: Vec<u8> = row
-                .get(0)
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        while let Some(row) = rows.next().map_err(sqlite_err)? {
+            let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
             lockboxes.push(data);
         }
         Ok(lockboxes)
@@ -273,14 +333,15 @@ impl GraphStore for SqliteStore {
         data: &[u8],
     ) -> Result<(), AksharaError> {
         let conn = self
-            .conn
+            .write_conn
             .lock()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO prekey_bundles (device_key, data) VALUES (?1, ?2)",
-            (device_key, data),
-        )
-        .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        let mut stmt = conn
+            .prepare_cached(
+                "INSERT OR REPLACE INTO prekey_bundles (device_key, data) VALUES (?1, ?2)",
+            )
+            .map_err(sqlite_err)?;
+        stmt.execute((device_key, data)).map_err(sqlite_err)?;
         Ok(())
     }
 
@@ -288,23 +349,13 @@ impl GraphStore for SqliteStore {
         &self,
         device_key: &[u8],
     ) -> Result<Option<Vec<u8>>, AksharaError> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        let conn = self.get_read_conn()?;
         let mut stmt = conn
-            .prepare("SELECT data FROM prekey_bundles WHERE device_key = ?1")
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-        let mut rows = stmt
-            .query((device_key,))
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-        if let Some(row) = rows
-            .next()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?
-        {
-            let data: Vec<u8> = row
-                .get(0)
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            .prepare_cached("SELECT data FROM prekey_bundles WHERE device_key = ?1")
+            .map_err(sqlite_err)?;
+        let mut rows = stmt.query((device_key,)).map_err(sqlite_err)?;
+        if let Some(row) = rows.next().map_err(sqlite_err)? {
+            let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
             Ok(Some(data))
         } else {
             Ok(None)
@@ -317,22 +368,24 @@ impl GraphStore for SqliteStore {
         prekeys: &[(u32, &[u8])],
     ) -> Result<(), AksharaError> {
         let mut conn = self
-            .conn
+            .write_conn
             .lock()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        let tx = conn.transaction().map_err(sqlite_err)?;
 
-        for (index, data) in prekeys {
-            tx.execute(
-                "INSERT OR REPLACE INTO one_time_prekeys (device_key, prekey_index, data) VALUES (?1, ?2, ?3)",
-                (device_key, index, data),
-            ).map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO one_time_prekeys (device_key, prekey_index, data) VALUES (?1, ?2, ?3)",
+                )
+                .map_err(sqlite_err)?;
+            for (index, data) in prekeys {
+                stmt.execute((device_key, index, data))
+                    .map_err(sqlite_err)?;
+            }
         }
 
-        tx.commit()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        tx.commit().map_err(sqlite_err)?;
         Ok(())
     }
 
@@ -340,28 +393,16 @@ impl GraphStore for SqliteStore {
         &self,
         device_key: &[u8],
     ) -> Result<Vec<(u32, Vec<u8>)>, AksharaError> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+        let conn = self.get_read_conn()?;
         let mut stmt = conn
-            .prepare("SELECT prekey_index, data FROM one_time_prekeys WHERE device_key = ?1")
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-        let mut rows = stmt
-            .query((device_key,))
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            .prepare_cached("SELECT prekey_index, data FROM one_time_prekeys WHERE device_key = ?1")
+            .map_err(sqlite_err)?;
+        let mut rows = stmt.query((device_key,)).map_err(sqlite_err)?;
 
         let mut prekeys = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?
-        {
-            let index: u32 = row
-                .get(0)
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-            let data: Vec<u8> = row
-                .get(1)
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        while let Some(row) = rows.next().map_err(sqlite_err)? {
+            let index: u32 = row.get(0).map_err(sqlite_err)?;
+            let data: Vec<u8> = row.get(1).map_err(sqlite_err)?;
             prekeys.push((index, data));
         }
         Ok(prekeys)
@@ -373,30 +414,21 @@ impl GraphStore for SqliteStore {
         prekey_index: u32,
     ) -> Result<Option<Vec<u8>>, AksharaError> {
         let mut conn = self
-            .conn
+            .write_conn
             .lock()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+        let tx = conn.transaction().map_err(sqlite_err)?;
 
         let key_bytes_opt = {
             let mut stmt = tx
-                .prepare(
+                .prepare_cached(
                     "SELECT data FROM one_time_prekeys WHERE device_key = ?1 AND prekey_index = ?2",
                 )
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
-            let mut rows = stmt
-                .query((device_key, prekey_index))
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+                .map_err(sqlite_err)?;
+            let mut rows = stmt.query((device_key, prekey_index)).map_err(sqlite_err)?;
 
-            if let Some(row) = rows
-                .next()
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?
-            {
-                let data: Vec<u8> = row
-                    .get(0)
-                    .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            if let Some(row) = rows.next().map_err(sqlite_err)? {
+                let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
                 Some(data)
             } else {
                 None
@@ -404,18 +436,20 @@ impl GraphStore for SqliteStore {
         };
 
         if let Some(data) = key_bytes_opt {
-            tx.execute(
-                "DELETE FROM one_time_prekeys WHERE device_key = ?1 AND prekey_index = ?2",
-                (device_key, prekey_index),
-            )
-            .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            {
+                let mut stmt = tx
+                    .prepare_cached(
+                        "DELETE FROM one_time_prekeys WHERE device_key = ?1 AND prekey_index = ?2",
+                    )
+                    .map_err(sqlite_err)?;
+                stmt.execute((device_key, prekey_index))
+                    .map_err(sqlite_err)?;
+            }
 
-            tx.commit()
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            tx.commit().map_err(sqlite_err)?;
             Ok(Some(data))
         } else {
-            tx.rollback()
-                .map_err(|e| AksharaError::Store(StoreError::IoError(e.to_string())))?;
+            tx.rollback().map_err(sqlite_err)?;
             Ok(None)
         }
     }
