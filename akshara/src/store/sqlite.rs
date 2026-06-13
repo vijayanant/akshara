@@ -92,6 +92,7 @@ enum ConnectionWrapper<'a> {
 
 impl<'a> std::ops::Deref for ConnectionWrapper<'a> {
     type Target = Connection;
+    #[allow(clippy::unwrap_used)]
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Locked(guard) => guard,
@@ -101,6 +102,7 @@ impl<'a> std::ops::Deref for ConnectionWrapper<'a> {
 }
 
 impl<'a> std::ops::DerefMut for ConnectionWrapper<'a> {
+    #[allow(clippy::unwrap_used)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Locked(guard) => guard,

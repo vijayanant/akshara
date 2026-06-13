@@ -281,7 +281,8 @@ impl SyncEngine {
 
         let root_addr = Address::from(manifest.content_root());
         if root_addr != Address::null() {
-            let root_bid = akshara_aadhaara::BlockId::try_from(root_addr).unwrap();
+            let root_bid =
+                akshara_aadhaara::BlockId::try_from(root_addr).map_err(Error::Protocol)?;
             ctx.queue_block_if_missing(&root_bid, manifest.graph_id())
                 .await?;
         }
@@ -328,10 +329,12 @@ impl SyncEngine {
                 if child_addr != Address::null() && !ctx.fetched.contains(&child_addr) {
                     ctx.block_graph_ids.insert(child_addr, b_graph_id);
                     if child_addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
-                        let mid = akshara_aadhaara::ManifestId::try_from(child_addr).unwrap();
+                        let mid = akshara_aadhaara::ManifestId::try_from(child_addr)
+                            .map_err(Error::Protocol)?;
                         ctx.queue_manifest_if_missing(&mid).await?;
                     } else {
-                        let bid = akshara_aadhaara::BlockId::try_from(child_addr).unwrap();
+                        let bid = akshara_aadhaara::BlockId::try_from(child_addr)
+                            .map_err(Error::Protocol)?;
                         ctx.queue_block_if_missing(&bid, b_graph_id).await?;
                     }
                 }
@@ -453,27 +456,31 @@ impl SyncEngine {
             let addr = missing.remove(0);
 
             let res = if addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
-                let mid = akshara_aadhaara::ManifestId::try_from(addr).unwrap();
-                match store.get_manifest(&mid).await {
-                    Ok(Some(m)) => akshara_aadhaara::to_canonical_bytes(&m)
-                        .map(|bytes| Portion::new(addr, bytes))
-                        .map_err(Error::Protocol),
-                    Ok(None) => Err(Error::Internal(format!(
-                        "Manifest {} missing during push",
-                        mid
-                    ))),
+                match akshara_aadhaara::ManifestId::try_from(addr) {
+                    Ok(mid) => match store.get_manifest(&mid).await {
+                        Ok(Some(m)) => akshara_aadhaara::to_canonical_bytes(&m)
+                            .map(|bytes| Portion::new(addr, bytes))
+                            .map_err(Error::Protocol),
+                        Ok(None) => Err(Error::Internal(format!(
+                            "Manifest {} missing during push",
+                            mid
+                        ))),
+                        Err(e) => Err(Error::Protocol(e)),
+                    },
                     Err(e) => Err(Error::Protocol(e)),
                 }
             } else {
-                let bid = akshara_aadhaara::BlockId::try_from(addr).unwrap();
-                match store.get_block(&bid).await {
-                    Ok(Some(b)) => akshara_aadhaara::to_canonical_bytes(&b)
-                        .map(|bytes| Portion::new(addr, bytes))
-                        .map_err(Error::Protocol),
-                    Ok(None) => Err(Error::Internal(format!(
-                        "Block {} missing during push",
-                        bid
-                    ))),
+                match akshara_aadhaara::BlockId::try_from(addr) {
+                    Ok(bid) => match store.get_block(&bid).await {
+                        Ok(Some(b)) => akshara_aadhaara::to_canonical_bytes(&b)
+                            .map(|bytes| Portion::new(addr, bytes))
+                            .map_err(Error::Protocol),
+                        Ok(None) => Err(Error::Internal(format!(
+                            "Block {} missing during push",
+                            bid
+                        ))),
+                        Err(e) => Err(Error::Protocol(e)),
+                    },
                     Err(e) => Err(Error::Protocol(e)),
                 }
             };
@@ -499,7 +506,8 @@ impl SyncEngine {
         for addr in addresses {
             if expanded.insert(addr) {
                 if addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
-                    let mid = akshara_aadhaara::ManifestId::try_from(addr).unwrap();
+                    let mid =
+                        akshara_aadhaara::ManifestId::try_from(addr).map_err(Error::Protocol)?;
                     if let Ok(Some(manifest)) = store.get_manifest(&mid).await {
                         let root_id = manifest.content_root();
                         if expanded.insert(Address::from(root_id)) {
@@ -507,7 +515,7 @@ impl SyncEngine {
                         }
                     }
                 } else if addr.codec() == akshara_aadhaara::CODEC_AKSHARA_BLOCK {
-                    let bid = akshara_aadhaara::BlockId::try_from(addr).unwrap();
+                    let bid = akshara_aadhaara::BlockId::try_from(addr).map_err(Error::Protocol)?;
                     queue.push_back(bid);
                 }
             }

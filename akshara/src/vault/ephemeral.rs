@@ -37,9 +37,10 @@ impl Vault for EphemeralVault {
             return Ok("existing".to_string());
         }
 
-        let mnemonic = mnemonic.unwrap_or_else(|| {
-            SecretIdentity::generate_mnemonic().expect("Failed to generate mnemonic")
-        });
+        let mnemonic = match mnemonic {
+            Some(m) => m,
+            None => SecretIdentity::generate_mnemonic().map_err(Error::Protocol)?,
+        };
 
         *stored = Some(Zeroizing::new(mnemonic));
         Ok("created".to_string())

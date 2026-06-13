@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use crate::base::address::{Address, BlockId, GraphId, ManifestId};
 use crate::base::crypto::GraphKey;
 use crate::graph::{Block, BlockType, Manifest};

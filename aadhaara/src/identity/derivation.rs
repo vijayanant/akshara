@@ -58,7 +58,5 @@ pub fn derive_slip0010_key(seed: &[u8; 64], path: &str) -> Result<SigningKey, Ak
         output.zeroize();
     }
 
-    Ok(SigningKey::from_bytes(
-        current_key.as_slice().try_into().unwrap(),
-    ))
+    Ok(SigningKey::from_bytes(&current_key))
 }

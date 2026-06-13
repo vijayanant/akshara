@@ -233,17 +233,16 @@ impl<'a, S: GraphStore + ?Sized> IdentityGraph<'a, S> {
 
         // 3. LATEST STATE PROTECTION: Prevent "Ghost Branches" by checking the latest known state.
         // If a revocation exists at the frontier, this manifest is rejected regardless of its local anchor.
-        let mut check_latest = false;
+        let mut latest_to_check = None;
         if let Some(latest) = latest_identity.filter(|&l| l != anchor)
             && let Ok(Some(anchor_manifest)) = self.store.get_manifest(anchor).await
             && let Ok(Some(latest_manifest)) = self.store.get_manifest(latest).await
             && anchor_manifest.graph_id() == latest_manifest.graph_id()
         {
-            check_latest = true;
+            latest_to_check = Some(latest);
         }
 
-        if check_latest {
-            let latest = latest_identity.unwrap();
+        if let Some(latest) = latest_to_check {
             match self.check_authorization_at(signer, latest).await {
                 Ok(_) => { /* Still valid at frontier */ }
                 Err(AksharaError::Integrity(IntegrityError::UnauthorizedSigner(msg))) => {
