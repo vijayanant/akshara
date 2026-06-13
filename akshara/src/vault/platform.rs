@@ -31,23 +31,26 @@ impl PlatformVault {
         let entry = keyring::Entry::new(&self.service, &Self::branch_key(index))
             .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?;
 
-        let password = hex::encode(data);
+        let password = Zeroizing::new(hex::encode(data));
         entry
             .set_password(&password)
             .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?;
         Ok(())
     }
 
-    fn load_branch(&self, index: u32) -> Result<Vec<u8>> {
+    fn load_branch(&self, index: u32) -> Result<Zeroizing<Vec<u8>>> {
         let entry = keyring::Entry::new(&self.service, &Self::branch_key(index))
             .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?;
 
-        let password = entry
-            .get_password()
-            .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?;
+        let password = Zeroizing::new(
+            entry
+                .get_password()
+                .map_err(|e| Error::Vault(VaultError::Keychain(e.to_string())))?,
+        );
 
-        hex::decode(password)
-            .map_err(|e| Error::Vault(VaultError::Keychain(format!("Hex decode failed: {}", e))))
+        let decoded = hex::decode(&*password)
+            .map_err(|e| Error::Vault(VaultError::Keychain(format!("Hex decode failed: {}", e))))?;
+        Ok(Zeroizing::new(decoded))
     }
 }
 
