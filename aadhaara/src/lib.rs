@@ -1,4 +1,5 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
+#![deny(unsafe_code)]
 
 pub(crate) mod base;
 pub(crate) mod graph;

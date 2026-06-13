@@ -9,6 +9,8 @@
 //! 6. Dr. Watson retrieves the Lockbox, syncs the record, reads Dr. Mehta's note, and adds a specialist consultation.
 //! 7. Priya pulls Dr. Watson's updates, verifying the combined cryptographically signed history.
 
+#![deny(unsafe_code)]
+
 use akshara::{Client, ClientConfig, Graph, LocalMemoryTransport};
 use akshara_aadhaara::{GraphStore, Lockbox};
 use chrono::Utc;

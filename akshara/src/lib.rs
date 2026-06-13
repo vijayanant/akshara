@@ -1,4 +1,5 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
+#![deny(unsafe_code)]
 
 //! The Akshara API — Developer-facing interface for building applications on Akshara.
 //!
