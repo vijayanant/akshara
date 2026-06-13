@@ -88,10 +88,49 @@ impl SyncEngine {
         }
 
         // 4. Request missing portions from remote, recursively discovering nested blocks via Merkle Tree index decryption
+        let PullResult {
+            manifests_received,
+            blocks_received,
+            bytes_transferred,
+            fetched_manifests,
+            fetched_blocks,
+        } = self
+            .pull_peer_portions(graph_id, store, key, &comparison.peer_surplus)
+            .await?;
+
+        // 5. Converge: Audit all received blocks and manifests now that we have all blocks in the store
+        self.audit_fetched_data(graph_id, store, key, &fetched_manifests, &fetched_blocks)
+            .await?;
+
+        // 6. Push missing local portions to remote peer
+        self.push_local_portions(graph_id, store, key, &comparison.self_surplus, mode)
+            .await?;
+
+        // 7. Conflict detection
+        let conflicts = self.detect_conflicts(graph_id, store, key).await?;
+        let conflicts_detected = conflicts.len();
+
+        Ok(SyncReport {
+            graphs_synced: 1,
+            manifests_received,
+            blocks_received,
+            bytes_transferred,
+            conflicts_detected,
+            conflicts,
+        })
+    }
+
+    /// Pull missing manifests and blocks from the remote peer, discovering nested structures.
+    async fn pull_peer_portions(
+        &self,
+        graph_id: GraphId,
+        store: &InMemoryStore,
+        key: &akshara_aadhaara::GraphKey,
+        peer_surplus: &akshara_aadhaara::Delta,
+    ) -> Result<PullResult> {
         use std::collections::{HashMap, HashSet};
         let mut fetched = HashSet::new();
-        let mut to_fetch: HashSet<Address> =
-            comparison.peer_surplus.missing().iter().cloned().collect();
+        let mut to_fetch: HashSet<Address> = peer_surplus.missing().iter().cloned().collect();
         let mut block_graph_ids = HashMap::new();
 
         let mut fetched_manifests = Vec::new();
@@ -282,7 +321,24 @@ impl SyncEngine {
             ));
         }
 
-        // 5. Converge: Audit all received blocks and manifests now that we have all blocks in the store
+        Ok(PullResult {
+            manifests_received,
+            blocks_received,
+            bytes_transferred,
+            fetched_manifests,
+            fetched_blocks,
+        })
+    }
+
+    /// Audit all fetched manifests and blocks to verify cryptographic integrity.
+    async fn audit_fetched_data(
+        &self,
+        graph_id: GraphId,
+        store: &InMemoryStore,
+        key: &akshara_aadhaara::GraphKey,
+        fetched_manifests: &[akshara_aadhaara::Manifest],
+        fetched_blocks: &[akshara_aadhaara::Block],
+    ) -> Result<()> {
         let is_identity_sync = graph_id == self.vault.get_identity_id().await?;
         let latest_anchor = self.vault.latest_identity_anchor();
 
@@ -291,11 +347,11 @@ impl SyncEngine {
             auditor = auditor.with_latest_identity(latest_anchor);
         }
 
-        for block in &fetched_blocks {
+        for block in fetched_blocks {
             auditor.audit_block(block).map_err(Error::Protocol)?;
         }
 
-        for manifest in &fetched_manifests {
+        for manifest in fetched_manifests {
             let expected_id = if manifest.graph_id() == graph_id {
                 Some(&graph_id)
             } else {
@@ -309,8 +365,19 @@ impl SyncEngine {
                 self.vault.update_identity_anchor(manifest.id());
             }
         }
+        Ok(())
+    }
 
-        let self_missing = comparison.self_surplus.missing().to_vec();
+    /// Push local missing manifests and blocks to the peer.
+    async fn push_local_portions(
+        &self,
+        graph_id: GraphId,
+        store: &InMemoryStore,
+        key: &akshara_aadhaara::GraphKey,
+        self_surplus: &akshara_aadhaara::Delta,
+        mode: SyncMode,
+    ) -> Result<()> {
+        let self_missing = self_surplus.missing().to_vec();
         if !self_missing.is_empty() {
             let self_missing_expanded = self
                 .expand_delta_with_key(store, &graph_id, key, self_missing, mode)
@@ -323,19 +390,7 @@ impl SyncEngine {
 
             // TODO: Accurate bytes_transferred update for push
         }
-
-        // 7. Conflict detection
-        let conflicts = self.detect_conflicts(graph_id, store, key).await?;
-        let conflicts_detected = conflicts.len();
-
-        Ok(SyncReport {
-            graphs_synced: 1,
-            manifests_received,
-            blocks_received,
-            bytes_transferred,
-            conflicts_detected,
-            conflicts,
-        })
+        Ok(())
     }
 
     /// Streams local missing data for pushing to peer.
@@ -559,4 +614,12 @@ fn flatten_index_rec<'a>(
         }
         Ok(())
     })
+}
+
+struct PullResult {
+    manifests_received: usize,
+    blocks_received: usize,
+    bytes_transferred: u64,
+    fetched_manifests: Vec<akshara_aadhaara::Manifest>,
+    fetched_blocks: Vec<akshara_aadhaara::Block>,
 }
