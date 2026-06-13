@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
+
 pub(crate) mod base;
 pub(crate) mod graph;
 pub(crate) mod identity;

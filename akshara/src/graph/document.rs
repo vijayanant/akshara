@@ -62,11 +62,8 @@ impl Graph {
         Ok(())
     }
 
-    /// Retrieve and reassemble a typed document from the specified path.
-    pub async fn get_document<D: AksharaDocument>(&self, path: &str) -> Result<D> {
-        validate_path(path)?;
-
-        // 1. Locate the latest manifest content root to resolve field CIDs
+    /// Helper to fetch the latest manifest for the graph.
+    pub(crate) async fn get_latest_manifest(&self) -> Result<akshara_aadhaara::Manifest> {
         let heads = self
             .store
             .get_heads(&self.graph_id)
@@ -74,19 +71,25 @@ impl Graph {
             .map_err(|e| Error::Internal(format!("Failed to get heads: {}", e)))?;
 
         if heads.is_empty() {
-            return Err(Error::PathNotFound(format!(
-                "No manifest sealed yet for document path: {}",
-                path
-            )));
+            return Err(Error::PathNotFound(
+                "No manifest sealed yet for document graph".to_string(),
+            ));
         }
 
-        let manifest_id = heads[0];
-        let manifest = self
-            .store
-            .get_manifest(&manifest_id)
+        self.store
+            .get_manifest(&heads[0])
             .await
             .map_err(|e| Error::Internal(format!("Failed to get manifest: {}", e)))?
-            .ok_or_else(|| Error::Internal("Manifest not found".to_string()))?;
+            .ok_or_else(|| Error::Internal("Manifest not found".to_string()))
+    }
+
+    /// Retrieve and reassemble a typed document from the specified path.
+    pub async fn get_document<D: AksharaDocument>(&self, path: &str) -> Result<D> {
+        validate_path(path)?;
+
+        // 1. Locate the latest manifest content root to resolve field CIDs
+        let manifest = self.get_latest_manifest().await?;
+        let content_root = manifest.content_root();
 
         // 2. Fetch and deserialize the main document root block from doc_path/.akshara.document
         let doc_internal_path = format!("{}/.akshara.document", path);
@@ -94,7 +97,7 @@ impl Graph {
         let doc_address = walker
             .resolve_path(
                 &self.graph_id,
-                manifest.content_root(),
+                content_root,
                 &doc_internal_path,
                 &self.graph_key,
             )
@@ -129,7 +132,7 @@ impl Graph {
             &self.graph_key,
             &self.store,
             path,
-            &manifest.content_root(),
+            &content_root,
         )
         .await
         .map_err(|e| Error::Internal(format!("Field deserialization failed: {}", e)))?;

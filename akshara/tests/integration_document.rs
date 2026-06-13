@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines)]
+
 use akshara::schema::{AksharaDocument, BlockMode, DocumentSchema, FieldDescriptor, LazyField};
 use akshara_aadhaara::{
     Address, BlockId, GraphId, GraphKey, GraphStore, InMemoryStore, SecretIdentity,

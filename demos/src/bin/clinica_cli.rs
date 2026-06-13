@@ -40,6 +40,7 @@ struct Consultation {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
     println!("   CLINICA: PATIENT-SOVEREIGN MEDICAL RECORDS DEMO          ");

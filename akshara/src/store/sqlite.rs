@@ -6,9 +6,78 @@ use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// A helper to map SQLite errors into Akshara errors.
 fn sqlite_err(e: rusqlite::Error) -> AksharaError {
     AksharaError::Store(StoreError::IoError(e.to_string()))
+}
+
+/// Helper to filter out manifest heads that are ancestors of other heads.
+fn filter_obsolete_heads(
+    conn: &rusqlite::Connection,
+    heads: Vec<ManifestId>,
+) -> Result<Vec<ManifestId>, AksharaError> {
+    if heads.len() <= 1 {
+        return Ok(heads);
+    }
+
+    let mut ancestors = std::collections::HashSet::new();
+    let mut stmt_manifest = conn
+        .prepare_cached("SELECT data FROM manifests WHERE manifest_id = ?1")
+        .map_err(sqlite_err)?;
+
+    for head in &heads {
+        let mut queue = std::collections::VecDeque::new();
+        let mut visited = std::collections::HashSet::new();
+
+        let mut parents = Vec::new();
+        {
+            let mut rows_m = stmt_manifest
+                .query((head.to_bytes(),))
+                .map_err(sqlite_err)?;
+            if let Some(row) = rows_m.next().map_err(sqlite_err)? {
+                let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
+                if let Ok(manifest) =
+                    akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Manifest>(&data)
+                {
+                    parents = manifest.parents().to_vec();
+                }
+            }
+        }
+
+        for parent in parents {
+            if visited.insert(parent) {
+                queue.push_back(parent);
+                ancestors.insert(parent);
+            }
+        }
+
+        while let Some(curr) = queue.pop_front() {
+            let mut curr_parents = Vec::new();
+            {
+                let mut rows_m = stmt_manifest
+                    .query((curr.to_bytes(),))
+                    .map_err(sqlite_err)?;
+                if let Some(row) = rows_m.next().map_err(sqlite_err)? {
+                    let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
+                    if let Ok(manifest) =
+                        akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Manifest>(&data)
+                    {
+                        curr_parents = manifest.parents().to_vec();
+                    }
+                }
+            }
+
+            for parent in curr_parents {
+                if visited.insert(parent) {
+                    queue.push_back(parent);
+                    ancestors.insert(parent);
+                }
+            }
+        }
+    }
+
+    let mut heads = heads;
+    heads.retain(|h| !ancestors.contains(h));
+    Ok(heads)
 }
 
 /// A connection wrapper that either holds a mutex lock for writes
@@ -220,6 +289,7 @@ impl GraphStore for SqliteStore {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn put_manifest_bytes(
         &self,
         id: &ManifestId,
@@ -300,71 +370,7 @@ impl GraphStore for SqliteStore {
             heads.push(manifest_id);
         }
 
-        if heads.len() <= 1 {
-            return Ok(heads);
-        }
-
-        // Clean up obsolete parent heads
-        let mut ancestors = std::collections::HashSet::new();
-        let mut stmt_manifest = conn
-            .prepare_cached("SELECT data FROM manifests WHERE manifest_id = ?1")
-            .map_err(sqlite_err)?;
-
-        for head in &heads {
-            let mut queue = std::collections::VecDeque::new();
-            let mut visited = std::collections::HashSet::new();
-
-            // Fetch manifest bytes for head
-            let mut parents = Vec::new();
-            {
-                let mut rows_m = stmt_manifest
-                    .query((head.to_bytes(),))
-                    .map_err(sqlite_err)?;
-                if let Some(row) = rows_m.next().map_err(sqlite_err)? {
-                    let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
-                    if let Ok(manifest) =
-                        akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Manifest>(&data)
-                    {
-                        parents = manifest.parents().to_vec();
-                    }
-                }
-            }
-
-            for parent in parents {
-                if visited.insert(parent) {
-                    queue.push_back(parent);
-                    ancestors.insert(parent);
-                }
-            }
-
-            while let Some(curr) = queue.pop_front() {
-                let mut curr_parents = Vec::new();
-                {
-                    let mut rows_m = stmt_manifest
-                        .query((curr.to_bytes(),))
-                        .map_err(sqlite_err)?;
-                    if let Some(row) = rows_m.next().map_err(sqlite_err)? {
-                        let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
-                        if let Ok(manifest) = akshara_aadhaara::from_canonical_bytes::<
-                            akshara_aadhaara::Manifest,
-                        >(&data)
-                        {
-                            curr_parents = manifest.parents().to_vec();
-                        }
-                    }
-                }
-
-                for parent in curr_parents {
-                    if visited.insert(parent) {
-                        queue.push_back(parent);
-                        ancestors.insert(parent);
-                    }
-                }
-            }
-        }
-
-        heads.retain(|h| !ancestors.contains(h));
-        Ok(heads)
+        filter_obsolete_heads(&conn, heads)
     }
 
     async fn put_lockbox_bytes(&self, lakshana: &[u8], data: &[u8]) -> Result<(), AksharaError> {

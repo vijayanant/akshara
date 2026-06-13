@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
+
 //! The Akshara API — Developer-facing interface for building applications on Akshara.
 //!
 //! This crate provides a high-level API that abstracts the cryptographic and protocol

@@ -47,18 +47,13 @@ impl Graph {
     /// at each manifest checkpoint to identify block modifications, signatures, and timestamps.
     pub async fn get_history(&self, path: &str) -> Result<Vec<RevisionEntry>> {
         validate_path_read(path)?;
-        let heads = self
-            .store
-            .get_heads(&self.graph_id)
-            .await
-            .map_err(|e| Error::Internal(format!("Failed to get heads: {}", e)))?;
-
-        if heads.is_empty() {
-            return Ok(Vec::new());
-        }
+        let start_manifest = match self.get_latest_manifest().await {
+            Ok(m) => m,
+            _ => return Ok(Vec::new()),
+        };
 
         let mut revisions = Vec::new();
-        let mut current_manifest_id = heads[0];
+        let mut current_manifest_id = start_manifest.id();
         let mut visited_manifests = std::collections::HashSet::new();
 
         while current_manifest_id != ManifestId::null() {
@@ -72,21 +67,16 @@ impl Graph {
             };
 
             let walker = akshara_aadhaara::GraphWalker::new(&self.store);
-            let address_result = walker
+            if let Ok(addr) = walker
                 .resolve_path(
                     &self.graph_id,
                     manifest.content_root(),
                     path,
                     &self.graph_key,
                 )
-                .await;
-
-            let block_id_opt = address_result
-                .ok()
-                .and_then(|addr| BlockId::try_from(addr).ok());
-
-            if let Some(block_id) = block_id_opt {
-                // To support updates & deduplicate contiguous duplicates, check against last recorded entry
+                .await
+                && let Ok(block_id) = BlockId::try_from(addr)
+            {
                 let is_duplicate = revisions
                     .last()
                     .map(|last: &RevisionEntry| last.block_id == block_id)
@@ -107,15 +97,13 @@ impl Graph {
                 }
             }
 
-            // Move to parent manifest
-            current_manifest_id = if !manifest.parents().is_empty() {
-                manifest.parents()[0]
-            } else {
-                ManifestId::null()
-            };
+            current_manifest_id = manifest
+                .parents()
+                .first()
+                .copied()
+                .unwrap_or(ManifestId::null());
         }
 
-        // Return chronological order (oldest first)
         revisions.reverse();
         Ok(revisions)
     }

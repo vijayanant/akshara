@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines)]
+
 use akshara::{Client, ClientConfig, Graph, LocalMemoryTransport, SyncMode};
 use akshara_aadhaara::GraphStore;
 use std::sync::Arc;

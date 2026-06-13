@@ -1,1 +1,29 @@
+# Cognitive Complexity Limit
 cognitive-complexity-threshold = 20
+
+# Maximum lines allowed per function (stricter limit for readable code)
+too-many-lines-threshold = 50
+
+# Maximum function arguments
+too-many-arguments-threshold = 7
+
+# Do not use generic placeholder names in production code
+disallowed-names = ["foo", "bar", "baz", "quux", "temp"]
+
+# Project-specific words allowed in documentation without backticks
+doc-valid-idents = [
+    "Akshara",
+    "Aadhaara",
+    "DAG",
+    "Merkle",
+    "CID",
+    "SQLite",
+    "Vite",
+    "Next.js",
+    "macOS",
+    "GitHub",
+    "Git",
+    "CBOR",
+    "LCA",
+    "RWLock"
+]

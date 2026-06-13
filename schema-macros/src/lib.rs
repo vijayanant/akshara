@@ -17,6 +17,7 @@ fn is_lazy_field_type(ty: &syn::Type) -> bool {
     AksharaDocument,
     attributes(block, collection, lazy, chunked, collaborative_text)
 )]
+#[allow(clippy::too_many_lines)]
 pub fn derive_akshara_document(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;

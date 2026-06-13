@@ -24,6 +24,7 @@ impl Graph {
     /// This is the core operation that coalesces pending writes by path,
     /// creates blocks with proper lineage, builds the Merkle index, and
     /// signs a manifest checkpoint.
+    #[allow(clippy::too_many_lines)]
     pub async fn flush(&self) -> Result<FlushReport> {
         let _lock = self.flush_lock.lock().await;
 

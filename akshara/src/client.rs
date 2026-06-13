@@ -52,6 +52,7 @@ impl Client {
     /// The graph is encrypted with a key derived from your identity and the
     /// graph ID. Each graph gets its own staging store — operations never
     /// leak across graph boundaries.
+    #[allow(clippy::too_many_lines)]
     pub async fn create_graph(&self) -> Result<Graph> {
         let graph_id = GraphId::new();
         let graph_key = self.vault.derive_graph_key(&graph_id).await?;

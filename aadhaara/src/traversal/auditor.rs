@@ -154,20 +154,17 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
                 // Found a genesis manifest!
                 let author = manifest.author();
 
-                if let Some(ref existing_root) = discovered_root {
-                    if existing_root != author {
-                        // UNIQUENESS OF TITLE VIOLATION:
-                        // This graph claims to anchor to two different people.
-                        return Err(AksharaError::Integrity(
-                            crate::base::error::IntegrityError::UnauthorizedSigner(
-                                "Conflict of Title: identity graph anchors to multiple root keys"
-                                    .to_string(),
-                            ),
-                        ));
-                    }
-                } else {
-                    discovered_root = Some(author.clone());
+                if let Some(ref existing) = discovered_root
+                    && existing != author
+                {
+                    return Err(AksharaError::Integrity(
+                        crate::base::error::IntegrityError::UnauthorizedSigner(
+                            "Conflict of Title: identity graph anchors to multiple root keys"
+                                .to_string(),
+                        ),
+                    ));
                 }
+                discovered_root = Some(author.clone());
             } else {
                 // Not a genesis, keep walking parents
                 for parent_id in manifest.parents() {
@@ -268,6 +265,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
     }
 
     /// Verifies if a root identity has been delegated authority via an AksharaTrustV1 block.
+    #[allow(clippy::too_many_lines)]
     async fn verify_trust_delegation(
         &self,
         manifest: &Manifest,
@@ -351,6 +349,7 @@ impl<'a, S: GraphStore + ?Sized> Auditor<'a, S> {
         Ok(false)
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn audit_manifest(
         &self,
         manifest: &Manifest,
