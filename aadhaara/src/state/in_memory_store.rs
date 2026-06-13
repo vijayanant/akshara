@@ -122,8 +122,52 @@ impl GraphStore for InMemoryStore {
             .heads
             .read()
             .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
-        let heads = heads_map.get(graph_id).cloned().unwrap_or_default();
-        trace!(graph_id = ?graph_id, count = heads.len(), "Retrieved heads");
+        let mut heads = heads_map.get(graph_id).cloned().unwrap_or_default();
+        drop(heads_map);
+
+        if heads.len() <= 1 {
+            trace!(graph_id = ?graph_id, count = heads.len(), "Retrieved heads");
+            return Ok(heads);
+        }
+
+        let mut ancestors = std::collections::HashSet::new();
+        let manifests = self
+            .manifests
+            .read()
+            .map_err(|_| AksharaError::Store(StoreError::LockPoisoned))?;
+
+        for head in &heads {
+            let mut queue = std::collections::VecDeque::new();
+            let mut visited = std::collections::HashSet::new();
+
+            if let Some(manifest) = manifests.get(head).and_then(|bytes| {
+                crate::base::encoding::from_canonical_bytes::<crate::graph::Manifest>(bytes).ok()
+            }) {
+                for parent in manifest.parents() {
+                    if visited.insert(*parent) {
+                        queue.push_back(*parent);
+                        ancestors.insert(*parent);
+                    }
+                }
+            }
+
+            while let Some(curr) = queue.pop_front() {
+                if let Some(manifest) = manifests.get(&curr).and_then(|bytes| {
+                    crate::base::encoding::from_canonical_bytes::<crate::graph::Manifest>(bytes)
+                        .ok()
+                }) {
+                    for parent in manifest.parents() {
+                        if visited.insert(*parent) {
+                            queue.push_back(*parent);
+                            ancestors.insert(*parent);
+                        }
+                    }
+                }
+            }
+        }
+
+        heads.retain(|h| !ancestors.contains(h));
+        trace!(graph_id = ?graph_id, count = heads.len(), "Retrieved heads after cleanup");
         Ok(heads)
     }
 

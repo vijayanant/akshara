@@ -299,6 +299,71 @@ impl GraphStore for SqliteStore {
             let manifest_id = ManifestId::try_from(bytes.as_slice())?;
             heads.push(manifest_id);
         }
+
+        if heads.len() <= 1 {
+            return Ok(heads);
+        }
+
+        // Clean up obsolete parent heads
+        let mut ancestors = std::collections::HashSet::new();
+        let mut stmt_manifest = conn
+            .prepare_cached("SELECT data FROM manifests WHERE manifest_id = ?1")
+            .map_err(sqlite_err)?;
+
+        for head in &heads {
+            let mut queue = std::collections::VecDeque::new();
+            let mut visited = std::collections::HashSet::new();
+
+            // Fetch manifest bytes for head
+            let mut parents = Vec::new();
+            {
+                let mut rows_m = stmt_manifest
+                    .query((head.to_bytes(),))
+                    .map_err(sqlite_err)?;
+                if let Some(row) = rows_m.next().map_err(sqlite_err)? {
+                    let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
+                    if let Ok(manifest) =
+                        akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Manifest>(&data)
+                    {
+                        parents = manifest.parents().to_vec();
+                    }
+                }
+            }
+
+            for parent in parents {
+                if visited.insert(parent) {
+                    queue.push_back(parent);
+                    ancestors.insert(parent);
+                }
+            }
+
+            while let Some(curr) = queue.pop_front() {
+                let mut curr_parents = Vec::new();
+                {
+                    let mut rows_m = stmt_manifest
+                        .query((curr.to_bytes(),))
+                        .map_err(sqlite_err)?;
+                    if let Some(row) = rows_m.next().map_err(sqlite_err)? {
+                        let data: Vec<u8> = row.get(0).map_err(sqlite_err)?;
+                        if let Ok(manifest) = akshara_aadhaara::from_canonical_bytes::<
+                            akshara_aadhaara::Manifest,
+                        >(&data)
+                        {
+                            curr_parents = manifest.parents().to_vec();
+                        }
+                    }
+                }
+
+                for parent in curr_parents {
+                    if visited.insert(parent) {
+                        queue.push_back(parent);
+                        ancestors.insert(parent);
+                    }
+                }
+            }
+        }
+
+        heads.retain(|h| !ancestors.contains(h));
         Ok(heads)
     }
 

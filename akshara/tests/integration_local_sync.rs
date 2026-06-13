@@ -1,4 +1,5 @@
-use akshara::{Client, ClientConfig, Graph, LocalMemoryTransport};
+use akshara::{Client, ClientConfig, Graph, LocalMemoryTransport, SyncMode};
+use akshara_aadhaara::GraphStore;
 use std::sync::Arc;
 
 #[tokio::test]
@@ -59,7 +60,7 @@ async fn test_local_in_memory_sync_between_two_clients() {
     let sync_engine_a = akshara::sync::SyncEngine::new(transport_to_b, client_a.vault().clone());
 
     let report_a = sync_engine_a
-        .sync_graph(graph_id, graph_a.store(), &graph_key)
+        .sync_graph(graph_id, graph_a.store(), &graph_key, SyncMode::Full)
         .await
         .unwrap();
     assert_eq!(report_a.graphs_synced, 1);
@@ -126,7 +127,7 @@ async fn test_local_sync_sovereign_collaborative_workflow() {
     let transport_a_to_b = Arc::new(LocalMemoryTransport::new(store_b.clone()));
     let sync_engine_a = akshara::sync::SyncEngine::new(transport_a_to_b, client_a.vault().clone());
     sync_engine_a
-        .sync_graph(graph_id, graph_a.store(), &graph_key)
+        .sync_graph(graph_id, graph_a.store(), &graph_key, SyncMode::Full)
         .await
         .unwrap();
 
@@ -141,11 +142,109 @@ async fn test_local_sync_sovereign_collaborative_workflow() {
     let transport_b_to_a = Arc::new(LocalMemoryTransport::new(graph_a.store().clone()));
     let sync_engine_b = akshara::sync::SyncEngine::new(transport_b_to_a, client_b.vault().clone());
     sync_engine_b
-        .sync_graph(graph_id, graph_b.store(), &graph_key)
+        .sync_graph(graph_id, graph_b.store(), &graph_key, SyncMode::Full)
         .await
         .unwrap();
 
     // 8. Verify Client A can read B's consultation note
     let note = graph_a.get("/consultations/0").await.unwrap();
     assert_eq!(note, b"Note by Dr. Mehta");
+}
+
+#[tokio::test]
+async fn test_sync_engine_detects_concurrent_path_conflict() {
+    // 1. Client A and Client B start from the same state
+    let client_a = Client::init(
+        ClientConfig::new()
+            .with_ephemeral_vault()
+            .with_in_memory_storage(),
+    )
+    .await
+    .unwrap();
+    let client_b = Client::init(
+        ClientConfig::new()
+            .with_ephemeral_vault()
+            .with_in_memory_storage(),
+    )
+    .await
+    .unwrap();
+
+    let graph_a = client_a.create_graph().await.unwrap();
+    let graph_id = graph_a.id();
+    let graph_key = graph_a.key().clone();
+
+    // Genesis setup: insert a baseline file
+    graph_a
+        .insert("/notes", b"Base notes".to_vec())
+        .await
+        .unwrap();
+    graph_a.flush().await.unwrap();
+
+    // Authorize Client B on Graph A
+    let identity_b = client_b.vault().get_identity(None).await.unwrap();
+    graph_a
+        .authorize_collaborator(identity_b.public().signing_key())
+        .await
+        .unwrap();
+    graph_a.flush().await.unwrap();
+
+    // Replicate baseline state to Client B
+    let dummy_b = client_b.create_graph().await.unwrap();
+    let store_b = dummy_b.store().clone();
+    let transport_a_to_b = Arc::new(LocalMemoryTransport::new(store_b.clone()));
+    let sync_a = akshara::sync::SyncEngine::new(transport_a_to_b, client_a.vault().clone());
+    sync_a
+        .sync_graph(graph_id, graph_a.store(), &graph_key, SyncMode::Full)
+        .await
+        .unwrap();
+
+    // Now instantiate Graph B handle
+    let graph_b = Graph::new(
+        graph_id,
+        graph_key.clone(),
+        client_b.vault().clone(),
+        store_b.clone(),
+        Arc::new(akshara::staging::InMemoryStagingStore::new()),
+        akshara::config::TuningConfig::default(),
+    );
+
+    // 2. CONCURRENT EDITS: A edits /notes, B edits /notes concurrently
+    graph_a
+        .insert("/notes", b"Edited by Client A".to_vec())
+        .await
+        .unwrap();
+    graph_a.flush().await.unwrap();
+
+    graph_b
+        .insert("/notes", b"Edited by Client B".to_vec())
+        .await
+        .unwrap();
+    graph_b.flush().await.unwrap();
+
+    // 3. Sync A's state to B: B should receive A's branch, resulting in two concurrent heads
+    let transport_a_to_b2 = Arc::new(LocalMemoryTransport::new(store_b.clone()));
+    let sync_a2 = akshara::sync::SyncEngine::new(transport_a_to_b2, client_a.vault().clone());
+
+    // Perform sync: B pulls from A
+    let report = sync_a2
+        .sync_graph(graph_id, graph_a.store(), &graph_key, SyncMode::Full)
+        .await
+        .unwrap();
+
+    // B's store should now have 2 heads for this graph
+    let heads = store_b.get_heads(&graph_id).await.unwrap();
+    println!("DEBUG: heads of B: {:?}", heads);
+    assert_eq!(
+        heads.len(),
+        2,
+        "Graph must have 2 concurrent heads after syncing a fork"
+    );
+
+    // The SyncReport should have detected 1 conflict
+    assert_eq!(report.conflicts_detected, 1);
+    assert_eq!(report.conflicts.len(), 1);
+    let conflict = &report.conflicts[0];
+    assert_eq!(conflict.path, "/notes");
+    assert_eq!(conflict.heads.len(), 2);
+    assert_eq!(conflict.divergent_blocks.len(), 2);
 }

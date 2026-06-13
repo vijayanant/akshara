@@ -3,8 +3,12 @@
 //! The SyncEngine coordinates between the transport layer and the protocol layer
 //! to synchronize graphs with relays or peers.
 
-use akshara_aadhaara::{Address, GraphId, GraphStore, InMemoryStore, Portion, Reconciler};
+use crate::sync::Conflict;
+use akshara_aadhaara::{
+    Address, BlockId, GraphId, GraphStore, InMemoryStore, Portion, Reconciler, SyncMode,
+};
 use futures::stream::{self, Stream};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -28,7 +32,7 @@ impl SyncEngine {
     /// Synchronize all graphs known to the client.
     ///
     /// Currently a stub - real implementation will walk the registry.
-    pub async fn sync_all(&self, _store: &InMemoryStore) -> Result<SyncReport> {
+    pub async fn sync_all(&self, _store: &InMemoryStore, _mode: SyncMode) -> Result<SyncReport> {
         // TODO: Iterate over all graphs in the registry and sync them.
         // For now, return empty report
         Ok(SyncReport {
@@ -37,6 +41,7 @@ impl SyncEngine {
             blocks_received: 0,
             bytes_transferred: 0,
             conflicts_detected: 0,
+            conflicts: vec![],
         })
     }
 
@@ -46,6 +51,7 @@ impl SyncEngine {
         graph_id: GraphId,
         store: &InMemoryStore,
         key: &akshara_aadhaara::GraphKey,
+        mode: SyncMode,
     ) -> Result<SyncReport> {
         // 1. Get local heads
         let local_heads = store
@@ -62,7 +68,7 @@ impl SyncEngine {
         // 3. Reconcile to find missing data
         let reconciler = Reconciler::new(store);
         let comparison = reconciler
-            .reconcile(&peer_heads, &local_heads)
+            .reconcile(&peer_heads, &local_heads, mode)
             .await
             .map_err(|e| Error::SyncFailed(format!("Reconciliation failed: {}", e)))?;
 
@@ -77,6 +83,7 @@ impl SyncEngine {
                 blocks_received: 0,
                 bytes_transferred: 0,
                 conflicts_detected: 0,
+                conflicts: vec![],
             });
         }
 
@@ -303,11 +310,10 @@ impl SyncEngine {
             }
         }
 
-        // 6. Push local surplus to peer
         let self_missing = comparison.self_surplus.missing().to_vec();
         if !self_missing.is_empty() {
             let self_missing_expanded = self
-                .expand_delta_with_key(store, &graph_id, key, self_missing)
+                .expand_delta_with_key(store, &graph_id, key, self_missing, mode)
                 .await?;
             let push_stream = self.stream_surplus(store, self_missing_expanded).await;
 
@@ -319,15 +325,8 @@ impl SyncEngine {
         }
 
         // 7. Conflict detection
-        let conflicts_detected = if !comparison.peer_surplus.missing().is_empty()
-            && !comparison.self_surplus.missing().is_empty()
-        {
-            // ALPHA: Simple heuristic - if both sides have surplus, there might be a fork
-            // In v0.2 we'll use actual LCA analysis.
-            1
-        } else {
-            0
-        };
+        let conflicts = self.detect_conflicts(graph_id, store, key).await?;
+        let conflicts_detected = conflicts.len();
 
         Ok(SyncReport {
             graphs_synced: 1,
@@ -335,6 +334,7 @@ impl SyncEngine {
             blocks_received,
             bytes_transferred,
             conflicts_detected,
+            conflicts,
         })
     }
 
@@ -384,15 +384,13 @@ impl SyncEngine {
         Box::pin(s)
     }
 
-    /// Expands a delta of CIDs by decrypting and walking the Merkle Index Tree.
-    /// This is necessary because in the blind model, the relay/store cannot look inside encrypted index blocks.
-    #[allow(clippy::collapsible_if)]
     async fn expand_delta_with_key(
         &self,
         store: &InMemoryStore,
         graph_id: &GraphId,
         key: &akshara_aadhaara::GraphKey,
         addresses: Vec<Address>,
+        mode: SyncMode,
     ) -> Result<Vec<Address>> {
         use std::collections::{HashSet, VecDeque};
         let mut expanded = HashSet::new();
@@ -417,25 +415,25 @@ impl SyncEngine {
 
         while let Some(current_id) = queue.pop_front() {
             if let Ok(Some(block)) = store.get_block(&current_id).await {
-                if *block.block_type() == akshara_aadhaara::BlockType::AksharaIndexV1 {
-                    if let Ok(plaintext) = block.decrypt(graph_id, key) {
-                        if let Ok(index) = akshara_aadhaara::from_canonical_bytes::<
-                            std::collections::BTreeMap<String, Address>,
-                        >(&plaintext)
+                if *block.block_type() == akshara_aadhaara::BlockType::AksharaIndexV1
+                    && let Ok(plaintext) = block.decrypt(graph_id, key)
+                    && let Ok(index) = akshara_aadhaara::from_canonical_bytes::<
+                        std::collections::BTreeMap<String, Address>,
+                    >(&plaintext)
+                {
+                    for (_, addr) in index {
+                        if expanded.insert(addr)
+                            && let Ok(bid) = akshara_aadhaara::BlockId::try_from(addr)
                         {
-                            for (_, addr) in index {
-                                if expanded.insert(addr) {
-                                    if let Ok(bid) = akshara_aadhaara::BlockId::try_from(addr) {
-                                        queue.push_back(bid);
-                                    }
-                                }
-                            }
+                            queue.push_back(bid);
                         }
                     }
                 }
-                for parent in block.parents() {
-                    if expanded.insert(Address::from(*parent)) {
-                        queue.push_back(*parent);
+                if mode == SyncMode::Full {
+                    for parent in block.parents() {
+                        if expanded.insert(Address::from(*parent)) {
+                            queue.push_back(*parent);
+                        }
                     }
                 }
             }
@@ -443,4 +441,122 @@ impl SyncEngine {
 
         Ok(expanded.into_iter().collect())
     }
+
+    /// Detect path-level conflicts across concurrent heads of a graph.
+    pub async fn detect_conflicts(
+        &self,
+        graph_id: GraphId,
+        store: &InMemoryStore,
+        key: &akshara_aadhaara::GraphKey,
+    ) -> Result<Vec<Conflict>> {
+        let heads = store
+            .get_heads(&graph_id)
+            .await
+            .map_err(|e| Error::SyncFailed(format!("Failed to get local heads: {}", e)))?;
+
+        if heads.len() <= 1 {
+            return Ok(vec![]);
+        }
+
+        let mut all_paths = HashSet::new();
+        let mut head_flattened = HashMap::new();
+
+        for head in &heads {
+            if let Some(manifest) = store.get_manifest(head).await.map_err(Error::Protocol)? {
+                let root = manifest.content_root();
+                if root != akshara_aadhaara::BlockId::null() {
+                    let mut flattened = BTreeMap::new();
+                    flatten_index_rec(store, &graph_id, &root, "".to_string(), key, &mut flattened)
+                        .await?;
+                    for path in flattened.keys() {
+                        all_paths.insert(path.clone());
+                    }
+                    head_flattened.insert(*head, flattened);
+                }
+            }
+        }
+
+        let mut conflicts = Vec::new();
+        for path in all_paths {
+            let mut distinct_targets = HashSet::new();
+            let mut conflicting_heads = Vec::new();
+            let mut divergent_blocks = Vec::new();
+
+            for head in &heads {
+                let addr_opt = head_flattened.get(head).and_then(|f| f.get(&path));
+                let bid_opt = match addr_opt {
+                    Some(addr) => BlockId::try_from(*addr).ok(),
+                    None => None,
+                };
+                distinct_targets.insert(bid_opt);
+                conflicting_heads.push(*head);
+                if let Some(bid) = bid_opt {
+                    divergent_blocks.push(bid);
+                }
+            }
+
+            if distinct_targets.len() > 1 {
+                conflicts.push(Conflict {
+                    graph_id,
+                    path,
+                    heads: conflicting_heads,
+                    divergent_blocks,
+                    strategy: None,
+                });
+            }
+        }
+
+        Ok(conflicts)
+    }
+}
+
+/// Recursive helper to flatten a Merkle Index starting from root.
+fn flatten_index_rec<'a>(
+    store: &'a InMemoryStore,
+    graph_id: &'a GraphId,
+    block_id: &'a akshara_aadhaara::BlockId,
+    current_path: String,
+    key: &'a akshara_aadhaara::GraphKey,
+    result: &'a mut std::collections::BTreeMap<String, Address>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let block = store
+            .get_block(block_id)
+            .await
+            .map_err(Error::Protocol)?
+            .ok_or_else(|| Error::SyncFailed(format!("Index block {} not found", block_id)))?;
+
+        let plaintext = block
+            .decrypt(graph_id, key)
+            .map_err(|e| Error::SyncFailed(format!("Failed to decrypt index block: {}", e)))?;
+
+        let index_map: std::collections::BTreeMap<String, Address> =
+            akshara_aadhaara::from_canonical_bytes(&plaintext)
+                .map_err(|e| Error::SyncFailed(format!("Failed to parse index: {}", e)))?;
+
+        for (name, addr) in index_map {
+            let path = format!("{}/{}", current_path, name);
+            if addr.codec() == akshara_aadhaara::CODEC_AKSHARA_BLOCK {
+                let child_id = akshara_aadhaara::BlockId::try_from(addr)
+                    .map_err(|e| Error::SyncFailed(format!("Invalid block address: {}", e)))?;
+
+                let child_block = store
+                    .get_block(&child_id)
+                    .await
+                    .map_err(Error::Protocol)?
+                    .ok_or_else(|| {
+                        Error::SyncFailed(format!("Child block {} not found", child_id))
+                    })?;
+
+                if *child_block.block_type() == akshara_aadhaara::BlockType::AksharaIndexV1 {
+                    flatten_index_rec(store, graph_id, &child_id, path, key, result).await?;
+                } else {
+                    result.insert(path, addr);
+                }
+            } else {
+                result.insert(path, addr);
+            }
+        }
+        Ok(())
+    })
 }

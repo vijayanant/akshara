@@ -260,7 +260,11 @@ async fn store_handles_out_of_order_insertion() {
 
     let heads = store.get_heads(&graph_id).await.unwrap();
     assert!(heads.contains(&m_b.id()));
-    assert!(heads.contains(&m_a.id()));
+    assert_eq!(
+        heads.len(),
+        1,
+        "Parent m_a must not be a head because its child m_b is in the store"
+    );
 }
 
 #[tokio::test]
