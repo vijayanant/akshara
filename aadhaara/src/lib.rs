@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
 #![deny(unsafe_code)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub(crate) mod base;
 pub(crate) mod graph;
