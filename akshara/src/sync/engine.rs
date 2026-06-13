@@ -17,6 +17,14 @@ use crate::graph::SyncReport;
 use crate::sync::transport::SyncTransport;
 use crate::vault::Vault;
 
+/// Context for portion processing during pull sync.
+struct IncomingContext<'a> {
+    store: &'a InMemoryStore,
+    fetched: &'a HashSet<Address>,
+    block_graph_ids: &'a mut HashMap<Address, GraphId>,
+    next_to_fetch: &'a mut HashSet<Address>,
+}
+
 /// The SyncEngine manages the multi-step synchronization process.
 pub struct SyncEngine {
     transport: Arc<dyn SyncTransport>,
@@ -164,150 +172,32 @@ impl SyncEngine {
                 let bytes = portion.data();
                 bytes_transferred += bytes.len() as u64;
 
+                let mut ctx = IncomingContext {
+                    store,
+                    fetched: &fetched,
+                    block_graph_ids: &mut block_graph_ids,
+                    next_to_fetch: &mut next_to_fetch,
+                };
+
                 if addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
-                    let manifest = akshara_aadhaara::from_canonical_bytes::<
-                        akshara_aadhaara::Manifest,
-                    >(bytes)
-                    .map_err(|e| Error::SyncFailed(format!("Failed to parse manifest: {}", e)))?;
-
-                    let actual_id = Address::from(manifest.id());
-                    if actual_id != *addr {
-                        return Err(Error::SyncFailed(format!(
-                            "CID mismatch: expected {}, got {}",
-                            addr, actual_id
-                        )));
-                    }
-
-                    // Store manifest so we can resolve its path and walk the parents
-                    store
-                        .put_manifest(&manifest)
-                        .await
-                        .map_err(Error::Protocol)?;
-
-                    // Add content root to queue if not fetched/stored
-                    let root_addr = Address::from(manifest.content_root());
-                    block_graph_ids.insert(root_addr, manifest.graph_id());
-                    if root_addr != Address::null() && !fetched.contains(&root_addr) {
-                        let root_bid = akshara_aadhaara::BlockId::try_from(root_addr).unwrap();
-                        if store
-                            .get_block(&root_bid)
-                            .await
-                            .map_err(Error::Protocol)?
-                            .is_none()
-                        {
-                            next_to_fetch.insert(root_addr);
-                        }
-                    }
-
-                    // Add identity anchor manifest to queue if not fetched/stored
-                    let anchor_mid = manifest.identity_anchor();
-                    if anchor_mid != akshara_aadhaara::ManifestId::null() {
-                        let anchor_addr = Address::from(anchor_mid);
-                        if !fetched.contains(&anchor_addr)
-                            && store
-                                .get_manifest(&anchor_mid)
-                                .await
-                                .map_err(Error::Protocol)?
-                                .is_none()
-                        {
-                            next_to_fetch.insert(anchor_addr);
-                        }
-                    }
-
-                    // Add parents to queue if not fetched/stored
-                    for parent_mid in manifest.parents() {
-                        let parent_addr = Address::from(*parent_mid);
-                        if !fetched.contains(&parent_addr)
-                            && store
-                                .get_manifest(parent_mid)
-                                .await
-                                .map_err(Error::Protocol)?
-                                .is_none()
-                        {
-                            next_to_fetch.insert(parent_addr);
-                        }
-                    }
-
-                    fetched_manifests.push(manifest);
+                    self.process_incoming_manifest(
+                        addr,
+                        bytes,
+                        &mut ctx,
+                        &mut fetched_manifests,
+                    )
+                    .await?;
                     manifests_received += 1;
                 } else {
-                    let block =
-                        akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Block>(bytes)
-                            .map_err(|e| {
-                                Error::SyncFailed(format!("Failed to parse block: {}", e))
-                            })?;
-
-                    let actual_id = Address::from(block.id());
-                    if actual_id != *addr {
-                        return Err(Error::SyncFailed(format!(
-                            "CID mismatch: expected {}, got {}",
-                            addr, actual_id
-                        )));
-                    }
-
-                    // Store block so we can decrypt/traverse it
-                    store.put_block(&block).await.map_err(Error::Protocol)?;
-
-                    let b_graph_id = block_graph_ids.get(addr).cloned().unwrap_or(graph_id);
-                    let dec_key = if b_graph_id == graph_id {
-                        key
-                    } else {
-                        &akshara_aadhaara::IDENTITY_GRAPH_KEY
-                    };
-
-                    // If it is an index block, decrypt and extract children
-                    if *block.block_type() == akshara_aadhaara::BlockType::AksharaIndexV1
-                        && let Ok(plaintext) = block.decrypt(&b_graph_id, dec_key)
-                        && let Ok(index) = akshara_aadhaara::from_canonical_bytes::<
-                            std::collections::BTreeMap<String, Address>,
-                        >(&plaintext)
-                    {
-                        for (_, child_addr) in index {
-                            if child_addr != Address::null() && !fetched.contains(&child_addr) {
-                                block_graph_ids.insert(child_addr, b_graph_id);
-                                if child_addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
-                                    let mid =
-                                        akshara_aadhaara::ManifestId::try_from(child_addr).unwrap();
-                                    if store
-                                        .get_manifest(&mid)
-                                        .await
-                                        .map_err(Error::Protocol)?
-                                        .is_none()
-                                    {
-                                        next_to_fetch.insert(child_addr);
-                                    }
-                                } else {
-                                    let bid =
-                                        akshara_aadhaara::BlockId::try_from(child_addr).unwrap();
-                                    if store
-                                        .get_block(&bid)
-                                        .await
-                                        .map_err(Error::Protocol)?
-                                        .is_none()
-                                    {
-                                        next_to_fetch.insert(child_addr);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Add parents to queue if not fetched/stored
-                    for parent_bid in block.parents() {
-                        let parent_addr = Address::from(*parent_bid);
-                        block_graph_ids.insert(parent_addr, b_graph_id);
-                        if !fetched.contains(&parent_addr)
-                            && store
-                                .get_block(parent_bid)
-                                .await
-                                .map_err(Error::Protocol)?
-                                .is_none()
-                        {
-                            next_to_fetch.insert(parent_addr);
-                        }
-                    }
-
-                    fetched_blocks.push(block);
+                    self.process_incoming_block(
+                        graph_id,
+                        key,
+                        addr,
+                        bytes,
+                        &mut ctx,
+                        &mut fetched_blocks,
+                    )
+                    .await?;
                     blocks_received += 1;
                 }
             }
@@ -328,6 +218,166 @@ impl SyncEngine {
             fetched_manifests,
             fetched_blocks,
         })
+    }
+
+    /// Process a manifest portion received during pull sync.
+    async fn process_incoming_manifest(
+        &self,
+        addr: &Address,
+        bytes: &[u8],
+        ctx: &mut IncomingContext<'_>,
+        fetched_manifests: &mut Vec<akshara_aadhaara::Manifest>,
+    ) -> Result<()> {
+        let manifest = akshara_aadhaara::from_canonical_bytes::<
+            akshara_aadhaara::Manifest,
+        >(bytes)
+        .map_err(|e| Error::SyncFailed(format!("Failed to parse manifest: {}", e)))?;
+
+        let actual_id = Address::from(manifest.id());
+        if actual_id != *addr {
+            return Err(Error::SyncFailed(format!(
+                "CID mismatch: expected {}, got {}",
+                addr, actual_id
+            )));
+        }
+
+        // Store manifest so we can resolve its path and walk the parents
+        ctx.store
+            .put_manifest(&manifest)
+            .await
+            .map_err(Error::Protocol)?;
+
+        // Add content root to queue if not fetched/stored
+        let root_addr = Address::from(manifest.content_root());
+        ctx.block_graph_ids.insert(root_addr, manifest.graph_id());
+        if root_addr != Address::null() && !ctx.fetched.contains(&root_addr) {
+            let root_bid = akshara_aadhaara::BlockId::try_from(root_addr).unwrap();
+            if ctx.store
+                .get_block(&root_bid)
+                .await
+                .map_err(Error::Protocol)?
+                .is_none()
+            {
+                ctx.next_to_fetch.insert(root_addr);
+            }
+        }
+
+        // Add identity anchor manifest to queue if not fetched/stored
+        let anchor_mid = manifest.identity_anchor();
+        if anchor_mid != akshara_aadhaara::ManifestId::null() {
+            let anchor_addr = Address::from(anchor_mid);
+            if !ctx.fetched.contains(&anchor_addr)
+                && ctx.store
+                    .get_manifest(&anchor_mid)
+                    .await
+                    .map_err(Error::Protocol)?
+                    .is_none()
+            {
+                ctx.next_to_fetch.insert(anchor_addr);
+            }
+        }
+
+        // Add parents to queue if not fetched/stored
+        for parent_mid in manifest.parents() {
+            let parent_addr = Address::from(*parent_mid);
+            if !ctx.fetched.contains(&parent_addr)
+                && ctx.store
+                    .get_manifest(parent_mid)
+                    .await
+                    .map_err(Error::Protocol)?
+                    .is_none()
+            {
+                ctx.next_to_fetch.insert(parent_addr);
+            }
+        }
+
+        fetched_manifests.push(manifest);
+        Ok(())
+    }
+
+    /// Process a data or index block portion received during pull sync.
+    async fn process_incoming_block(
+        &self,
+        graph_id: GraphId,
+        key: &akshara_aadhaara::GraphKey,
+        addr: &Address,
+        bytes: &[u8],
+        ctx: &mut IncomingContext<'_>,
+        fetched_blocks: &mut Vec<akshara_aadhaara::Block>,
+    ) -> Result<()> {
+        let block = akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Block>(bytes)
+            .map_err(|e| Error::SyncFailed(format!("Failed to parse block: {}", e)))?;
+
+        let actual_id = Address::from(block.id());
+        if actual_id != *addr {
+            return Err(Error::SyncFailed(format!(
+                "CID mismatch: expected {}, got {}",
+                addr, actual_id
+            )));
+        }
+
+        // Store block so we can decrypt/traverse it
+        ctx.store.put_block(&block).await.map_err(Error::Protocol)?;
+
+        let b_graph_id = ctx.block_graph_ids.get(addr).cloned().unwrap_or(graph_id);
+        let dec_key = if b_graph_id == graph_id {
+            key
+        } else {
+            &akshara_aadhaara::IDENTITY_GRAPH_KEY
+        };
+
+        // If it is an index block, decrypt and extract children
+        if *block.block_type() == akshara_aadhaara::BlockType::AksharaIndexV1
+            && let Ok(plaintext) = block.decrypt(&b_graph_id, dec_key)
+            && let Ok(index) = akshara_aadhaara::from_canonical_bytes::<
+                std::collections::BTreeMap<String, Address>,
+            >(&plaintext)
+        {
+            for (_, child_addr) in index {
+                if child_addr != Address::null() && !ctx.fetched.contains(&child_addr) {
+                    ctx.block_graph_ids.insert(child_addr, b_graph_id);
+                    if child_addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
+                        let mid = akshara_aadhaara::ManifestId::try_from(child_addr).unwrap();
+                        if ctx.store
+                            .get_manifest(&mid)
+                            .await
+                            .map_err(Error::Protocol)?
+                            .is_none()
+                        {
+                            ctx.next_to_fetch.insert(child_addr);
+                        }
+                    } else {
+                        let bid = akshara_aadhaara::BlockId::try_from(child_addr).unwrap();
+                        if ctx.store
+                            .get_block(&bid)
+                            .await
+                            .map_err(Error::Protocol)?
+                            .is_none()
+                        {
+                            ctx.next_to_fetch.insert(child_addr);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add parents to queue if not fetched/stored
+        for parent_bid in block.parents() {
+            let parent_addr = Address::from(*parent_bid);
+            ctx.block_graph_ids.insert(parent_addr, b_graph_id);
+            if !ctx.fetched.contains(&parent_addr)
+                && ctx.store
+                    .get_block(parent_bid)
+                    .await
+                    .map_err(Error::Protocol)?
+                    .is_none()
+            {
+                ctx.next_to_fetch.insert(parent_addr);
+            }
+        }
+
+        fetched_blocks.push(block);
+        Ok(())
     }
 
     /// Audit all fetched manifests and blocks to verify cryptographic integrity.
