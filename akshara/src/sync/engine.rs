@@ -180,13 +180,8 @@ impl SyncEngine {
                 };
 
                 if addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
-                    self.process_incoming_manifest(
-                        addr,
-                        bytes,
-                        &mut ctx,
-                        &mut fetched_manifests,
-                    )
-                    .await?;
+                    self.process_incoming_manifest(addr, bytes, &mut ctx, &mut fetched_manifests)
+                        .await?;
                     manifests_received += 1;
                 } else {
                     self.process_incoming_block(
@@ -228,10 +223,8 @@ impl SyncEngine {
         ctx: &mut IncomingContext<'_>,
         fetched_manifests: &mut Vec<akshara_aadhaara::Manifest>,
     ) -> Result<()> {
-        let manifest = akshara_aadhaara::from_canonical_bytes::<
-            akshara_aadhaara::Manifest,
-        >(bytes)
-        .map_err(|e| Error::SyncFailed(format!("Failed to parse manifest: {}", e)))?;
+        let manifest = akshara_aadhaara::from_canonical_bytes::<akshara_aadhaara::Manifest>(bytes)
+            .map_err(|e| Error::SyncFailed(format!("Failed to parse manifest: {}", e)))?;
 
         let actual_id = Address::from(manifest.id());
         if actual_id != *addr {
@@ -252,7 +245,8 @@ impl SyncEngine {
         ctx.block_graph_ids.insert(root_addr, manifest.graph_id());
         if root_addr != Address::null() && !ctx.fetched.contains(&root_addr) {
             let root_bid = akshara_aadhaara::BlockId::try_from(root_addr).unwrap();
-            if ctx.store
+            if ctx
+                .store
                 .get_block(&root_bid)
                 .await
                 .map_err(Error::Protocol)?
@@ -267,7 +261,8 @@ impl SyncEngine {
         if anchor_mid != akshara_aadhaara::ManifestId::null() {
             let anchor_addr = Address::from(anchor_mid);
             if !ctx.fetched.contains(&anchor_addr)
-                && ctx.store
+                && ctx
+                    .store
                     .get_manifest(&anchor_mid)
                     .await
                     .map_err(Error::Protocol)?
@@ -281,7 +276,8 @@ impl SyncEngine {
         for parent_mid in manifest.parents() {
             let parent_addr = Address::from(*parent_mid);
             if !ctx.fetched.contains(&parent_addr)
-                && ctx.store
+                && ctx
+                    .store
                     .get_manifest(parent_mid)
                     .await
                     .map_err(Error::Protocol)?
@@ -338,7 +334,8 @@ impl SyncEngine {
                     ctx.block_graph_ids.insert(child_addr, b_graph_id);
                     if child_addr.codec() == akshara_aadhaara::CODEC_AKSHARA_MANIFEST {
                         let mid = akshara_aadhaara::ManifestId::try_from(child_addr).unwrap();
-                        if ctx.store
+                        if ctx
+                            .store
                             .get_manifest(&mid)
                             .await
                             .map_err(Error::Protocol)?
@@ -348,7 +345,8 @@ impl SyncEngine {
                         }
                     } else {
                         let bid = akshara_aadhaara::BlockId::try_from(child_addr).unwrap();
-                        if ctx.store
+                        if ctx
+                            .store
                             .get_block(&bid)
                             .await
                             .map_err(Error::Protocol)?
@@ -366,7 +364,8 @@ impl SyncEngine {
             let parent_addr = Address::from(*parent_bid);
             ctx.block_graph_ids.insert(parent_addr, b_graph_id);
             if !ctx.fetched.contains(&parent_addr)
-                && ctx.store
+                && ctx
+                    .store
                     .get_block(parent_bid)
                     .await
                     .map_err(Error::Protocol)?
