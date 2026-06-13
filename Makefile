@@ -12,7 +12,7 @@ test:
 	cargo test
 
 coverage:
-	cargo tarpaulin --out Xml --out Html
+	cargo tarpaulin --out Xml --out Html --fail-under 55.67
 
 # The "Golden Command" for local dev
 verify: fmt lint test
