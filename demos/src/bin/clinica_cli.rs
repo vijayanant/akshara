@@ -205,13 +205,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             priya_id,
             &store_mehta,
             &akshara_aadhaara::IDENTITY_GRAPH_KEY,
+            akshara::SyncMode::Full,
         )
         .await?;
     println!("  -> Priya's public Identity Graph synced successfully.");
 
-    // Next, Dr. Mehta syncs the patient record graph using the recovered key
     sync_engine_mehta
-        .sync_graph(graph_id, &store_mehta, &recovered_key_mehta)
+        .sync_graph(
+            graph_id,
+            &store_mehta,
+            &recovered_key_mehta,
+            akshara::SyncMode::Full,
+        )
         .await?;
 
     // Dr. Mehta reads patient demographics
@@ -246,7 +251,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sync_engine_priya =
         akshara::sync::SyncEngine::new(transport_priya_pull, client_priya.vault().clone());
     sync_engine_priya
-        .sync_graph(graph_id, graph_priya.store(), &graph_key)
+        .sync_graph(
+            graph_id,
+            graph_priya.store(),
+            &graph_key,
+            akshara::SyncMode::Full,
+        )
         .await?;
     println!("  -> Priya Sharma's local store successfully updated.\n");
 
@@ -322,12 +332,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             priya_id,
             &store_watson,
             &akshara_aadhaara::IDENTITY_GRAPH_KEY,
+            akshara::SyncMode::Full,
         )
         .await?;
 
     // Next, Dr. Watson syncs the patient record graph using the recovered key
     sync_engine_watson
-        .sync_graph(graph_id, &store_watson, &recovered_key_watson)
+        .sync_graph(
+            graph_id,
+            &store_watson,
+            &recovered_key_watson,
+            akshara::SyncMode::Full,
+        )
         .await?;
 
     // Watson reads history including Dr. Mehta's consultation
@@ -359,7 +375,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sync_engine_priya_final =
         akshara::sync::SyncEngine::new(transport_priya_final, client_priya.vault().clone());
     sync_engine_priya_final
-        .sync_graph(graph_id, graph_priya.store(), &graph_key)
+        .sync_graph(
+            graph_id,
+            graph_priya.store(),
+            &graph_key,
+            akshara::SyncMode::Full,
+        )
         .await?;
 
     // Priya displays full audit trail

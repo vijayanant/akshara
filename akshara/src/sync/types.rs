@@ -1,9 +1,9 @@
 //! Sync-related types.
 
-use akshara_aadhaara::{GraphId, ManifestId};
+use akshara_aadhaara::{BlockId, GraphId, ManifestId};
 
 /// Represents a sync conflict (concurrent edits to same path).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conflict {
     /// The graph where the conflict occurred.
     pub graph_id: GraphId,
@@ -11,12 +11,14 @@ pub struct Conflict {
     pub path: String,
     /// Concurrent manifest heads causing the conflict.
     pub heads: Vec<ManifestId>,
+    /// Divergent block IDs corresponding to each head.
+    pub divergent_blocks: Vec<BlockId>,
     /// Optional resolution strategy.
     pub strategy: Option<MergeStrategy>,
 }
 
 /// Strategy for resolving sync conflicts.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum MergeStrategy {
     /// Keep the manifest with the lexicographically lower CID.
     /// Deterministic, all peers converge to same result.

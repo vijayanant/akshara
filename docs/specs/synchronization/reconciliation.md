@@ -101,17 +101,52 @@ Reconciliation is the process of identifying the difference between two separate
 Akshara supports two reconciliation modes to balance performance and completeness.
 
 ### 4.1. Fast Sync (Shallow Reconciliation)
-*   **Purpose:** Rapid state availability for edge devices.
-*   **Logic:** The `Reconciler` recursively identifies missing `Manifests` and their immediate `content_root` blocks. It stops the recursive walk at the **Lowest Common Ancestor (LCA)** of the manifests.
-*   **Invariant:** Only the latest versions of resources (and any concurrent conflicts) are identified. Historical "atoms" (block parents) older than the LCA are ignored.
+*   **Purpose:** Rapid state availability and change tracking for edge devices with minimal bandwidth overhead.
+*   **Logic:** 
+    1.  Computes the **Lowest Common Ancestor (LCA)** of the local and remote head sets.
+    2.  Identifies all missing `Manifest` blocks back to the LCA (this is required to audit the cryptographic signature/authority chain).
+    3.  Queues and expands the `content_root` (Merkle Index) of *only* the **heads** of the surplus manifests.
+    4.  Traverses the active Merkle Index BFS to collect current files and directory blocks. It does **not** traverse block parent links (skipping historical versions of files).
+*   **Invariant:** Only the latest versions of resources (and concurrent divergent versions) are identified. Historical data blocks older than the LCA are completely ignored.
 
 ### 4.2. Full Sync (Deep Reconciliation)
-*   **Purpose:** Archival durability and total history preservation (Relays).
-*   **Logic:** The `Reconciler` recursively identifies EVERY `Manifest` and EVERY `Block` parent in the surplus history.
-*   **Invariant:** Every atom of the graph is identified, ensuring the entire Resource DAG is preserved.
+*   **Purpose:** Archival durability and total history preservation.
+*   **Logic:** 
+    1.  Identifies all missing `Manifest` blocks back to genesis or LCA.
+    2.  For *every* surplus manifest, it queues and BFS-walks its `content_root`.
+    3.  Recursively fetches every block and all of its parent block links.
+*   **Invariant:** Every historical state of every resource is preserved, ensuring complete lineage replication.
 
-### 4.3. Conflict Identification
-Regardless of the mode, the `Reconciler` MUST identify **concurrent heads** (forks). If multiple manifests share a common ancestor but have no common child, all divergent blocks for a given path MUST be included in the `Delta` to ensure the application layer can surface the conflict to the user.
+### 4.3. Lowest Common Ancestor (LCA) Detection
+To calculate the sync boundaries, the reconciler computes the LCAs of the local head set $H_L$ and remote head set $H_R$ over the directed acyclic graph (DAG):
+1.  Compute the intersection of ancestors:
+    $$Common = Ancestors(H_L) \cap Ancestors(H_R)$$
+2.  Filter out any ancestors that are parented by other common ancestors:
+    $$LCA = \{ a \in Common \mid \nexists b \in Common : b \text{ is a descendant of } a \}$$
+
+### 4.4. Conflict Identification
+A conflict occurs when concurrent unmerged heads map the same path prefix to different resource versions. Regardless of the sync mode, the client MUST identify concurrent heads:
+1.  Decrypted indices for all concurrent heads are loaded.
+2.  The union of all paths across the heads is computed.
+3.  For each path, if the associated `BlockId` (or absence due to deletion) differs across heads, a `Conflict` structure is generated:
+    ```rust
+    pub struct Conflict {
+        pub graph_id: GraphId,
+        pub path: String,
+        pub heads: Vec<ManifestId>,
+        pub divergent_blocks: Vec<BlockId>,
+        pub strategy: Option<MergeStrategy>,
+    }
+    ```
+
+### 4.5. Change Tracking in Fast Sync Mode
+Fast Sync enables highly optimized change tracking between the local head and remote head without downloading intermediate data history:
+1.  **Merkle Skip Optimization:** Walk both Merkle trees concurrently. If any directory node CID matches between the local and remote indices, the entire subdirectory is skipped (as its content is identical).
+2.  **Leaf Classification:**
+    *   **Created:** Path exists in the remote index but not in the local index.
+    *   **Modified:** Path exists in both indices but points to divergent `BlockId` CIDs.
+    *   **Deleted:** Path exists in the local index but is absent in the remote index.
+3.  **Metadata Attribution:** The intermediate manifests (which are downloaded back to the LCA) provide the committer public keys and timestamps for change log attribution.
 
 ---
 

@@ -61,8 +61,8 @@ pub use ordering::{FractionalIndex, midpoint, parse_index};
 pub use schema::{AksharaDocument, CollaborativeText, DocField, ParagraphNode};
 pub use staging::{StagedOperation, StagingStore};
 pub use store::InMemoryStore;
-pub use sync::{LocalMemoryTransport, SyncTransport};
+pub use sync::{Conflict, LocalMemoryTransport, MergeStrategy, SyncTransport};
 pub use vault::Vault;
 
 // Re-export commonly used aadhaara types
-pub use akshara_aadhaara::{GraphId, GraphKey, Lakshana, SecretIdentity};
+pub use akshara_aadhaara::{GraphId, GraphKey, Lakshana, SecretIdentity, SyncMode};

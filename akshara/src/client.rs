@@ -1,6 +1,7 @@
 //! The Akshara client — main entry point for the API.
 use akshara_aadhaara::{
     BlockContent, GraphDescriptor, GraphId, GraphStore, IdentityGraph, InMemoryStore, Lakshana,
+    SyncMode,
 };
 use rand::RngCore;
 use std::sync::Arc;
@@ -219,18 +220,20 @@ impl Client {
     /// Synchronize all graphs with the relay.
     ///
     /// Currently uses `MockTransport` — real gRPC transport is coming in v0.2.
-    pub async fn sync_all(&self) -> Result<SyncReport> {
+    pub async fn sync_all(&self, mode: SyncMode) -> Result<SyncReport> {
         let transport = Arc::new(MockTransport::new());
         let engine = SyncEngine::new(transport, self.vault.clone());
-        engine.sync_all(&self.store).await
+        engine.sync_all(&self.store, mode).await
     }
 
     /// Synchronize a specific graph.
-    pub async fn sync_graph(&self, graph_id: GraphId) -> Result<SyncReport> {
+    pub async fn sync_graph(&self, graph_id: GraphId, mode: SyncMode) -> Result<SyncReport> {
         let transport = Arc::new(MockTransport::new());
         let engine = SyncEngine::new(transport, self.vault.clone());
         let graph_key = self.vault.derive_graph_key(&graph_id).await?;
-        engine.sync_graph(graph_id, &self.store, &graph_key).await
+        engine
+            .sync_graph(graph_id, &self.store, &graph_key, mode)
+            .await
     }
 
     /// Remove a graph from the local registry.

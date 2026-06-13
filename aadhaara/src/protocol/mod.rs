@@ -89,6 +89,16 @@ impl Portion {
     }
 }
 
+/// Sync mode selection.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SyncMode {
+    /// Fast sync: downloads manifests back to LCA, but only blocks for active heads.
+    #[default]
+    Fast,
+    /// Full sync: downloads all manifests and recursive block parents.
+    Full,
+}
+
 #[cfg(test)]
 mod test_sync_engine;
 

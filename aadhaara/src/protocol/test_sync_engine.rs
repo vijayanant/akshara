@@ -1,7 +1,7 @@
 use crate::{
     Address, BlockId, ManifestId,
-    protocol::{Heads, Reconciler},
-    state::in_memory_store::InMemoryStore,
+    protocol::{Heads, Reconciler, SyncMode},
+    state::{in_memory_store::InMemoryStore, store::GraphStore},
     test_utils::TestFactory,
 };
 
@@ -17,7 +17,7 @@ async fn reconciler_handles_empty_heads() {
     let self_heads: Vec<ManifestId> = vec![];
 
     let comparison = reconciler
-        .reconcile(&peer_heads, &self_heads)
+        .reconcile(&peer_heads, &self_heads, SyncMode::Full)
         .await
         .unwrap();
 
@@ -45,7 +45,7 @@ async fn reconciler_handles_one_empty_one_with_heads() {
     let self_heads: Vec<ManifestId> = vec![];
 
     let comparison = reconciler
-        .reconcile(&peer_heads, &self_heads)
+        .reconcile(&peer_heads, &self_heads, SyncMode::Full)
         .await
         .unwrap();
 
@@ -68,7 +68,9 @@ async fn reconciler_rejects_too_many_heads() {
     let peer_heads = Heads::new(factory.graph_id, heads);
     let self_heads: Vec<ManifestId> = vec![];
 
-    let result = reconciler.reconcile(&peer_heads, &self_heads).await;
+    let result = reconciler
+        .reconcile(&peer_heads, &self_heads, SyncMode::Full)
+        .await;
 
     assert!(result.is_err(), "Should reject too many heads");
 }
@@ -90,7 +92,7 @@ async fn reconciler_identifies_peer_surplus() {
 
     let reconciler = Reconciler::new(factory.store.as_ref());
     let comparison = reconciler
-        .reconcile(&peer_heads, &self_heads)
+        .reconcile(&peer_heads, &self_heads, SyncMode::Full)
         .await
         .expect("Reconciliation failed");
 
@@ -129,7 +131,7 @@ async fn reconciler_identifies_self_surplus() {
 
     let reconciler = Reconciler::new(factory.store.as_ref());
     let comparison = reconciler
-        .reconcile(&peer_heads, &self_heads)
+        .reconcile(&peer_heads, &self_heads, SyncMode::Full)
         .await
         .expect("Reconciliation failed");
 
@@ -172,7 +174,7 @@ async fn reconciler_handles_symmetric_forks() {
 
     let reconciler = Reconciler::new(factory.store.as_ref());
     let comparison = reconciler
-        .reconcile(&peer_heads, &self_heads)
+        .reconcile(&peer_heads, &self_heads, SyncMode::Full)
         .await
         .unwrap();
 
@@ -205,7 +207,7 @@ async fn reconciler_returns_empty_if_identical() {
 
     let reconciler = Reconciler::new(factory.store.as_ref());
     let comparison = reconciler
-        .reconcile(&peer_heads, &self_heads)
+        .reconcile(&peer_heads, &self_heads, SyncMode::Full)
         .await
         .unwrap();
 
@@ -294,4 +296,103 @@ async fn test_converge_fails_on_first_error() {
 
     // Must return an error, and the process stops
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_reconciler_find_lcas() {
+    let factory = TestFactory::with_anchor().await;
+    let m1 = factory.create_genesis().await; // LCA candidate
+    let m2 = factory
+        .create_manifest(factory.dummy_root(), vec![m1.id()])
+        .await;
+
+    let root_b = BlockId::from_sha256(&[0xB1; 32]);
+    let root_c = BlockId::from_sha256(&[0xC1; 32]);
+    let m_b = factory.create_manifest(root_b, vec![m2.id()]).await;
+    let m_c = factory.create_manifest(root_c, vec![m2.id()]).await;
+
+    let reconciler = Reconciler::new(factory.store.as_ref());
+    let lcas = reconciler
+        .find_lcas(&[m_b.id()], &[m_c.id()])
+        .await
+        .unwrap();
+
+    assert_eq!(lcas.len(), 1);
+    assert!(lcas.contains(&m2.id()));
+}
+
+#[tokio::test]
+async fn test_reconciler_fast_sync_skips_intermediate_blocks() {
+    let factory = TestFactory::with_anchor().await;
+    let m1 = factory.create_genesis().await;
+
+    // We create a data block B1
+    let data_b1 = vec![0x01; 64];
+    let block1 = crate::graph::Block::new(
+        factory.graph_id,
+        data_b1,
+        crate::graph::BlockType::AksharaDataV1,
+        vec![],
+        &factory.graph_key,
+        &factory.identity,
+    )
+    .unwrap();
+    factory.store.put_block(&block1).await.unwrap();
+
+    // Manifest M2 points to content root block1.id()
+    let m2 = factory.create_manifest(block1.id(), vec![m1.id()]).await;
+
+    // We create a data block B2, parented by block1.id()
+    let data_b2 = vec![0x02; 64];
+    let block2 = crate::graph::Block::new(
+        factory.graph_id,
+        data_b2,
+        crate::graph::BlockType::AksharaDataV1,
+        vec![block1.id()],
+        &factory.graph_key,
+        &factory.identity,
+    )
+    .unwrap();
+    factory.store.put_block(&block2).await.unwrap();
+
+    // Manifest M3 points to content root block2.id()
+    let m3 = factory.create_manifest(block2.id(), vec![m2.id()]).await;
+
+    let reconciler = Reconciler::new(factory.store.as_ref());
+
+    // PEER has M3, SELF has M1.
+    let peer_heads = Heads::new(factory.graph_id, vec![m3.id()]);
+    let self_heads = vec![m1.id()];
+
+    // 1. Reconcile with SyncMode::Fast
+    let comparison_fast = reconciler
+        .reconcile(&peer_heads, &self_heads, SyncMode::Fast)
+        .await
+        .unwrap();
+
+    // The delta for Fast Sync must contain the manifests m2.id() and m3.id()
+    // It must contain block2.id() (the content_root of the head manifest m3)
+    // But it MUST NOT contain block1.id() (the parent block from the intermediate state)
+    let missing_fast = comparison_fast.peer_surplus.missing();
+    assert!(missing_fast.contains(&Address::from(m2.id())));
+    assert!(missing_fast.contains(&Address::from(m3.id())));
+    assert!(missing_fast.contains(&Address::from(block2.id())));
+    assert!(
+        !missing_fast.contains(&Address::from(block1.id())),
+        "Fast sync must skip intermediate block1"
+    );
+
+    // 2. Reconcile with SyncMode::Full
+    let comparison_full = reconciler
+        .reconcile(&peer_heads, &self_heads, SyncMode::Full)
+        .await
+        .unwrap();
+    let missing_full = comparison_full.peer_surplus.missing();
+    assert!(missing_full.contains(&Address::from(m2.id())));
+    assert!(missing_full.contains(&Address::from(m3.id())));
+    assert!(missing_full.contains(&Address::from(block2.id())));
+    assert!(
+        missing_full.contains(&Address::from(block1.id())),
+        "Full sync must include intermediate block1"
+    );
 }

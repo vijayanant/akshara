@@ -1,7 +1,7 @@
 use crate::base::address::{Address, BlockId, ManifestId};
 use crate::base::error::{AksharaError, ProtocolError};
 use crate::graph::BlockType;
-use crate::protocol::{Comparison, ConvergenceReport, Delta, Heads, Portion};
+use crate::protocol::{Comparison, ConvergenceReport, Delta, Heads, Portion, SyncMode};
 use crate::state::store::GraphStore;
 use crate::traversal::walker::GraphWalker;
 use metrics::counter;
@@ -17,11 +17,43 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
         Self { store }
     }
 
+    /// Finds the Lowest Common Ancestors (LCAs) between two sets of heads.
+    pub async fn find_lcas(
+        &self,
+        local_heads: &[ManifestId],
+        peer_heads: &[ManifestId],
+    ) -> Result<HashSet<ManifestId>, AksharaError> {
+        let walker = GraphWalker::new(self.store);
+
+        let mut local_known = HashSet::new();
+        for head in local_heads {
+            local_known.insert(*head);
+            local_known.extend(walker.get_ancestors(head).await?);
+        }
+
+        let mut peer_known = HashSet::new();
+        for head in peer_heads {
+            peer_known.insert(*head);
+            peer_known.extend(walker.get_ancestors(head).await?);
+        }
+
+        let common: HashSet<ManifestId> = local_known.intersection(&peer_known).cloned().collect();
+
+        let mut ancestors_of_common = HashSet::new();
+        for node in &common {
+            ancestors_of_common.extend(walker.get_ancestors(node).await?);
+        }
+
+        let lcas = common.difference(&ancestors_of_common).cloned().collect();
+        Ok(lcas)
+    }
+
     /// Determines the bi-directional knowledge gap between two frontiers.
     pub async fn reconcile(
         &self,
         peer_heads: &Heads,
         local_heads: &[ManifestId],
+        mode: SyncMode,
     ) -> Result<Comparison, AksharaError> {
         let span = span!(Level::INFO, "reconcile", graph_id = ?peer_heads.graph_id);
         let _enter = span.enter();
@@ -54,8 +86,12 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
             self_known.difference(&peer_known).cloned().collect();
 
         // 5. Expand manifests to full address deltas (including recursive content)
-        let peer_surplus_delta = self.expand_to_delta(&peer_surplus_manifests).await?;
-        let self_surplus_delta = self.expand_to_delta(&self_surplus_manifests).await?;
+        let peer_surplus_delta = self
+            .expand_to_delta(&peer_surplus_manifests, peer_heads.heads(), mode)
+            .await?;
+        let self_surplus_delta = self
+            .expand_to_delta(&self_surplus_manifests, local_heads, mode)
+            .await?;
 
         debug!(
             peer_surplus = peer_surplus_delta.missing().len(),
@@ -87,17 +123,35 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
     fn expand_to_delta<'b>(
         &'b self,
         manifest_ids: &'b [ManifestId],
+        heads: &'b [ManifestId],
+        mode: SyncMode,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Delta, AksharaError>> + Send + 'b>>
     {
         Box::pin(async move {
             let mut addresses = HashSet::new();
             let mut block_queue = VecDeque::new();
 
+            // 1. All manifests are always included to verify signature chain back to LCA
             for m_id in manifest_ids {
                 addresses.insert(Address::from(*m_id));
-                if let Some(manifest) = self.store.get_manifest(m_id).await? {
+            }
+
+            // 2. Classify manifests whose content root we want to traverse
+            let manifests_to_expand = if mode == SyncMode::Fast {
+                let head_set: HashSet<ManifestId> = heads.iter().cloned().collect();
+                manifest_ids
+                    .iter()
+                    .filter(|m| head_set.contains(m))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            } else {
+                manifest_ids.to_vec()
+            };
+
+            for m_id in manifests_to_expand {
+                if let Some(manifest) = self.store.get_manifest(&m_id).await? {
                     let root_id = manifest.content_root();
-                    if addresses.insert(Address::from(root_id)) {
+                    if root_id != BlockId::null() && addresses.insert(Address::from(root_id)) {
                         block_queue.push_back(root_id);
                     }
                 }
@@ -113,9 +167,11 @@ impl<'a, S: GraphStore + ?Sized> Reconciler<'a, S> {
                     }
 
                     // Add parents (for linear block history if applicable)
-                    for parent in block.parents() {
-                        if addresses.insert(Address::from(*parent)) {
-                            block_queue.push_back(*parent);
+                    if mode == SyncMode::Full {
+                        for parent in block.parents() {
+                            if addresses.insert(Address::from(*parent)) {
+                                block_queue.push_back(*parent);
+                            }
                         }
                     }
                 }

@@ -27,6 +27,6 @@ pub use identity::{
     GraphDescriptor, IdentityGraph, MasterIdentity, PreKeyBundle, SecretIdentity,
     graph::IDENTITY_GRAPH_KEY, paths,
 };
-pub use protocol::{Comparison, Delta, Heads, Portion, Reconciler};
+pub use protocol::{Comparison, Delta, Heads, Portion, Reconciler, SyncMode};
 pub use state::{GraphStore, InMemoryStore};
 pub use traversal::{Auditor, BlockWalker, GraphWalker, IndexBuilder};

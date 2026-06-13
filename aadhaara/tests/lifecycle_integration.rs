@@ -1,7 +1,7 @@
 use akshara_aadhaara::{
     Address, Block, BlockContent, BlockId, GraphDescriptor, GraphId, GraphKey, GraphStore, Heads,
     IdentityGraph, InMemoryStore, IndexBuilder, Manifest, ManifestId, MasterIdentity, Reconciler,
-    SecretIdentity,
+    SecretIdentity, SyncMode,
 };
 use rand::RngCore;
 use rand::rngs::OsRng;
@@ -67,7 +67,7 @@ async fn test_sync_recursive_index_structure() {
     let heads_relay = relay_store.get_heads(&graph_id).await.unwrap();
 
     let comp_pull = reconciler_phone
-        .reconcile(&Heads::new(graph_id, heads_relay), &[])
+        .reconcile(&Heads::new(graph_id, heads_relay), &[], SyncMode::Full)
         .await
         .unwrap();
     reconciler_phone
@@ -156,7 +156,7 @@ async fn test_identity_rebirth_bootstrap() {
     );
 
     let comp = reconciler
-        .reconcile(&Heads::new(derived_id_gid, heads), &[])
+        .reconcile(&Heads::new(derived_id_gid, heads), &[], SyncMode::Full)
         .await
         .unwrap();
     reconciler

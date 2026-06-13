@@ -1,5 +1,6 @@
 //! Integration tests for sync module.
 
+use akshara::SyncMode;
 use akshara::SyncTransport;
 use akshara::sync::MockTransport;
 use akshara::sync::{Conflict, MergeStrategy, SyncEngine};
@@ -82,7 +83,7 @@ async fn sync_engine_sync_graph_empty_store() {
     let graph_key = vault.derive_graph_key(&graph_id).await.unwrap();
 
     let report = engine
-        .sync_graph(graph_id, &store, &graph_key)
+        .sync_graph(graph_id, &store, &graph_key, SyncMode::Full)
         .await
         .unwrap();
 
@@ -111,7 +112,7 @@ async fn sync_engine_push_surplus() {
 
     // SYNC TURN: Should push the local manifest and block
     let report = engine
-        .sync_graph(factory.graph_id, store, &factory.graph_key)
+        .sync_graph(factory.graph_id, store, &factory.graph_key, SyncMode::Full)
         .await
         .unwrap();
 
@@ -168,6 +169,7 @@ fn conflict_struct() {
         graph_id,
         path: "/test".to_string(),
         heads: vec![],
+        divergent_blocks: vec![],
         strategy: None,
     };
 
@@ -188,7 +190,7 @@ async fn client_sync_with_mock_transport() {
     let client = Client::init(config).await.unwrap();
 
     // Sync should work with mock transport (returns empty report)
-    let report = client.sync_all().await.unwrap();
+    let report = client.sync_all(SyncMode::Full).await.unwrap();
 
     assert_eq!(report.graphs_synced, 0);
     assert_eq!(report.manifests_received, 0);
@@ -204,7 +206,7 @@ async fn client_sync_graph_with_mock_transport() {
     let graph_id = GraphId::new();
 
     // Sync specific graph should work with mock transport
-    let report = client.sync_graph(graph_id).await.unwrap();
+    let report = client.sync_graph(graph_id, SyncMode::Full).await.unwrap();
 
     assert_eq!(report.graphs_synced, 1);
     // Mock returns empty, so no data transferred
