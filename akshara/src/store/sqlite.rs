@@ -246,7 +246,12 @@ impl SqliteStore {
                 });
             }
             // Open a new read-only connection to the file database
-            let conn = Connection::open(path).map_err(sqlite_err)?;
+            let conn = Connection::open_with_flags(
+                path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .map_err(sqlite_err)?;
             Self::setup_conn(&conn)?;
             Ok(ConnectionWrapper::Pooled {
                 conn: Some(conn),
