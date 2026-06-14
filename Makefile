@@ -12,7 +12,8 @@ test:
 	cargo test
 
 coverage:
-	cargo tarpaulin --out Xml --out Html --fail-under 55.67
+	cargo llvm-cov --workspace --html
+	cargo llvm-cov report --cobertura --output-path cobertura.xml --fail-under-lines 86.00
 
 # The "Golden Command" for local dev
 verify: fmt lint test
