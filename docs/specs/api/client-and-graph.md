@@ -53,14 +53,17 @@ pub struct ClientConfig {
 ```rust
 pub enum VaultConfig {
     /// OS keychain: macOS Keychain, iOS Secure Enclave, Windows Credential Locker
-    Platform,
+    Platform { passphrase: Option<String> },
 
     /// In-memory, for testing only. Secret material is Zeroized on drop.
-    Ephemeral,
+    Ephemeral { passphrase: Option<String> },
+
+    /// Custom vault implementation
+    Custom { backend: Arc<dyn Vault> },
 }
 ```
 
-A `Custom` variant is deliberately omitted. Vault implementations are platform-specific and the SDK ships the two that cover production and testing. If a custom vault is needed, the developer implements the `Vault` trait directly (see §1.5).
+A `Custom` variant is included for users who need to integrate with specific HSMs or custom secure enclaves that fall outside of the `Platform` standard implementations.
 
 ### 1.4 `StorageConfig`
 
@@ -168,11 +171,11 @@ impl Client {
 | `GraphNotFound` | No heads exist locally for this graph |
 | `InvalidLakshana` | The lakshana string fails to parse |
 
-### 1.9 `Client::list_graphs`
+### 1.9 `Client::discover_graphs`
 
 ```rust
 impl Client {
-    pub async fn list_graphs(&self) -> Result<Vec<GraphSummary>, Error>;
+    pub async fn discover_graphs(&self) -> Result<Vec<GraphSummary>, Error>;
 }
 ```
 
@@ -197,6 +200,8 @@ impl Client {
 
 **Behavior:** Removes all local heads, manifests, and blocks for the given graph from storage. Does not affect remote copies. The graph key remains in the vault (it can be re-derived).
 
+*Note: This is a placeholder stub in the Rust reference implementation.*
+
 **Warning:** This is destructive. The method name is deliberately strong.
 
 ---
@@ -208,25 +213,50 @@ impl Client {
 ```rust
 #[async_trait]
 pub trait Vault: Send + Sync {
-    /// Initialize the vault. If mnemonic is None, generates a new one.
-    /// Returns the mnemonic string if newly generated (for display to user).
-    async fn initialize(&self, mnemonic: Option<String>) -> Result<Option<String>, Error>;
+    /// Initialize the vault with a mnemonic or generate a new one.
+    async fn initialize(&self, mnemonic: Option<String>) -> Result<String>;
 
-    /// Returns the root signing public key.
-    async fn get_identity(&self) -> Result<PublicIdentity, Error>;
+    /// Check if the vault is initialized.
+    fn is_initialized(&self) -> bool;
 
     /// Derives a graph-specific symmetric key (Branch 2 — Secret).
-    async fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey, Error>;
+    async fn derive_graph_key(&self, graph_id: &GraphId) -> Result<GraphKey>;
 
-    /// Signs data using the executive branch (Branch 1) for the given graph.
-    /// The secret key is loaded, used, and zeroized in a single critical section.
-    async fn sign_for_graph(&self, graph_id: &GraphId, message: &[u8]) -> Result<Signature, Error>;
+    /// Derives the anonymous Lakshana (Branch 5) for a graph.
+    async fn derive_discovery_id(&self, graph_id: &GraphId) -> Result<Lakshana>;
 
-    /// Returns the latest identity anchor (ManifestId of the identity graph).
+    /// Derives the Keyring Secret (Branch 4) for cross-device sync.
+    async fn derive_keyring_secret(&self, version: u32) -> Result<GraphKey>;
+
+    /// Gets the user's own Identity Graph identifier.
+    async fn get_identity_id(&self) -> Result<GraphId>;
+
+    /// Gets the user's own Identity Graph discovery identifier.
+    async fn get_identity_lakshana(&self) -> Result<Lakshana>;
+
+    /// Discovers resources by walking the Identity Graph.
+    async fn list_resources(
+        &self,
+        store: &(dyn akshara_aadhaara::GraphStore + Send + Sync),
+    ) -> Result<Vec<(akshara_aadhaara::Address, GraphDescriptor)>>;
+
+    /// Sign data with the identity's signing key.
+    async fn sign(&self, graph_id: &GraphId, data: &[u8]) -> Result<Signature>;
+
+    /// Get a fresh identity for verification purposes.
+    async fn get_identity(&self, graph_id: Option<&GraphId>) -> Result<SecretIdentity>;
+
+    /// Gets the unshadowed Executive identity.
+    async fn get_executive_identity(&self) -> Result<SecretIdentity>;
+
+    /// Get the latest known identity anchor CID.
     fn latest_identity_anchor(&self) -> ManifestId;
 
-    /// Clears all secret material from the vault.
-    async fn reset(&self) -> Result<(), Error>;
+    /// Update the latest known identity anchor CID.
+    fn update_identity_anchor(&self, anchor: ManifestId);
+
+    /// Clear sensitive data from memory.
+    fn clear(&self);
 }
 ```
 
@@ -689,9 +719,9 @@ Coalescing uses last-write-wins by timestamp. For same-timestamp operations, the
 | Implementation | Persistence | Use Case |
 |---|---|---|
 | `InMemoryStagingStore` | Lost on shutdown | Testing, ephemeral |
-| `SqliteStagingStore` | Persistent (same SQLite file as storage) | Production |
+| `SqliteStagingStore` | Specified | Production |
 
-The `SqliteStagingStore` ensures that staged operations survive application crashes and are flushed on next startup.
+*Note: The Rust reference implementation currently provides InMemoryStagingStore. SqliteStagingStore is defined in the specification but not yet implemented in the Rust codebase.*
 
 ---
 

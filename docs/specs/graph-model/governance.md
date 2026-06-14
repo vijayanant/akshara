@@ -2,11 +2,14 @@
 title: "Graph Governance Specification"
 subtitle: "The Right to Rule and Succession Rituals in Akshara"
 version: "0.1.0-alpha.2"
-status: "Accepted"
+status: "Planned — Proposed for v0.2"
 date: 2026-02-23
 ---
 
 # Graph Governance Specification
+
+> [!NOTE]
+> Succession blocks (`akshara.succession.v1`) and the ownership succession verification rituals described in this specification are part of the Akshara Protocol standard, but are not yet implemented in the Rust reference implementation.
 
 ## 1. Introduction
 This document defines the rules of authority over an individual Akshara graph. It specifies how the "Right to Rule" is established, inherited, and transferred within a decentralized Merkle-DAG history.

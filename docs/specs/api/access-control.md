@@ -1,11 +1,14 @@
 # Spec 5: Access Control
 
-**Status:** Draft — For Review  
+**Status:** Planned — Proposed for v0.2+  
 **Date:** 2026-04-10  
 **Derived from:** [API Design Principles §7, §11](../blueprint/sdk/api-design-principles.md), [Developer Walkthrough](../blueprint/sdk/developer-walkthrough.md)  
 **Cross-references:** [Client & Graph](./client-and-graph.md), [Errors](./errors.md), [Sync](./sync.md)
 
 ---
+
+> [!NOTE]
+> The capability-based access control and ownership transfer mechanisms described in this specification are part of the Akshara Protocol standard, but are not yet implemented in the Rust reference implementation.
 
 ## Scope
 

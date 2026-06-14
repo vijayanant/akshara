@@ -2,11 +2,14 @@
 title: "Schema Registry Specification"
 subtitle: "Pattern Governance and Global Coordinate Laws"
 version: "0.1.0-alpha.2"
-status: "Draft"
+status: "Planned — Proposed for v0.2"
 date: "2026-04-23"
 ---
 
 # Schema Registry Specification
+
+> [!NOTE]
+> Pattern reconnaissance (lazy field filtering during sync reconciliation) described in Section 5 of this specification is part of the Akshara Protocol standard, but is not yet implemented in the Rust reference implementation.
 
 ## 1. Motivation
 
