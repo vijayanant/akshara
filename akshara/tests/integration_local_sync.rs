@@ -250,3 +250,63 @@ async fn test_sync_engine_detects_concurrent_path_conflict() {
     assert_eq!(conflict.heads.len(), 2);
     assert_eq!(conflict.divergent_blocks.len(), 2);
 }
+
+#[tokio::test]
+async fn test_local_sync_pull_from_remote_peer() {
+    // 1. Initialize Client A (Remote Peer)
+    let config_a = ClientConfig::new()
+        .with_ephemeral_vault()
+        .with_in_memory_storage();
+    let client_a = Client::init(config_a).await.unwrap();
+
+    // 2. Initialize Client B (Local Client)
+    let config_b = ClientConfig::new()
+        .with_ephemeral_vault()
+        .with_in_memory_storage();
+    let client_b = Client::init(config_b).await.unwrap();
+
+    // 3. Client A creates a graph and inserts demographics
+    let graph_a = client_a.create_graph().await.unwrap();
+    let graph_id = graph_a.id();
+    let graph_key = graph_a.key().clone();
+
+    graph_a
+        .insert("/profile/nickname", b"Doctor Jones".to_vec())
+        .await
+        .unwrap();
+    graph_a.flush().await.unwrap();
+
+    // 4. Construct Client B's Graph handle and store
+    let dummy_b = client_b.create_graph().await.unwrap();
+    let store_b = dummy_b.store().clone();
+
+    let graph_b = Graph::new(
+        graph_id,
+        graph_key.clone(),
+        client_b.vault().clone(),
+        store_b.clone(),
+        Arc::new(akshara::staging::InMemoryStagingStore::new()),
+        akshara::config::TuningConfig::default(),
+    );
+
+    // Verify B's store does not have the profile yet
+    let err = graph_b.get("/profile/nickname").await;
+    assert!(err.is_err());
+
+    // 5. B pulls from A: B's sync engine is initialized with a transport pointing to A's store
+    let transport_to_a = Arc::new(LocalMemoryTransport::new(graph_a.store().clone()));
+    let sync_engine_b = akshara::sync::SyncEngine::new(transport_to_a, client_b.vault().clone());
+
+    // B syncs graph -> B pulls missing portions from A
+    let report_b = sync_engine_b
+        .sync_graph(graph_id, &store_b, &graph_key, SyncMode::Full)
+        .await
+        .unwrap();
+
+    assert_eq!(report_b.graphs_synced, 1);
+    assert!(report_b.manifests_received > 0);
+
+    // 6. Verify B can now read A's profile data
+    let name_b = graph_b.get("/profile/nickname").await.unwrap();
+    assert_eq!(name_b, b"Doctor Jones");
+}

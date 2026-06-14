@@ -566,6 +566,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_sqlite_persistent_store_read_pool_concurrency() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_persistent.db");
+        let store = SqliteStore::open(&db_path).unwrap();
+
+        let id = create_dummy_block_id();
+        let data = b"on-disk block content";
+        store.put_block_bytes(&id, data).await.unwrap();
+
+        // Spawn multiple tasks to read from the store concurrently
+        // to verify that the read-only connection pooling and concurrency works.
+        let mut tasks = vec![];
+        let store_arc = Arc::new(store);
+
+        for _ in 0..10 {
+            let store_clone = Arc::clone(&store_arc);
+            let id_clone = id;
+            let handle = tokio::spawn(async move {
+                let retrieved = store_clone.get_block_bytes(&id_clone).await.unwrap().unwrap();
+                assert_eq!(retrieved, b"on-disk block content");
+            });
+            tasks.push(handle);
+        }
+
+        for task in tasks {
+            task.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn test_sqlite_manifest_and_heads() {
         let store = SqliteStore::in_memory().unwrap();
         let graph_id = GraphId::new();
