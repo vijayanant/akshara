@@ -214,3 +214,167 @@ pub trait GraphStore: Send + Sync {
         }
     }
 }
+
+#[async_trait]
+impl<S: GraphStore + ?Sized> GraphStore for std::sync::Arc<S> {
+    async fn put_block_bytes(&self, id: &BlockId, data: &[u8]) -> Result<(), AksharaError> {
+        self.as_ref().put_block_bytes(id, data).await
+    }
+
+    async fn get_block_bytes(&self, id: &BlockId) -> Result<Option<Vec<u8>>, AksharaError> {
+        self.as_ref().get_block_bytes(id).await
+    }
+
+    async fn put_manifest_bytes(
+        &self,
+        id: &ManifestId,
+        graph_id: &GraphId,
+        parents: &[ManifestId],
+        data: &[u8],
+    ) -> Result<(), AksharaError> {
+        self.as_ref()
+            .put_manifest_bytes(id, graph_id, parents, data)
+            .await
+    }
+
+    async fn get_manifest_bytes(&self, id: &ManifestId) -> Result<Option<Vec<u8>>, AksharaError> {
+        self.as_ref().get_manifest_bytes(id).await
+    }
+
+    async fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, AksharaError> {
+        self.as_ref().get_heads(graph_id).await
+    }
+
+    async fn put_lockbox_bytes(&self, lakshana: &[u8], data: &[u8]) -> Result<(), AksharaError> {
+        self.as_ref().put_lockbox_bytes(lakshana, data).await
+    }
+
+    async fn get_lockboxes_bytes(&self, lakshana: &[u8]) -> Result<Vec<Vec<u8>>, AksharaError> {
+        self.as_ref().get_lockboxes_bytes(lakshana).await
+    }
+
+    async fn put_prekey_bundle_bytes(
+        &self,
+        device_key: &[u8],
+        data: &[u8],
+    ) -> Result<(), AksharaError> {
+        self.as_ref()
+            .put_prekey_bundle_bytes(device_key, data)
+            .await
+    }
+
+    async fn get_prekey_bundle_bytes(
+        &self,
+        device_key: &[u8],
+    ) -> Result<Option<Vec<u8>>, AksharaError> {
+        self.as_ref().get_prekey_bundle_bytes(device_key).await
+    }
+
+    async fn put_one_time_prekeys_bytes(
+        &self,
+        device_key: &[u8],
+        prekeys: &[(u32, &[u8])],
+    ) -> Result<(), AksharaError> {
+        self.as_ref()
+            .put_one_time_prekeys_bytes(device_key, prekeys)
+            .await
+    }
+
+    async fn get_one_time_prekeys_bytes(
+        &self,
+        device_key: &[u8],
+    ) -> Result<Vec<(u32, Vec<u8>)>, AksharaError> {
+        self.as_ref().get_one_time_prekeys_bytes(device_key).await
+    }
+
+    async fn consume_one_time_prekey_bytes(
+        &self,
+        device_key: &[u8],
+        prekey_index: u32,
+    ) -> Result<Option<Vec<u8>>, AksharaError> {
+        self.as_ref()
+            .consume_one_time_prekey_bytes(device_key, prekey_index)
+            .await
+    }
+}
+
+#[async_trait]
+impl<S: GraphStore + ?Sized> GraphStore for &S {
+    async fn put_block_bytes(&self, id: &BlockId, data: &[u8]) -> Result<(), AksharaError> {
+        (*self).put_block_bytes(id, data).await
+    }
+
+    async fn get_block_bytes(&self, id: &BlockId) -> Result<Option<Vec<u8>>, AksharaError> {
+        (*self).get_block_bytes(id).await
+    }
+
+    async fn put_manifest_bytes(
+        &self,
+        id: &ManifestId,
+        graph_id: &GraphId,
+        parents: &[ManifestId],
+        data: &[u8],
+    ) -> Result<(), AksharaError> {
+        (*self)
+            .put_manifest_bytes(id, graph_id, parents, data)
+            .await
+    }
+
+    async fn get_manifest_bytes(&self, id: &ManifestId) -> Result<Option<Vec<u8>>, AksharaError> {
+        (*self).get_manifest_bytes(id).await
+    }
+
+    async fn get_heads(&self, graph_id: &GraphId) -> Result<Vec<ManifestId>, AksharaError> {
+        (*self).get_heads(graph_id).await
+    }
+
+    async fn put_lockbox_bytes(&self, lakshana: &[u8], data: &[u8]) -> Result<(), AksharaError> {
+        (*self).put_lockbox_bytes(lakshana, data).await
+    }
+
+    async fn get_lockboxes_bytes(&self, lakshana: &[u8]) -> Result<Vec<Vec<u8>>, AksharaError> {
+        (*self).get_lockboxes_bytes(lakshana).await
+    }
+
+    async fn put_prekey_bundle_bytes(
+        &self,
+        device_key: &[u8],
+        data: &[u8],
+    ) -> Result<(), AksharaError> {
+        (*self).put_prekey_bundle_bytes(device_key, data).await
+    }
+
+    async fn get_prekey_bundle_bytes(
+        &self,
+        device_key: &[u8],
+    ) -> Result<Option<Vec<u8>>, AksharaError> {
+        (*self).get_prekey_bundle_bytes(device_key).await
+    }
+
+    async fn put_one_time_prekeys_bytes(
+        &self,
+        device_key: &[u8],
+        prekeys: &[(u32, &[u8])],
+    ) -> Result<(), AksharaError> {
+        (*self)
+            .put_one_time_prekeys_bytes(device_key, prekeys)
+            .await
+    }
+
+    async fn get_one_time_prekeys_bytes(
+        &self,
+        device_key: &[u8],
+    ) -> Result<Vec<(u32, Vec<u8>)>, AksharaError> {
+        (*self).get_one_time_prekeys_bytes(device_key).await
+    }
+
+    async fn consume_one_time_prekey_bytes(
+        &self,
+        device_key: &[u8],
+        prekey_index: u32,
+    ) -> Result<Option<Vec<u8>>, AksharaError> {
+        (*self)
+            .consume_one_time_prekey_bytes(device_key, prekey_index)
+            .await
+    }
+}

@@ -14,7 +14,7 @@ async fn create_test_graph() -> Graph {
     vault.initialize(Some(mnemonic)).await.unwrap();
 
     let identity = vault.get_identity(None).await.unwrap();
-    let store = InMemoryStore::new();
+    let store = Arc::new(InMemoryStore::new());
     let graph_id = GraphId::new();
     let graph_key = identity.derive_graph_key(&graph_id).unwrap();
 

@@ -4,18 +4,19 @@
 
 use crate::error::{Error, Result};
 use crate::sync::SyncTransport;
-use akshara_aadhaara::{Delta, GraphStore, Heads, InMemoryStore, ManifestId, Portion, Reconciler};
+use akshara_aadhaara::{Delta, GraphStore, Heads, ManifestId, Portion, Reconciler};
 use futures::{Stream, StreamExt, stream};
 use std::pin::Pin;
+use std::sync::Arc;
 
-/// A sync transport that bridges to another in-memory store in the same process.
+/// A sync transport that bridges to another store in the same process.
 pub struct LocalMemoryTransport {
-    peer_store: InMemoryStore,
+    peer_store: Arc<dyn GraphStore>,
 }
 
 impl LocalMemoryTransport {
     /// Create a new local memory transport pointing to a peer's store.
-    pub fn new(peer_store: InMemoryStore) -> Self {
+    pub fn new(peer_store: Arc<dyn GraphStore>) -> Self {
         Self { peer_store }
     }
 }
@@ -39,7 +40,7 @@ impl SyncTransport for LocalMemoryTransport {
         &self,
         delta: &Delta,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Portion>> + Send>>> {
-        let reconciler = Reconciler::new(&self.peer_store);
+        let reconciler = Reconciler::new(self.peer_store.as_ref());
         let portions = reconciler
             .fulfill(delta)
             .await

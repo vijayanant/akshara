@@ -5,7 +5,7 @@ use akshara::SyncTransport;
 use akshara::sync::MockTransport;
 use akshara::sync::{Conflict, MergeStrategy, SyncEngine};
 use akshara::vault::VaultConfig;
-use akshara_aadhaara::{GraphId, InMemoryStore, SecretIdentity};
+use akshara_aadhaara::{GraphId, GraphStore, InMemoryStore, SecretIdentity};
 use std::sync::Arc;
 
 // ============================================================================
@@ -66,7 +66,7 @@ async fn sync_engine_new() {
     let identity = SecretIdentity::generate(&mut rand::rngs::OsRng).unwrap();
     let _root_key = identity.public().signing_key().clone();
 
-    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
+    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral { passphrase: None }).unwrap();
     let _engine = SyncEngine::new(transport, vault);
     // Test that engine can be created
 }
@@ -74,9 +74,9 @@ async fn sync_engine_new() {
 #[tokio::test]
 async fn sync_engine_sync_graph_empty_store() {
     let transport = Arc::new(MockTransport::new());
-    let store = InMemoryStore::new();
+    let store: Arc<dyn GraphStore> = Arc::new(InMemoryStore::new());
 
-    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
+    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral { passphrase: None }).unwrap();
     vault.initialize(None).await.unwrap(); // Bootstrap the vault
     let engine = SyncEngine::new(transport, vault.clone());
     let graph_id = GraphId::new();
@@ -99,20 +99,20 @@ async fn sync_engine_push_surplus() {
     use akshara_aadhaara::test_utils::TestFactory;
 
     let factory = TestFactory::new().await;
-    let store = factory.store.as_ref();
+    let store: Arc<dyn GraphStore> = factory.store.clone();
     let transport = Arc::new(MockTransport::new());
 
     // Create some local state using the factory
     let block = factory.create_block(b"Local Surprise").await;
     let manifest = factory.create_manifest(block.id(), vec![]).await;
 
-    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral).unwrap();
+    let vault = akshara::vault::create_vault(VaultConfig::Ephemeral { passphrase: None }).unwrap();
     vault.initialize(None).await.unwrap();
     let engine = SyncEngine::new(transport.clone(), vault);
 
     // SYNC TURN: Should push the local manifest and block
     let report = engine
-        .sync_graph(factory.graph_id, store, &factory.graph_key, SyncMode::Full)
+        .sync_graph(factory.graph_id, &store, &factory.graph_key, SyncMode::Full)
         .await
         .unwrap();
 

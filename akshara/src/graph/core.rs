@@ -4,7 +4,7 @@ use zeroize::Zeroizing;
 use crate::config::TuningConfig;
 use crate::staging::InMemoryStagingStore;
 use crate::vault::Vault;
-use akshara_aadhaara::{GraphId, GraphKey, InMemoryStore};
+use akshara_aadhaara::{GraphId, GraphKey, GraphStore};
 
 #[derive(Debug, Clone)]
 pub enum StateValue {
@@ -21,7 +21,7 @@ pub struct Graph {
     pub(crate) graph_id: GraphId,
     pub(crate) graph_key: Zeroizing<GraphKey>,
     pub(crate) vault: Arc<dyn Vault>,
-    pub(crate) store: InMemoryStore,
+    pub(crate) store: Arc<dyn GraphStore>,
     pub(crate) staging: Arc<InMemoryStagingStore>,
     pub(crate) tuning: TuningConfig,
     pub(crate) flush_lock: Arc<tokio::sync::Mutex<()>>,
@@ -33,7 +33,7 @@ impl Graph {
         graph_id: GraphId,
         graph_key: GraphKey,
         vault: Arc<dyn Vault>,
-        store: InMemoryStore,
+        store: Arc<dyn GraphStore>,
         staging: Arc<InMemoryStagingStore>,
         tuning: TuningConfig,
     ) -> Self {
@@ -59,7 +59,7 @@ impl Graph {
     }
 
     /// Get the storage backend.
-    pub fn store(&self) -> &InMemoryStore {
+    pub fn store(&self) -> &Arc<dyn GraphStore> {
         &self.store
     }
 }

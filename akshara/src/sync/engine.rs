@@ -4,9 +4,7 @@
 //! to synchronize graphs with relays or peers.
 
 use crate::sync::Conflict;
-use akshara_aadhaara::{
-    Address, BlockId, GraphId, GraphStore, InMemoryStore, Portion, Reconciler, SyncMode,
-};
+use akshara_aadhaara::{Address, BlockId, GraphId, GraphStore, Portion, Reconciler, SyncMode};
 use futures::stream::{self, Stream};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::pin::Pin;
@@ -19,7 +17,7 @@ use crate::vault::Vault;
 
 /// Context for portion processing during pull sync.
 struct IncomingContext<'a> {
-    store: &'a InMemoryStore,
+    store: &'a (dyn GraphStore + Send + Sync),
     fetched: &'a HashSet<Address>,
     block_graph_ids: &'a mut HashMap<Address, GraphId>,
     next_to_fetch: &'a mut HashSet<Address>,
@@ -80,7 +78,11 @@ impl SyncEngine {
     /// Synchronize all graphs known to the client.
     ///
     /// Currently a stub - real implementation will walk the registry.
-    pub async fn sync_all(&self, _store: &InMemoryStore, _mode: SyncMode) -> Result<SyncReport> {
+    pub async fn sync_all(
+        &self,
+        _store: &Arc<dyn GraphStore>,
+        _mode: SyncMode,
+    ) -> Result<SyncReport> {
         // TODO: Iterate over all graphs in the registry and sync them.
         // For now, return empty report
         Ok(SyncReport {
@@ -97,7 +99,7 @@ impl SyncEngine {
     pub async fn sync_graph(
         &self,
         graph_id: GraphId,
-        store: &InMemoryStore,
+        store: &Arc<dyn GraphStore>,
         key: &akshara_aadhaara::GraphKey,
         mode: SyncMode,
     ) -> Result<SyncReport> {
@@ -114,7 +116,7 @@ impl SyncEngine {
             .await?;
 
         // 3. Reconcile to find missing data
-        let reconciler = Reconciler::new(store);
+        let reconciler = Reconciler::new(store.as_ref());
         let comparison = reconciler
             .reconcile(&peer_heads, &local_heads, mode)
             .await
@@ -172,7 +174,7 @@ impl SyncEngine {
     async fn pull_peer_portions(
         &self,
         graph_id: GraphId,
-        store: &InMemoryStore,
+        store: &Arc<dyn GraphStore>,
         key: &akshara_aadhaara::GraphKey,
         peer_surplus: &akshara_aadhaara::Delta,
     ) -> Result<PullResult> {
@@ -213,7 +215,7 @@ impl SyncEngine {
                 bytes_transferred += bytes.len() as u64;
 
                 let mut ctx = IncomingContext {
-                    store,
+                    store: store.as_ref(),
                     fetched: &fetched,
                     block_graph_ids: &mut block_graph_ids,
                     next_to_fetch: &mut next_to_fetch,
@@ -382,7 +384,7 @@ impl SyncEngine {
     async fn audit_fetched_data(
         &self,
         graph_id: GraphId,
-        store: &InMemoryStore,
+        store: &Arc<dyn GraphStore>,
         key: &akshara_aadhaara::GraphKey,
         fetched_manifests: &[akshara_aadhaara::Manifest],
         fetched_blocks: &[akshara_aadhaara::Block],
@@ -390,7 +392,8 @@ impl SyncEngine {
         let is_identity_sync = graph_id == self.vault.get_identity_id().await?;
         let latest_anchor = self.vault.latest_identity_anchor();
 
-        let mut auditor = akshara_aadhaara::Auditor::new(store).with_graph_key(key.clone());
+        let mut auditor =
+            akshara_aadhaara::Auditor::new(store.as_ref()).with_graph_key(key.clone());
         if latest_anchor != akshara_aadhaara::ManifestId::null() {
             auditor = auditor.with_latest_identity(latest_anchor);
         }
@@ -420,7 +423,7 @@ impl SyncEngine {
     async fn push_local_portions(
         &self,
         graph_id: GraphId,
-        store: &InMemoryStore,
+        store: &Arc<dyn GraphStore>,
         key: &akshara_aadhaara::GraphKey,
         self_surplus: &akshara_aadhaara::Delta,
         mode: SyncMode,
@@ -444,7 +447,7 @@ impl SyncEngine {
     /// Streams local missing data for pushing to peer.
     async fn stream_surplus(
         &self,
-        store: &InMemoryStore,
+        store: &Arc<dyn GraphStore>,
         missing: Vec<Address>,
     ) -> Pin<Box<dyn Stream<Item = Result<Portion>> + Send>> {
         let store = store.clone();
@@ -493,7 +496,7 @@ impl SyncEngine {
 
     async fn expand_delta_with_key(
         &self,
-        store: &InMemoryStore,
+        store: &Arc<dyn GraphStore>,
         graph_id: &GraphId,
         key: &akshara_aadhaara::GraphKey,
         addresses: Vec<Address>,
@@ -553,7 +556,7 @@ impl SyncEngine {
     /// Detect path-level conflicts across concurrent heads of a graph.
     /// Helper to flatten a manifest head index.
     async fn flatten_head(
-        store: &InMemoryStore,
+        store: &Arc<dyn GraphStore>,
         graph_id: &GraphId,
         key: &akshara_aadhaara::GraphKey,
         head: &akshara_aadhaara::ManifestId,
@@ -573,7 +576,7 @@ impl SyncEngine {
     pub async fn detect_conflicts(
         &self,
         graph_id: GraphId,
-        store: &InMemoryStore,
+        store: &Arc<dyn GraphStore>,
         key: &akshara_aadhaara::GraphKey,
     ) -> Result<Vec<Conflict>> {
         let heads = store
@@ -630,7 +633,7 @@ impl SyncEngine {
 
 /// Recursive helper to flatten a Merkle Index starting from root.
 fn flatten_index_rec<'a>(
-    store: &'a InMemoryStore,
+    store: &'a (dyn GraphStore + Send + Sync),
     graph_id: &'a GraphId,
     block_id: &'a akshara_aadhaara::BlockId,
     current_path: String,

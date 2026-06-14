@@ -22,7 +22,7 @@ use crate::vault::{Vault, create_vault};
 /// - A registry of graphs known to this client
 pub struct Client {
     vault: Arc<dyn Vault>,
-    store: InMemoryStore,
+    store: Arc<dyn GraphStore>,
     tuning: TuningConfig,
 }
 
@@ -38,7 +38,12 @@ impl Client {
         let vault = create_vault(vault_cfg)?;
         let _result = vault.initialize(None).await?;
 
-        let store = InMemoryStore::new();
+        let store: Arc<dyn GraphStore> = match config.storage() {
+            crate::config::StorageConfig::InMemory => Arc::new(InMemoryStore::new()),
+            crate::config::StorageConfig::Sqlite { path } => {
+                Arc::new(crate::store::sqlite::SqliteStore::open(path).map_err(Error::Protocol)?)
+            }
+        };
 
         Ok(Self {
             vault,
@@ -86,7 +91,7 @@ impl Client {
 
         let executive = self.vault.get_executive_identity().await?;
 
-        let identity_graph = IdentityGraph::new(&self.store);
+        let identity_graph = IdentityGraph::new(self.store.as_ref());
         let new_anchor = identity_graph
             .add_resource(
                 descriptor,
@@ -105,7 +110,7 @@ impl Client {
         // AKSHARA RITUAL: Create the Genesis Manifest for the new graph
         let index_builder = akshara_aadhaara::IndexBuilder::new();
         let root_index_id = index_builder
-            .build(graph_id, &self.store, &identity, &graph_key)
+            .build(graph_id, self.store.as_ref(), &identity, &graph_key)
             .await
             .map_err(Error::Protocol)?;
 
@@ -157,7 +162,7 @@ impl Client {
             .map_err(|_| Error::InvalidLakshana(lakshana_str.to_string()))?;
 
         // DISCOVERY RITUAL: Walk the Resource Index to find the graph_id and graph_key
-        let resources = self.vault.list_resources(&self.store).await?;
+        let resources = self.vault.list_resources(self.store.as_ref()).await?;
         let keyring_secret = self.vault.derive_keyring_secret(0).await?;
 
         for (_addr, descriptor) in resources {
@@ -196,7 +201,7 @@ impl Client {
     /// This performs the Stateless Recovery Ritual by walking the Identity Graph's
     /// resource index.
     pub async fn discover_graphs(&self) -> Result<Vec<GraphSummary>> {
-        let resources = self.vault.list_resources(&self.store).await?;
+        let resources = self.vault.list_resources(self.store.as_ref()).await?;
         let mut summaries = Vec::new();
 
         for (_addr, descriptor) in resources {
