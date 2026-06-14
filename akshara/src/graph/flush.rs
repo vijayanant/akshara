@@ -199,7 +199,6 @@ impl Graph {
         Ok(state)
     }
 
-    /// Recursively load state from the Merkle index tree.
     async fn load_state_from_index(
         &self,
         index_id: akshara_aadhaara::BlockId,
@@ -221,6 +220,9 @@ impl Graph {
             akshara_aadhaara::from_canonical_bytes(&content)
                 .map_err(|e| Error::Internal(format!("Failed to parse index: {}", e)))?;
 
+        // A directory is a document if it contains the `.akshara.schema` block.
+        let is_document = index_map.contains_key(".akshara.schema");
+
         for (key, address) in index_map {
             let full_path = if prefix.is_empty() {
                 format!("/{}", key)
@@ -228,7 +230,12 @@ impl Graph {
                 format!("{}/{}", prefix, key)
             };
 
-            if let Ok(block_id) = akshara_aadhaara::BlockId::try_from(address)
+            // If this is a document directory, any child key (other than the document/schema
+            // metadata) is a field. Fields are leaves in the directory tree, so we do not recurse.
+            let is_field = is_document && key != ".akshara.schema" && key != ".akshara.document";
+
+            if !is_field
+                && let Ok(block_id) = akshara_aadhaara::BlockId::try_from(address)
                 && let Ok(Some(child_block)) = self.store.get_block(&block_id).await
             {
                 match child_block.block_type() {
@@ -236,12 +243,14 @@ impl Graph {
                         Box::pin(self.load_state_from_index(block_id, &full_path, state)).await?;
                     }
                     _ => {
-                        let data = child_block
-                            .decrypt(&self.graph_id, &self.graph_key)
-                            .map_err(|e| Error::Internal(format!("Decryption failed: {}", e)))?;
-                        state.insert(full_path, (StateValue::Data(data), block_id));
+                        state.insert(full_path, (StateValue::Link(address), block_id));
                     }
                 }
+            } else {
+                state.insert(
+                    full_path,
+                    (StateValue::Link(address), akshara_aadhaara::BlockId::null()),
+                );
             }
         }
 

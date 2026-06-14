@@ -69,6 +69,10 @@ async fn test_document_pipeline_e2e_roundtrip() {
     let recovered: LegalCase = graph.get_document(doc_path).await.unwrap();
     assert_eq!(original, recovered);
 
+    // Call flush a second time to verify index reconstruction
+    graph.insert("/other-path", b"hello").await.unwrap();
+    graph.flush().await.unwrap();
+
     // 5. Verify the schema metadata block exists in the store
     let schema_path = format!("{}/.akshara.schema", doc_path);
     assert!(graph.exists(&schema_path).await.unwrap());
