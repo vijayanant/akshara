@@ -2,8 +2,8 @@ use tokio::sync::Mutex;
 use zeroize::Zeroizing;
 
 use akshara_aadhaara::{
-    AksharaSigner, GraphDescriptor, GraphId, GraphKey, IdentityGraph, InMemoryStore, Lakshana,
-    ManifestId, SecretIdentity, Signature,
+    AksharaSigner, GraphDescriptor, GraphId, GraphKey, IdentityGraph, Lakshana, ManifestId,
+    SecretIdentity, Signature,
 };
 
 use super::Vault;
@@ -11,21 +11,27 @@ use crate::error::{Error, Result, VaultError};
 
 pub struct EphemeralVault {
     mnemonic: Mutex<Option<Zeroizing<String>>>,
+    passphrase: Option<Zeroizing<String>>,
     anchor: Mutex<ManifestId>,
 }
 
 impl EphemeralVault {
-    pub fn new() -> Self {
+    pub fn new(passphrase: Option<String>) -> Self {
         Self {
             mnemonic: Mutex::new(None),
+            passphrase: passphrase.map(Zeroizing::new),
             anchor: Mutex::new(ManifestId::null()),
         }
+    }
+
+    fn passphrase(&self) -> &str {
+        self.passphrase.as_deref().map(|s| s.as_str()).unwrap_or("")
     }
 }
 
 impl Default for EphemeralVault {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
@@ -63,7 +69,7 @@ impl Vault for EphemeralVault {
         let mnemonic = stored.as_ref().ok_or_else(|| {
             Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
         })?;
-        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, self.passphrase())
             .map_err(Error::Protocol)?;
         master
             .derive_discovery_id(graph_id)
@@ -75,7 +81,7 @@ impl Vault for EphemeralVault {
         let mnemonic = stored.as_ref().ok_or_else(|| {
             Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
         })?;
-        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, self.passphrase())
             .map_err(Error::Protocol)?;
         master
             .derive_keyring_secret(version)
@@ -87,7 +93,7 @@ impl Vault for EphemeralVault {
         let mnemonic = stored.as_ref().ok_or_else(|| {
             Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
         })?;
-        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, self.passphrase())
             .map_err(Error::Protocol)?;
         master.identity_id().map_err(Error::Protocol)
     }
@@ -97,14 +103,14 @@ impl Vault for EphemeralVault {
         let mnemonic = stored.as_ref().ok_or_else(|| {
             Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
         })?;
-        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, self.passphrase())
             .map_err(Error::Protocol)?;
         master.derive_identity_lakshana().map_err(Error::Protocol)
     }
 
     async fn list_resources(
         &self,
-        store: &InMemoryStore,
+        store: &(dyn akshara_aadhaara::GraphStore + Send + Sync),
     ) -> Result<Vec<(akshara_aadhaara::Address, GraphDescriptor)>> {
         let anchor = self.latest_identity_anchor();
         if anchor == ManifestId::null() {
@@ -129,13 +135,14 @@ impl Vault for EphemeralVault {
         })?;
 
         if let Some(gid) = graph_id {
-            let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
-                .map_err(Error::Protocol)?;
+            let master =
+                akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, self.passphrase())
+                    .map_err(Error::Protocol)?;
             master
                 .derive_child("m/44'/999'/0'/1'/0'", Some(gid))
                 .map_err(Error::Protocol)
         } else {
-            SecretIdentity::from_mnemonic(mnemonic, "").map_err(|e| {
+            SecretIdentity::from_mnemonic(mnemonic, self.passphrase()).map_err(|e| {
                 Error::Vault(VaultError::KeyNotFound(format!(
                     "Identity derivation failed: {}",
                     e
@@ -150,7 +157,7 @@ impl Vault for EphemeralVault {
             Error::Vault(VaultError::KeyNotFound("Vault not initialized".to_string()))
         })?;
 
-        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, "")
+        let master = akshara_aadhaara::MasterIdentity::from_mnemonic(mnemonic, self.passphrase())
             .map_err(Error::Protocol)?;
         master
             .derive_child("m/44'/999'/0'/1'/0'", None)

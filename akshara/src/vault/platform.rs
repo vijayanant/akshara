@@ -2,8 +2,8 @@ use tokio::sync::Mutex;
 use zeroize::Zeroizing;
 
 use akshara_aadhaara::{
-    AksharaSigner, GraphDescriptor, GraphId, GraphKey, IdentityGraph, InMemoryStore, Lakshana,
-    ManifestId, SecretIdentity, Signature, paths,
+    AksharaSigner, GraphDescriptor, GraphId, GraphKey, IdentityGraph, Lakshana, ManifestId,
+    SecretIdentity, Signature, paths,
 };
 
 use super::Vault;
@@ -12,13 +12,15 @@ use crate::error::{Error, Result, VaultError};
 /// Vault implementation using platform-native secure storage.
 pub struct PlatformVault {
     service: String,
+    passphrase: Option<Zeroizing<String>>,
     anchor: Mutex<ManifestId>,
 }
 
 impl PlatformVault {
-    pub fn new(service: String) -> Self {
+    pub fn new(service: String, passphrase: Option<String>) -> Self {
         Self {
             service,
+            passphrase: passphrase.map(Zeroizing::new),
             anchor: Mutex::new(ManifestId::null()),
         }
     }
@@ -72,7 +74,8 @@ impl Vault for PlatformVault {
         };
 
         for i in 0..=5 {
-            let branch = SecretIdentity::derive_branch_from_mnemonic(&mnemonic, "", i)
+            let pass = self.passphrase.as_deref().map(|s| s.as_str()).unwrap_or("");
+            let branch = SecretIdentity::derive_branch_from_mnemonic(&mnemonic, pass, i)
                 .map_err(Error::Protocol)?;
             self.save_branch(i, &branch.to_bytes())?;
         }
@@ -124,7 +127,7 @@ impl Vault for PlatformVault {
 
     async fn list_resources(
         &self,
-        store: &InMemoryStore,
+        store: &(dyn akshara_aadhaara::GraphStore + Send + Sync),
     ) -> Result<Vec<(akshara_aadhaara::Address, GraphDescriptor)>> {
         let anchor = self.latest_identity_anchor();
         if anchor == ManifestId::null() {

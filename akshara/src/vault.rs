@@ -12,8 +12,7 @@ pub use platform::PlatformVault;
 use std::sync::Arc;
 
 use akshara_aadhaara::{
-    GraphDescriptor, GraphId, GraphKey, InMemoryStore, Lakshana, ManifestId, SecretIdentity,
-    Signature,
+    GraphDescriptor, GraphId, GraphKey, Lakshana, ManifestId, SecretIdentity, Signature,
 };
 
 use crate::error::Result;
@@ -45,7 +44,7 @@ pub trait Vault: Send + Sync {
     /// Discovers resources by walking the Identity Graph.
     async fn list_resources(
         &self,
-        store: &InMemoryStore,
+        store: &(dyn akshara_aadhaara::GraphStore + Send + Sync),
     ) -> Result<Vec<(akshara_aadhaara::Address, GraphDescriptor)>>;
 
     /// Sign data with the identity's signing key.
@@ -68,22 +67,30 @@ pub trait Vault: Send + Sync {
 }
 
 /// Vault configuration.
-#[derive(Default)]
 pub enum VaultConfig {
     /// macOS Keychain or iOS Secure Enclave
-    #[default]
-    Platform,
+    Platform { passphrase: Option<String> },
     /// In-memory vault (testing only - NOT SECURE)
-    Ephemeral,
+    Ephemeral { passphrase: Option<String> },
     /// Custom vault implementation
     Custom { backend: Arc<dyn Vault> },
+}
+
+impl Default for VaultConfig {
+    fn default() -> Self {
+        Self::Platform { passphrase: None }
+    }
 }
 
 impl Clone for VaultConfig {
     fn clone(&self) -> Self {
         match self {
-            Self::Platform => Self::Platform,
-            Self::Ephemeral => Self::Ephemeral,
+            Self::Platform { passphrase } => Self::Platform {
+                passphrase: passphrase.clone(),
+            },
+            Self::Ephemeral { passphrase } => Self::Ephemeral {
+                passphrase: passphrase.clone(),
+            },
             Self::Custom { backend } => Self::Custom {
                 backend: backend.clone(),
             },
@@ -94,8 +101,11 @@ impl Clone for VaultConfig {
 /// Factory function to create a vault based on configuration.
 pub fn create_vault(config: VaultConfig) -> Result<Arc<dyn Vault>> {
     match config {
-        VaultConfig::Platform => Ok(Arc::new(PlatformVault::new("akshara".to_string()))),
-        VaultConfig::Ephemeral => Ok(Arc::new(EphemeralVault::new())),
+        VaultConfig::Platform { passphrase } => Ok(Arc::new(PlatformVault::new(
+            "akshara".to_string(),
+            passphrase,
+        ))),
+        VaultConfig::Ephemeral { passphrase } => Ok(Arc::new(EphemeralVault::new(passphrase))),
         VaultConfig::Custom { backend } => Ok(backend),
     }
 }

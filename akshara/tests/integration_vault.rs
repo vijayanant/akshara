@@ -17,7 +17,7 @@ proptest! {
     fn vault_sign_always_64_bytes(
         data in prop::collection::vec(any::<u8>(), 0..1000)
     ) {
-        let vault = EphemeralVault::new();
+        let vault = EphemeralVault::default();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             vault.initialize(None).await.unwrap();
@@ -34,7 +34,7 @@ proptest! {
 
 #[tokio::test]
 async fn vault_derive_graph_key_deterministic() {
-    let vault = EphemeralVault::new();
+    let vault = EphemeralVault::default();
     vault.initialize(None).await.unwrap();
 
     let graph_id = GraphId::new();
@@ -46,7 +46,7 @@ async fn vault_derive_graph_key_deterministic() {
 
 #[tokio::test]
 async fn vault_derive_graph_key_different_graphs() {
-    let vault = EphemeralVault::new();
+    let vault = EphemeralVault::default();
     vault.initialize(None).await.unwrap();
 
     let graph_id1 = GraphId::new();
@@ -60,7 +60,7 @@ async fn vault_derive_graph_key_different_graphs() {
 
 #[tokio::test]
 async fn vault_sign_deterministic() {
-    let vault = EphemeralVault::new();
+    let vault = EphemeralVault::default();
     vault.initialize(None).await.unwrap();
 
     let graph_id = GraphId::new();
@@ -73,7 +73,7 @@ async fn vault_sign_deterministic() {
 
 #[tokio::test]
 async fn vault_sign_different_data() {
-    let vault = EphemeralVault::new();
+    let vault = EphemeralVault::default();
     vault.initialize(None).await.unwrap();
 
     let graph_id = GraphId::new();
@@ -88,7 +88,7 @@ async fn vault_sign_different_data() {
 
 #[tokio::test]
 async fn vault_identity_consistency() {
-    let vault = EphemeralVault::new();
+    let vault = EphemeralVault::default();
     vault.initialize(None).await.unwrap();
 
     let identity1 = vault.get_identity(None).await.unwrap();
@@ -102,7 +102,7 @@ async fn vault_identity_consistency() {
 
 #[tokio::test]
 async fn vault_clear_clears_sensitive_data() {
-    let vault = EphemeralVault::new();
+    let vault = EphemeralVault::default();
     vault.initialize(None).await.unwrap();
 
     vault.clear();
@@ -112,13 +112,13 @@ async fn vault_clear_clears_sensitive_data() {
 
 #[test]
 fn create_vault_ephemeral() {
-    let vault = create_vault(VaultConfig::Ephemeral).unwrap();
+    let vault = create_vault(VaultConfig::Ephemeral { passphrase: None }).unwrap();
     assert!(!vault.is_initialized());
 }
 
 #[test]
 fn create_vault_custom() {
-    let custom_vault = Arc::new(EphemeralVault::new());
+    let custom_vault = Arc::new(EphemeralVault::default());
     let vault = create_vault(VaultConfig::Custom {
         backend: custom_vault,
     })
@@ -128,7 +128,7 @@ fn create_vault_custom() {
 
 #[tokio::test]
 async fn vault_sign_empty_data() {
-    let vault = EphemeralVault::new();
+    let vault = EphemeralVault::default();
     vault.initialize(None).await.unwrap();
 
     let graph_id = GraphId::new();
@@ -139,7 +139,7 @@ async fn vault_sign_empty_data() {
 
 #[tokio::test]
 async fn vault_sign_large_data() {
-    let vault = EphemeralVault::new();
+    let vault = EphemeralVault::default();
     vault.initialize(None).await.unwrap();
 
     let graph_id = GraphId::new();

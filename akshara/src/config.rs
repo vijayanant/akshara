@@ -20,13 +20,29 @@ impl ClientConfig {
 
     /// Configure platform vault (Keychain on macOS/iOS, Windows Credential Manager).
     pub fn with_platform_vault(mut self) -> Self {
-        self.vault = VaultConfig::Platform;
+        self.vault = VaultConfig::Platform { passphrase: None };
+        self
+    }
+
+    /// Configure platform vault with a secure passphrase.
+    pub fn with_platform_vault_and_passphrase(mut self, passphrase: impl Into<String>) -> Self {
+        self.vault = VaultConfig::Platform {
+            passphrase: Some(passphrase.into()),
+        };
         self
     }
 
     /// Configure ephemeral vault (testing only).
     pub fn with_ephemeral_vault(mut self) -> Self {
-        self.vault = VaultConfig::Ephemeral;
+        self.vault = VaultConfig::Ephemeral { passphrase: None };
+        self
+    }
+
+    /// Configure ephemeral vault with a secure passphrase (testing only).
+    pub fn with_ephemeral_vault_and_passphrase(mut self, passphrase: impl Into<String>) -> Self {
+        self.vault = VaultConfig::Ephemeral {
+            passphrase: Some(passphrase.into()),
+        };
         self
     }
 
@@ -156,26 +172,46 @@ mod tests {
     #[test]
     fn client_config_default() {
         let config = ClientConfig::default();
-        assert!(matches!(config.vault, VaultConfig::Platform));
+        assert!(matches!(config.vault, VaultConfig::Platform { .. }));
         assert!(matches!(config.storage, StorageConfig::InMemory));
     }
 
     #[test]
     fn client_config_new() {
         let config = ClientConfig::new();
-        assert!(matches!(config.vault, VaultConfig::Platform));
+        assert!(matches!(config.vault, VaultConfig::Platform { .. }));
     }
 
     #[test]
     fn client_config_with_platform_vault() {
         let config = ClientConfig::new().with_platform_vault();
-        assert!(matches!(config.vault, VaultConfig::Platform));
+        assert!(matches!(config.vault, VaultConfig::Platform { .. }));
     }
 
     #[test]
     fn client_config_with_ephemeral_vault() {
         let config = ClientConfig::new().with_ephemeral_vault();
-        assert!(matches!(config.vault, VaultConfig::Ephemeral));
+        assert!(matches!(config.vault, VaultConfig::Ephemeral { .. }));
+    }
+
+    #[test]
+    fn client_config_with_platform_vault_and_passphrase() {
+        let config = ClientConfig::new().with_platform_vault_and_passphrase("hello");
+        if let VaultConfig::Platform { passphrase } = config.vault {
+            assert_eq!(passphrase, Some("hello".to_string()));
+        } else {
+            panic!("Expected platform vault");
+        }
+    }
+
+    #[test]
+    fn client_config_with_ephemeral_vault_and_passphrase() {
+        let config = ClientConfig::new().with_ephemeral_vault_and_passphrase("world");
+        if let VaultConfig::Ephemeral { passphrase } = config.vault {
+            assert_eq!(passphrase, Some("world".to_string()));
+        } else {
+            panic!("Expected ephemeral vault");
+        }
     }
 
     #[test]
@@ -211,7 +247,7 @@ mod tests {
             .with_platform_vault()
             .with_in_memory_storage()
             .with_tuning(TuningConfig::default());
-        assert!(matches!(config.vault, VaultConfig::Platform));
+        assert!(matches!(config.vault, VaultConfig::Platform { .. }));
         assert!(matches!(config.storage, StorageConfig::InMemory));
     }
 
@@ -220,7 +256,7 @@ mod tests {
         let config = ClientConfig::new()
             .with_ephemeral_vault()
             .with_in_memory_storage();
-        assert!(matches!(config.vault(), VaultConfig::Ephemeral));
+        assert!(matches!(config.vault(), VaultConfig::Ephemeral { .. }));
         assert!(matches!(config.storage(), StorageConfig::InMemory));
         assert_eq!(config.tuning().max_block_size, 1024 * 1024);
     }
