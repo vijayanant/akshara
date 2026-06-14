@@ -1,8 +1,6 @@
 #[cfg(test)]
 use super::{InMemoryStagingStore, StagedOperation, StagingStore, coalesce_operations};
 
-
-
 // ========================================================================
 // Unit Tests: coalesce_operations
 // ========================================================================

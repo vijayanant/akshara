@@ -330,6 +330,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn open_graph_success() {
+        let client = create_test_client().await;
+        let graph = client.create_graph().await.unwrap();
+
+        // Discover graphs to retrieve the derived Lakshana hex string
+        let summaries = client.discover_graphs().await.unwrap();
+        let summary = summaries
+            .iter()
+            .find(|s| s.graph_id == graph.id())
+            .expect("Created graph should be discoverable");
+
+        // Attempt to open the graph using the Lakshana hex string
+        let opened_graph = client.open_graph(&summary.lakshana).await.unwrap();
+        assert_eq!(opened_graph.id(), graph.id());
+    }
+
+    #[tokio::test]
+    async fn open_graph_not_found() {
+        let client = create_test_client().await;
+
+        // A valid 64-character hex Lakshana that is not registered
+        let non_existent_lakshana = "00".repeat(32);
+        let result = client.open_graph(&non_existent_lakshana).await;
+
+        assert!(
+            matches!(result, Err(Error::GraphNotFound(_))),
+            "Expected GraphNotFound error"
+        );
+    }
+
+    #[tokio::test]
     async fn discover_graphs_tracks_all_created_graphs() {
         // Verify that create_graph properly registers graphs and that
         // discover_graphs returns them. This guards against the registry

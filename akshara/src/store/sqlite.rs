@@ -584,7 +584,11 @@ mod tests {
             let store_clone = Arc::clone(&store_arc);
             let id_clone = id;
             let handle = tokio::spawn(async move {
-                let retrieved = store_clone.get_block_bytes(&id_clone).await.unwrap().unwrap();
+                let retrieved = store_clone
+                    .get_block_bytes(&id_clone)
+                    .await
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(retrieved, b"on-disk block content");
             });
             tasks.push(handle);
