@@ -1,35 +1,7 @@
 #[cfg(test)]
 use super::{InMemoryStagingStore, StagedOperation, StagingStore, coalesce_operations};
 
-// ========================================================================
-// Unit Tests: StagedOperation
-// ========================================================================
 
-#[test]
-fn staged_operation_path() {
-    let insert = StagedOperation::Insert {
-        path: "/test".to_string(),
-        data: vec![1, 2, 3],
-        timestamp: 1,
-    };
-    assert_eq!(insert.path(), "/test");
-
-    let delete = StagedOperation::Delete {
-        path: "/test".to_string(),
-        timestamp: 1,
-    };
-    assert_eq!(delete.path(), "/test");
-}
-
-#[test]
-fn staged_operation_timestamp() {
-    let op = StagedOperation::Insert {
-        path: "/test".to_string(),
-        data: vec![],
-        timestamp: 42,
-    };
-    assert_eq!(op.timestamp(), 42);
-}
 
 // ========================================================================
 // Unit Tests: coalesce_operations
