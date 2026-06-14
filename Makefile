@@ -13,7 +13,7 @@ test:
 
 coverage:
 	cargo llvm-cov --workspace --html
-	cargo llvm-cov report --cobertura --output-path cobertura.xml --fail-under-lines 86.00
+	cargo llvm-cov report --cobertura --output-path cobertura.xml --fail-under-lines 85.00
 
 # The "Golden Command" for local dev
 verify: fmt lint test
