@@ -296,7 +296,7 @@ impl GraphId {
 
 impl Default for GraphId {
     fn default() -> Self {
-        Self::new()
+        Self::null()
     }
 }
 
