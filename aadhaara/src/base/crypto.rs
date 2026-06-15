@@ -4,9 +4,11 @@ use chacha20poly1305::{
     aead::{Aead, Payload},
 };
 use ed25519_dalek::{Signature as EdSignature, Verifier, VerifyingKey};
+use hmac::{Hmac, Mac};
 use metrics::counter;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use tracing::{Level, debug, error, span, trace};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -282,7 +284,22 @@ impl Lockbox {
         let recipient_xpub = XPublicKey::from(*recipient_public.as_bytes());
 
         let shared_secret = ephemeral_secret.diffie_hellman(&recipient_xpub);
-        let shared_key = GraphKey::new(*shared_secret.as_bytes());
+
+        // HKDF-SHA256 Derivation (Spec v0.1.0-alpha.2)
+        let mut prk_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(b"akshara.v1.lockbox")
+            .map_err(|e| AksharaError::Crypto(CryptoError::EncryptionFailed(format!("HKDF Extract failed: {}", e))))?;
+        prk_hmac.update(shared_secret.as_bytes());
+        let prk = prk_hmac.finalize().into_bytes();
+
+        let mut okm_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(&prk)
+            .map_err(|e| AksharaError::Crypto(CryptoError::EncryptionFailed(format!("HKDF Expand failed: {}", e))))?;
+        okm_hmac.update(b"lockbox_encryption_key");
+        okm_hmac.update(&[1u8]);
+        let okm = okm_hmac.finalize().into_bytes();
+
+        let mut shared_key_bytes = [0u8; 32];
+        shared_key_bytes.copy_from_slice(&okm[..32]);
+        let shared_key = GraphKey::new(shared_key_bytes);
 
         let mut nonce = [0u8; 24];
         rng.fill_bytes(&mut nonce);
@@ -309,7 +326,22 @@ impl Lockbox {
         let ephemeral_public_point = XPublicKey::from(*self.ephemeral_public_key.as_bytes());
 
         let shared_secret = recipient_secret_scalar.diffie_hellman(&ephemeral_public_point);
-        let shared_key = GraphKey::new(*shared_secret.as_bytes());
+
+        // HKDF-SHA256 Derivation (Spec v0.1.0-alpha.2)
+        let mut prk_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(b"akshara.v1.lockbox")
+            .map_err(|e| AksharaError::Crypto(CryptoError::DecryptionFailed(format!("HKDF Extract failed: {}", e))))?;
+        prk_hmac.update(shared_secret.as_bytes());
+        let prk = prk_hmac.finalize().into_bytes();
+
+        let mut okm_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(&prk)
+            .map_err(|e| AksharaError::Crypto(CryptoError::DecryptionFailed(format!("HKDF Expand failed: {}", e))))?;
+        okm_hmac.update(b"lockbox_encryption_key");
+        okm_hmac.update(&[1u8]);
+        let okm = okm_hmac.finalize().into_bytes();
+
+        let mut shared_key_bytes = [0u8; 32];
+        shared_key_bytes.copy_from_slice(&okm[..32]);
+        let shared_key = GraphKey::new(shared_key_bytes);
 
         // Re-derive recipient public key for AD verification
         let recipient_public_bytes =
