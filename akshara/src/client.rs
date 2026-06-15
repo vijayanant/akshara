@@ -171,7 +171,9 @@ impl Client {
 
             if candidate_lakshana == target_lakshana {
                 // MATCH FOUND: Decrypt the graph_key
-                let graph_key = descriptor.decrypt_key(&keyring_secret).map_err(Error::Protocol)?;
+                let graph_key = descriptor
+                    .decrypt_key(&keyring_secret)
+                    .map_err(Error::Protocol)?;
                 let staging = Arc::new(InMemoryStagingStore::new());
 
                 return Ok(Graph::new(

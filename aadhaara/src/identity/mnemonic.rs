@@ -9,7 +9,9 @@ pub fn generate_mnemonic() -> Result<String, AksharaError> {
 }
 
 /// Generates a new cryptographically secure 24-word BIP-39 mnemonic using the provided RNG.
-pub fn generate_mnemonic_with_rng(rng: &mut (impl rand::CryptoRng + rand::RngCore)) -> Result<String, AksharaError> {
+pub fn generate_mnemonic_with_rng(
+    rng: &mut (impl rand::CryptoRng + rand::RngCore),
+) -> Result<String, AksharaError> {
     let mut entropy = [0u8; 32];
     rng.fill_bytes(&mut entropy);
 

@@ -281,12 +281,21 @@ impl Lockbox {
 
         // HKDF-SHA256 Derivation (Spec v0.1.0-alpha.2)
         let mut prk_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(b"akshara.v1.lockbox")
-            .map_err(|e| AksharaError::Crypto(CryptoError::EncryptionFailed(format!("HKDF Extract failed: {}", e))))?;
+            .map_err(|e| {
+                AksharaError::Crypto(CryptoError::EncryptionFailed(format!(
+                    "HKDF Extract failed: {}",
+                    e
+                )))
+            })?;
         prk_hmac.update(shared_secret.as_bytes());
         let prk = prk_hmac.finalize().into_bytes();
 
-        let mut okm_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(&prk)
-            .map_err(|e| AksharaError::Crypto(CryptoError::EncryptionFailed(format!("HKDF Expand failed: {}", e))))?;
+        let mut okm_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(&prk).map_err(|e| {
+            AksharaError::Crypto(CryptoError::EncryptionFailed(format!(
+                "HKDF Expand failed: {}",
+                e
+            )))
+        })?;
         okm_hmac.update(b"lockbox_encryption_key");
         okm_hmac.update(&[1u8]);
         let okm = okm_hmac.finalize().into_bytes();
@@ -323,12 +332,21 @@ impl Lockbox {
 
         // HKDF-SHA256 Derivation (Spec v0.1.0-alpha.2)
         let mut prk_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(b"akshara.v1.lockbox")
-            .map_err(|e| AksharaError::Crypto(CryptoError::DecryptionFailed(format!("HKDF Extract failed: {}", e))))?;
+            .map_err(|e| {
+                AksharaError::Crypto(CryptoError::DecryptionFailed(format!(
+                    "HKDF Extract failed: {}",
+                    e
+                )))
+            })?;
         prk_hmac.update(shared_secret.as_bytes());
         let prk = prk_hmac.finalize().into_bytes();
 
-        let mut okm_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(&prk)
-            .map_err(|e| AksharaError::Crypto(CryptoError::DecryptionFailed(format!("HKDF Expand failed: {}", e))))?;
+        let mut okm_hmac = <Hmac<Sha256> as hmac::Mac>::new_from_slice(&prk).map_err(|e| {
+            AksharaError::Crypto(CryptoError::DecryptionFailed(format!(
+                "HKDF Expand failed: {}",
+                e
+            )))
+        })?;
         okm_hmac.update(b"lockbox_encryption_key");
         okm_hmac.update(&[1u8]);
         let okm = okm_hmac.finalize().into_bytes();
