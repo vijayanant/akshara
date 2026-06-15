@@ -331,8 +331,8 @@ impl MasterIdentity {
 }
 
 impl SecretIdentity {
-    pub fn generate(_rng: &mut (impl CryptoRng + RngCore)) -> Result<Self, AksharaError> {
-        let mnemonic = mnemonic::generate_mnemonic()?;
+    pub fn generate(rng: &mut (impl CryptoRng + RngCore)) -> Result<Self, AksharaError> {
+        let mnemonic = mnemonic::generate_mnemonic_with_rng(rng)?;
         let mnemonic = zeroize::Zeroizing::new(mnemonic);
         Self::from_mnemonic(&mnemonic, "")
     }

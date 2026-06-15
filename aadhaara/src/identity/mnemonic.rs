@@ -1,13 +1,17 @@
 use crate::base::error::{AksharaError, IdentityError};
 use bip39::{Language, Mnemonic};
-use rand::RngCore;
 use rand::rngs::OsRng;
 use zeroize::Zeroizing;
 
 /// Generates a new cryptographically secure 24-word BIP-39 mnemonic.
 pub fn generate_mnemonic() -> Result<String, AksharaError> {
+    generate_mnemonic_with_rng(&mut OsRng)
+}
+
+/// Generates a new cryptographically secure 24-word BIP-39 mnemonic using the provided RNG.
+pub fn generate_mnemonic_with_rng(rng: &mut (impl rand::CryptoRng + rand::RngCore)) -> Result<String, AksharaError> {
     let mut entropy = [0u8; 32];
-    OsRng.fill_bytes(&mut entropy);
+    rng.fill_bytes(&mut entropy);
 
     let mnemonic = Mnemonic::from_entropy(&entropy)
         .map_err(|e| AksharaError::Identity(IdentityError::MnemonicInvalid(e.to_string())))?;
