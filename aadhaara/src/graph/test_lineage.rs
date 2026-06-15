@@ -12,7 +12,7 @@ use crate::{
 async fn create_block(parents: Vec<BlockId>, store: &mut InMemoryStore) -> BlockId {
     let mut rng = OsRng;
     let identity = SecretIdentity::generate(&mut rng).unwrap();
-    let key = GraphKey::from([0u8; 32]);
+    let key = GraphKey::new([0u8; 32]);
     let graph_id = GraphId::new();
 
     let block = Block::new(

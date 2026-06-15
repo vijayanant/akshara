@@ -135,7 +135,7 @@ impl std::fmt::Debug for GraphKey {
 
 impl GraphKey {
     /// Creates a GraphKey from raw bytes.
-    pub const fn new(bytes: [u8; 32]) -> Self {
+    pub(crate) const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 
@@ -147,12 +147,6 @@ impl GraphKey {
 
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
-    }
-}
-
-impl From<[u8; 32]> for GraphKey {
-    fn from(bytes: [u8; 32]) -> Self {
-        Self(bytes)
     }
 }
 

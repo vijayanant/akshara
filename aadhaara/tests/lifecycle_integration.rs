@@ -93,13 +93,8 @@ async fn create_and_register_project(
     let executive_pub = executive.public().signing_key().clone();
 
     let project_id = GraphId::new();
-    let project_key_bytes = *master
-        .derive_child("m/44'/999'/0'/2'/0'", Some(&project_id))
-        .unwrap()
-        .public()
-        .encryption_key()
-        .as_bytes();
-    let project_key = GraphKey::new(project_key_bytes);
+    let branch2 = master.derive_child("m/44'/999'/0'/2'/0'", None).unwrap();
+    let project_key = branch2.derive_graph_key(&project_id).unwrap();
 
     let keyring_secret = master.derive_keyring_secret(0).unwrap();
     let mut nonce = [0u8; 24];
@@ -291,13 +286,7 @@ async fn test_full_lifecycle_stateless_journey() {
         let (_addr, descriptor) = &resources[0];
         assert_eq!(descriptor.label.as_deref(), Some("Alice's Secret Project"));
 
-        let project_key_bytes = descriptor
-            .enc_graph_key
-            .decrypt(&keyring_secret, descriptor.graph_id.as_bytes())
-            .unwrap();
-        let mut key_array = [0u8; 32];
-        key_array.copy_from_slice(&project_key_bytes);
-        GraphKey::new(key_array)
+        descriptor.decrypt_key(&keyring_secret).unwrap()
     };
 
     // --- STEP 3: SYNC AND READ PROJECT ---

@@ -171,15 +171,7 @@ impl Client {
 
             if candidate_lakshana == target_lakshana {
                 // MATCH FOUND: Decrypt the graph_key
-                let plaintext = descriptor
-                    .enc_graph_key
-                    .decrypt(&keyring_secret, descriptor.graph_id.as_bytes())
-                    .map_err(Error::Protocol)?;
-
-                let array: [u8; 32] = plaintext
-                    .try_into()
-                    .map_err(|_| Error::Internal("Invalid key size in descriptor".to_string()))?;
-                let graph_key = akshara_aadhaara::GraphKey::new(array);
+                let graph_key = descriptor.decrypt_key(&keyring_secret).map_err(Error::Protocol)?;
                 let staging = Arc::new(InMemoryStagingStore::new());
 
                 return Ok(Graph::new(

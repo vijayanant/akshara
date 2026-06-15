@@ -117,6 +117,22 @@ pub struct GraphDescriptor {
     pub shared_by: Option<SigningPublicKey>,
 }
 
+impl GraphDescriptor {
+    pub fn decrypt_key(&self, keyring_secret: &GraphKey) -> Result<GraphKey, AksharaError> {
+        let plaintext = self
+            .enc_graph_key
+            .decrypt(keyring_secret, self.graph_id.as_bytes())?;
+
+        let bytes: [u8; 32] = plaintext.try_into().map_err(|_| {
+            AksharaError::Crypto(crate::base::error::CryptoError::InvalidKeyFormat(
+                "Decrypted key is not 32 bytes".to_string(),
+            ))
+        })?;
+
+        Ok(GraphKey::new(bytes))
+    }
+}
+
 impl MasterIdentity {
     pub fn from_mnemonic(phrase: &str, passphrase: &str) -> Result<Self, AksharaError> {
         let seed = mnemonic::mnemonic_to_seed(phrase, passphrase)?;
@@ -429,7 +445,11 @@ impl SecretIdentity {
         let mut key_bytes = [0u8; 32];
         key_bytes.copy_from_slice(&output[0..32]);
 
-        Ok(GraphKey::from(key_bytes))
+        Ok(GraphKey::new(key_bytes))
+    }
+
+    pub fn derive_keyring_secret_key(&self) -> GraphKey {
+        GraphKey::new(*self.public().signing_key().as_bytes())
     }
 
     pub fn signing_key(&self) -> &SigningSecretKey {

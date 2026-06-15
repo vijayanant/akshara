@@ -109,8 +109,7 @@ impl Vault for PlatformVault {
         }
         let branch4_bytes = self.load_branch(paths::BRANCH_KEYRING)?;
         let branch4 = SecretIdentity::from_bytes(&branch4_bytes).map_err(Error::Protocol)?;
-        let pub_key_bytes = branch4.public().signing_key().as_bytes();
-        Ok(GraphKey::new(*pub_key_bytes))
+        Ok(branch4.derive_keyring_secret_key())
     }
 
     async fn get_identity_id(&self) -> Result<GraphId> {
